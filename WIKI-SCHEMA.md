@@ -79,15 +79,59 @@ For genuinely fleet-wide announcements (rare): drop the same message in every ro
 
 ### File-level conventions
 
-- **All files have YAML frontmatter** with at minimum:
+- **All files have YAML frontmatter** with at minimum (the universal sextet):
   ```yaml
   ---
   slug: kebab-case-identifier
-  last_updated: 2026-05-26
+  kind: contact | org | project | knowledge | decision | inbox-message | finding | ...
+  created: 2026-04-01           # when entity first existed
+  last_updated: 2026-05-26      # when entry was last touched
   last_edited_by: librarian | boss | worker | scout | user
   last_change_summary: "brief description of what changed"
   ---
   ```
+
+- **Optional but commonly useful:**
+  ```yaml
+  tags: [client, technical, urgent]   # array, free-text
+  visibility: town                     # town (default) | agent:<slug> | private
+  status: active                       # canonical values per collection
+  confidence: 1.0                      # 0.0-1.0 for findings/knowledge
+  sources: [url1, path1, ...]          # provenance
+  relates_to: [slug1, slug2, ...]      # typed cross-refs
+  ```
+
+- **Embedding metadata** (added automatically by the wiki MCP when content is indexed):
+  ```yaml
+  embed_text: "..."                    # the text sent to the embedding model
+  embed_model: bge-large-en-v1.5       # which model produced the current vector
+  ```
+  When the embedding model changes, the wiki Workflow re-indexes only entries where `embed_model` doesn't match the current default. Avoids re-embedding the entire substrate on every model bump.
+
+### Field naming — canonical conventions
+
+| Concept | Field | Notes |
+|---|---|---|
+| Entity type | `kind:` | NOT `type:` (collides with TS/JSON keywords). Pick one and stick to it. |
+| Creation date | `created:` | Date or full timestamp. When entity first existed. |
+| Last touch | `last_updated:` | Date or timestamp. Updated on every write. |
+| Audit who/why (latest) | `last_edited_by:` + `last_change_summary:` | Frontmatter snapshot of latest change |
+| Full audit history | NOT in frontmatter — in D1 `wiki_audit` table | Queryable via `wiki.history(slug)` |
+| Entity relationship | `relates_to:`, `org_slug:`, `team[]:`, `affects[]:`, `derived_from:` | Per-collection cross-ref fields |
+| Sources / provenance | `sources:` (array of URLs/paths) | For findings + knowledge; supports cite-every-fact rule |
+
+### Audit trail — frontmatter snapshot + D1 log
+
+We deliberately keep TWO audit surfaces:
+
+| Where | What it captures | When to use |
+|---|---|---|
+| **Frontmatter** (`last_edited_by`, `last_change_summary`, `last_updated`) | Latest change only — who, what, when | When the next reader opens the file. Immediate context. |
+| **D1 `wiki_audit` table** | Every change ever — full history with prev_hash, new_hash | When auditing the history. Queryable via `wiki.history(slug)`. |
+
+Frontmatter answers "what just happened?" D1 answers "what has ever happened?" They complement each other; both are populated on every write by the wiki MCP automatically.
+
+
 - **Filenames use kebab-case** (lowercase, hyphens)
 - **Date-stamped files** use `YYYY-MM-DD-<topic>.md` format
 - **Entity-as-folder collections** have one canonical filename per entity:
@@ -314,23 +358,32 @@ last_updated: 2026-05-26
 ## Consequences
 ```
 
-### `broadcasts/<date>-<topic>.md`
+### Inbox message — `<role-building>/inbox/<date>-<from>-<topic>.md`
+
+The fleet-comms primitive — replacing broadcasts. Tailored messages dropped in each recipient's inbox by the sender. Frontmatter shape:
 
 ```yaml
 ---
-slug: 2026-05-26-office-town-architecture-finalised
+slug: 2026-05-26-from-boss-q3-planning
 date: 2026-05-26
-type: broadcast
+type: inbox-message
 from: boss
-to: fleet
-priority: normal | high
+to: librarian                          # the recipient role
+subject: "Q3 planning — please prep contact list"
+priority: normal | high | urgent
+relates_to: [projects/q3-planning, contacts/jane-doe]  # cross-refs
+status: pending | handled | archived
+handled_at: null                       # filled when recipient acts on it
 last_updated: 2026-05-26
+last_edited_by: boss
 ---
 
-# Office Town architecture finalised
+# Q3 planning — please prep contact list
 
-[announcement body — what's changed, what to do]
+Body of the message tailored to this recipient.
 ```
+
+The recipient's role processes the inbox at session start (via the SessionStart hook). After action: set `status: handled` + `handled_at: <timestamp>` and move to `inbox/archive/` (per existing convention).
 
 ### `team/humans/<slug>.md` and `team/agents/<slug>.md`
 
@@ -443,7 +496,7 @@ Each `<service>.md` is a POINTER to where the credential lives (e.g., "in Bitwar
 | `projects/` | Move to `projects/archive/` when status=archived | When closed + status=archived |
 | `team/` | In place — humans/agents change over time | Mark `status: inactive` |
 | `templates/` | In place | Versioned via git |
-| `broadcasts/` | Append-only — dated entries | Trim entries >12 months for performance if needed |
+| `inbox/` (per-building, not a wiki collection) | Handled → archived | Archive after action (`inbox/archive/`); never delete (audit trail) |
 | `properties/` | In place + status changes | When property is retired |
 | `quotes/` | Lifecycle: drafting → sent → accepted/rejected/superseded/expired | Never archived (sales history) |
 
