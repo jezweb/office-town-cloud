@@ -130,7 +130,11 @@ Contribute Cloudflare Workers AI as a native provider to upstream Goose, AND shi
 
 **Effort:** ~1 day. PR review timeline upstream is out of our control; the Custom Distribution config doesn't wait on it.
 
-**Status update (2026-05-26):** ✅ Upstream PR opened at https://github.com/aaif-goose/goose/pull/9425. 4 files changed, 432 insertions, 6 unit tests passing, `cargo check -p goose` clean. Awaiting review. Custom Distribution config can proceed in parallel.
+**Status update (2026-05-27):** ✅ Upstream PR open at https://github.com/aaif-goose/goose/pull/9425.
+
+- Initial commit: 4 files changed, 432 insertions, 6 unit tests passing, `cargo check -p goose` clean (2026-05-26)
+- Codex P2 review caught `fetch_supported_models` not paginating Cloudflare's model catalog — accounts with >100 text-generation models would have got truncated picker lists. Fixed in 653b1cdde: loop on `result_info.total_pages`, MAX_PAGES=50 safety cap, sort+dedup defence, per-page error context. New test `test_fetch_supported_models_paginates_across_pages` mocks 3 pages with mixed task types. Now 7 tests passing.
+- Awaiting upstream maintainer review. Custom Distribution config can proceed in parallel.
 
 ### M5 — v1.0 public release (1 week)
 
