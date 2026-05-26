@@ -346,7 +346,7 @@ Park here for now; revisit after v1.1 launches.
 
 | Item | What |
 |---|---|
-| **Human team members as first-class citizens** | Real humans (designers, marketers, accountants, etc.) become @-mentionable roles with `runtime: human`. Inbox messages route to their configured channel (email/Slack/iMessage). Office Town becomes a workspace for **hybrid teams**, not just AI fleets. |
+| **Humans + VA agents — hybrid teams as citizens** | Each human team member gets a personalised VA agent that lives in the town AS them. `@sue` is Sue's VA (instant response, learns Sue's voice, configured auto-handle vs escalate rules). The VA handles routine delegations autonomously; escalates to the actual Sue (via her configured channel — email/Slack/iMessage) for judgment calls. `@sue-direct` bypasses the VA for rare direct contact. **Why this beats "human as runtime"**: town gets immediate response, routine work doesn't block on availability, humans get curated escalations not raw delegations. Generalises the pattern goanna already uses for Jez (boss as Jez's representative). |
 | Multi-tenant SaaS | One Office Town Cloud serves N customers (Cloudflare for Platforms) |
 | Mobile / tablet support | iOS app talking to tunnelled goosed |
 | Voice expansion | Outbound calls via Twilio bridge; voice in MCP Apps |

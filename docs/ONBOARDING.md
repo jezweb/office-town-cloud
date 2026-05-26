@@ -63,12 +63,17 @@ Boss surfaces the configured Office Town Cloud extensions and helps the user wir
 
 ### Step 6 — Pack installation recommendation
 
-Based on what the user described in step 1, boss recommends additional packs:
+Boss loads the `pack-catalogue` skill (single source of truth for what packs exist + what each does + what business types they fit) and recommends packs based on what the user described in step 1.
 
-- "You mentioned you do web design — install `office-town-pack-design` and `office-town-pack-hosting`?"
-- "You mentioned client proposals — install `office-town-pack-business`?"
+Examples of mappings boss applies:
+- "web design / hosting / WordPress" → recommend `office-town-pack-design`, `office-town-pack-hosting`, `office-town-pack-wordpress`
+- "client proposals / project management" → recommend `office-town-pack-business`
+- "lots of email / chat / social" → recommend `office-town-pack-comms`
+- "deployed on Cloudflare" (everyone with Office Town Cloud) → `office-town-pack-cloudflare` is already installed by default
 
 User says yes/no per pack. Boss runs `goose plugin install` for accepted packs.
+
+**Why this matters:** the boss knows what's available without the user having to research. Pack discovery shouldn't be on the user — it's the boss's job to know what's in the catalogue and suggest based on context.
 
 ### Step 7 — Final cycle
 
@@ -77,6 +82,14 @@ Boss writes a summary entry to `wiki/business/<slug>.md` updating last_change_su
 - "@librarian what should I extract first?"
 - "@scout what's brewing in our industry?"
 - "Add a new client" / "Add a new project"
+
+## Boss's ongoing role: pack recommender
+
+After setup, the boss continues to watch for emerging needs and proactively suggests packs. This is a standing order in boss's role file:
+
+> When the user describes work that needs a pack you don't have installed, suggest the install before doing the work. E.g., if the user says "let's mock up a landing page" and the designer role isn't available, surface: "We'd want @designer for this — install office-town-pack-design? It also gives you the Studio building." Don't be pushy about it; mention once, then proceed with what's available.
+
+This is supported by the `pack-catalogue` skill which boss can load on demand to refresh its knowledge of what's available.
 
 ## Implementation
 
