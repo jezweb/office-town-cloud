@@ -331,6 +331,23 @@ Agents learn the pattern quickly: search to triage, read to expand. Role pack st
 - A custom auth provider — better-auth + Google OAuth
 - A bespoke UI framework — Goose's MCP Apps spec for in-chat UI; standard React + shadcn for the web dashboard
 - `goosed` on Cloudflare — not feasible (Rust binary, persistent TCP, cert pinning). Goose runs on the user's Mac.
+- **Hosted memory services** (Engram, Lumetra, etc.) — these are useful for other workflows but don't fit Office Town's "your data, your infrastructure" positioning. We integrate with Goose's built-in Memory + our own wiki MCP backed by the user's R2 bucket.
+
+## Memory visibility — your data, your infrastructure
+
+A natural worry: "if the wiki lives in Cloudflare, can I see my data? Am I locked in?"
+
+Office Town's wiki is in **your own Cloudflare account** — not ours, not a third-party hosted service. Three layers of visibility:
+
+| Layer | Where | What you can do |
+|---|---|---|
+| **R2 bucket** (source of truth) | Your Cloudflare account | View files in the CF dashboard; `aws s3 sync` to copy out (R2 is S3-compatible); back up freely |
+| **Web dashboard** | `<your-subdomain>.workers.dev/dashboard` | Browse via UI you control, log in via Google OAuth allowlist you control |
+| **Optional local mirror** (`goannad`-style daemon) | Files appear locally at `/Users/Shared/office-town/` | Grep, edit in any editor, version with git, use any tool |
+
+This is a deliberate departure from hosted memory services like [Engram](https://github.com/lumetra-io/engram-goose-extension). Engram is a third-party SaaS — your memories live in their cloud, opaque, vendor-locked. Office Town's wiki is markdown files in *your* R2 bucket. You own them. You can export them. You can switch backends (move to AI Search, host your own substrate, anything) without losing data.
+
+**The product story:** *Your model. Your bill. Your data. Your infrastructure.* Office Town is the methodology + the extensions; we don't host your knowledge.
 
 ## The Goose-runs-locally model
 
