@@ -234,3 +234,14 @@ The Office Town plugin configures these as defaults; users can disable per deplo
 Each extension is its own package within the office-town-cloud monorepo. They deploy to a single Cloudflare account on `pnpm deploy`. Users get one URL per extension that they wire into Goose.
 
 Versioning: monorepo-shared semver. Each MCP server publishes its OpenAPI / MCP schema at `/api/mcp/<name>/schema` for discoverability.
+
+## design.md integration (v1.1+)
+
+Google's [design.md](https://designmd.ai/) is an emerging open draft spec for capturing a project's design system as a single markdown file (colors, typography, spacing, components, accessibility rules). It's complementary to AGENTS.md, not competing — different scope (design system vs agent context).
+
+**Office Town integrates at two levels:**
+
+1. **Office Town's own design system** — we ship a `design.md` at the office-town-cloud repo root describing the dashboard's visual language. Contributors building MCP Apps, community themes, or alternate dashboards have a canonical reference.
+2. **Per-deployment brand guidelines** — each town's wiki carries the user's `wiki/business/design.md` describing their brand. The **designer role** (creative pack) reads it when generating mockups; the **share extension** (publish mode) uses it when rendering markdown to HTML.
+
+The spec is in draft. We track it without committing until it stabilises. Adoption target: v1.1 alongside the creative pack.
