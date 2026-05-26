@@ -15,16 +15,34 @@ All extensions are streamable-HTTP MCP servers hosted in the user's Cloudflare a
 **Tool surface (gateway pattern, one tool with actions):**
 
 ```
-wiki (action: list | get | search | write | supersede | link | archive | history)
-  list      { kind?, tag?, status?, limit?, cursor? }
-  get       { slug }
+wiki (action: list | get | search | write | supersede | link | archive | history
+              | tree | recent | related | glob | head | head_many)
+
+  # Reading + browsing (designed for casual exploration)
+  tree      { path?, depth?, kind? }                  # like `tree` / `ls -R`
+  list      { collection, filters?, limit?, cursor? } # entries with snippets
+  recent    { since?, kind?, limit? }                 # what's been touched
+  related   { slug, depth?, follow_kinds? }           # walk the frontmatter graph
+  glob      { pattern }                               # path pattern matching
+  head      { slug, lines? }                          # peek without full read
+  head_many { slugs[] }                               # bulk peek (compare candidates)
+  get       { slug }                                  # full read (expanded)
+
+  # Searching
   search    { query, top_k?, kinds?, synthesize?, filters? }
+
+  # Writing
   write     { slug?, kind, frontmatter, body, supersedes?, why }
   supersede { old_slug, new_frontmatter, new_body, why }
-  link      { from_slug, to_slug, relation }   // typed graph edges
+  link      { from_slug, to_slug, relation }          # typed graph edges
   archive   { slug, why }
+
+  # Audit + discovery
   history   { slug, limit? }
+  list_collections()                                  # discover schema
 ```
+
+**Design note on browsing:** the read/search/get surface alone produces "I need to know what I'm looking for" UX. The `tree`/`list`/`recent`/`related`/`glob`/`head_many` actions let agents *casually explore* the wiki the way they'd `ls` and `cat` local files — see structure, peek at candidates, follow relationships. Critical for agents joining a new town or building understanding gradually. Plus the optional goannad local mirror gives users who want actual files-on-disk that experience too.
 
 Per `~/.claude/rules/mcp-gateway-pattern.md` — gateway with action verb beats many separate tools (smaller context cost, clearer LLM intent).
 

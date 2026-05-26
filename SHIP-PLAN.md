@@ -70,6 +70,8 @@ Convert the template from "folder you copy" to "plugin you install." Package fol
 
 **Sub-deliverable: Test pack (`tests/`)** — seeded from M1 dogfood; codifies role-identity + delegation + briefing-loading tests. Runner shells out to `goose run --no-session --quiet` and checks pattern presence. Lives in `office-town-cloud/tests/` initially; moves to `office-town-plugin/tests/` when the plugin repo exists. Becomes CI on every PR to roles/briefings/packs.
 
+**Sub-deliverable: Setup recipe (`commands/office-town-setup.yaml`)** — first-session onboarding flow. Captures business, owner voice/rhythm, team, anchor contacts/orgs, wires services. ~15-30 min walk-through; supports `quick` mode for essentials only and `import-from-goanna` mode for migrating from a goanna-shaped substrate. See `docs/ONBOARDING.md` for the full flow.
+
 **Effort:** ~2-3 days. Mostly content (skills + recipes) — the plugin format itself is straightforward.
 
 ### M3 — Cloud v1: Wiki backbone (1 week)
@@ -191,6 +193,21 @@ The differentiators that nobody else has built for Goose.
 | **Search wrapper** (DIY + AI Search backends) | 1-2 days | Bake-off comparison report |
 
 **Effort:** ~10-12 days of focused sessions.
+
+### M6.6 — Knowledge starter pack (1-2 days, parallel with M7)
+
+Audit `/Users/Shared/goanna/wiki/knowledge/` and ship portable concepts as `office-town-knowledge-starter` — an opt-in plugin that seeds new Office Town deployments with hard-won learnings (AI model gotchas, Cloudflare patterns, vendor quirks, etc.).
+
+**Deliverables:**
+- Sub-agent audit of every goanna knowledge concept — classify Jezweb-specific / portable / mixed
+- Adapt portable concepts (strip Jezweb-specific references)
+- Bundle as `office-town-knowledge-starter` plugin (Open Plugin Spec compliant)
+- Skip concepts that are too niche or too specific to be useful generally
+- Document each adapted concept's source goanna concept for attribution
+
+**Effort:** ~1-2 days depending on how many concepts make the cut. Mostly mechanical filtering + light adaptation.
+
+**Why this matters:** new Office Town deployments start with a wiki containing distilled wisdom from goanna's months of accumulated learning, not empty folders. Big leg up on adoption.
 
 ### M7 — Role packs + v1.1 launch (1 week)
 

@@ -105,6 +105,19 @@ Cron routines visualised on a week/month grid. Each routine is a calendar entry.
 - Source: `cron.list()` returns schedules
 - Edit: postMessage → `cron.schedule(id, expr, recipe)` for update
 
+### Voice message composer — "drop a note to @<role>"
+
+Quick voice-to-inbox messaging. User holds a record button or says wake-word, dictates a message for another role, sees the transcribed message in a card with recipient/subject/priority pre-filled, confirms or edits, sends. Lands as an inbox-message in the target role's `inbox/`.
+
+- Triggered by user voice command ("hey librarian, drop a note to worker about the redesign") OR by clicking a "send message" button in town map / kanban
+- Pipeline: voice extension transcribes → MCP App renders the brief composer pre-filled → user confirms → `wiki.write(kind: 'inbox-message', to: <role>, ...)`
+- The voice extension provides the transcription; the brief composer (existing v1.1 MCP App) provides the structured form; the wiki MCP writes it
+- Cool detail: the SENDING role's voice is captured (librarian's tone if librarian is the sender), so the message in the recipient's inbox reads in the sender's voice — not a generic system message
+
+Use case: walking between meetings, "hey @boss, drop a note to scout asking them to research Cloudflare AI Search pricing this week" — message lands in scout's inbox, ready for next session.
+
+This is one of the small features that makes Office Town feel less like "AI tooling" and more like a real team where people actually communicate.
+
 ## v2 / nice-to-have
 
 | App | What it does |
