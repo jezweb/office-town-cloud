@@ -385,7 +385,7 @@ For external collaborators (once public):
 - ✅ M1 — Dogfood validation (2026-05-26; 5/5 tests passed against OpenRouter deepseek-v4-pro)
 - ✅ M2 — Office Town as a plugin (shipped 2026-05-27 at github.com/jezweb/office-town-plugin)
 - ✅ M3 — Cloud v1: Wiki backbone (deployed 2026-05-27)
-- ⏸ M4 — Cloud v1: Full feature set
+- ✅ M4 — Cloud v1: Files + Publish + Kanban + Cron + Dashboard (deployed 2026-05-27)
 - ⏸ M5 — v1.0 public release
 - ⏸ M6 — Cloud v1.1: Killer extensions
 - ⏸ M7 — Role packs + v1.1 launch

@@ -1,15 +1,14 @@
 // Office Town Cloud — core Worker.
-//
-// Hosts the wiki, files, publish, cron, and dashboard endpoints. Each MCP
-// adapter (packages/mcp-*) is a thin streamable-HTTP shim over these
-// routes, but the routes themselves are the source of truth.
 
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { authMiddleware, requireMcpAuth } from './auth/middleware';
+import { cronRoutes } from './cron/routes';
+import { dashboardRoutes } from './dashboard/routes';
+import { filesRoutes } from './files/routes';
 import { handleIndexMessage } from './queue/index-consumer';
-import type { Env, IndexMessage } from './types';
-import type { AppContext } from './types';
+import { publicReaderRoutes, publishRoutes } from './publish/routes';
+import type { AppContext, Env, IndexMessage } from './types';
 import { wikiRoutes } from './wiki/routes';
 
 const app = new Hono<AppContext>();
@@ -35,15 +34,38 @@ app.get('/health', (c) =>
 	})
 );
 
+// MCP-style API endpoints, gated by bearer token.
 app.route('/api/wiki', wikiRoutes);
+app.route('/api/files', filesRoutes);
+app.route('/api/publish', publishRoutes);
+app.route('/api/cron', cronRoutes);
 
+// MCP-prefixed routes (same endpoints, explicit /mcp prefix for clarity)
 app.use('/mcp/wiki/*', requireMcpAuth);
-app.route('/mcp/wiki', wikiRoutes); // MCP gets the same shape, just gated on bearer.
+app.route('/mcp/wiki', wikiRoutes);
+app.use('/mcp/files/*', requireMcpAuth);
+app.route('/mcp/files', filesRoutes);
+app.use('/mcp/publish/*', requireMcpAuth);
+app.route('/mcp/publish', publishRoutes);
+app.use('/mcp/cron/*', requireMcpAuth);
+app.route('/mcp/cron', cronRoutes);
+
+// Public reader for /p/<slug> — must come BEFORE dashboard's '/' route since
+// Hono picks the first matching route.
+app.route('/', publicReaderRoutes);
+// Dashboard at /, /dashboard/* — server-rendered, currently unauthenticated.
+app.route('/', dashboardRoutes);
 
 app.notFound((c) => c.json({ error: 'Not found', path: c.req.path }, 404));
 
 app.onError((err, c) => {
-	console.error(JSON.stringify({ event: 'worker_unhandled_error', error: String(err), stack: err.stack }));
+	console.error(
+		JSON.stringify({
+			event: 'worker_unhandled_error',
+			error: String(err),
+			stack: err.stack,
+		})
+	);
 	return c.json({ error: 'Internal server error' }, 500);
 });
 
