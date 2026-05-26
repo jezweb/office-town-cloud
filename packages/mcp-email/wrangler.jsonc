@@ -1,0 +1,19 @@
+{
+	"$schema": "https://json.schemastore.org/wrangler.json",
+	"name": "office-town-mcp-email",
+	"main": "src/index.ts",
+	"compatibility_date": "2024-12-30",
+	"compatibility_flags": ["nodejs_compat"],
+	"workers_dev": true,
+	"observability": {
+		"enabled": true,
+		"logs": { "invocation_logs": true, "head_sampling_rate": 1 }
+	},
+	"services": [
+		{ "binding": "CORE", "service": "office-town-core" }
+	],
+	"vars": {
+		"DEFAULT_FROM_EMAIL": "no-reply@office-town.example",
+		"DEFAULT_FROM_NAME": "Office Town"
+	}
+}

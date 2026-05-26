@@ -13,6 +13,19 @@ import { wikiRoutes } from './wiki/routes';
 
 const app = new Hono<AppContext>();
 
+// Normalise trailing slashes — Hono's mounted sub-apps are picky about
+// /api/publish vs /api/publish/. Rewrite the URL before routing so the
+// no-slash form always wins (except for /).
+app.use(async (c, next) => {
+	const url = new URL(c.req.url);
+	if (url.pathname !== '/' && url.pathname.endsWith('/')) {
+		url.pathname = url.pathname.replace(/\/+$/, '');
+		const newRequest = new Request(url.toString(), c.req.raw);
+		return app.fetch(newRequest, c.env, c.executionCtx);
+	}
+	return next();
+});
+
 app.use(
 	'*',
 	cors({

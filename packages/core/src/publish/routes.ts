@@ -3,9 +3,13 @@ import { PublishService, renderMarkdownToHtml } from './service';
 import type { AppContext } from '../types';
 
 // MCP-shaped routes (auth-gated) — under /api/publish/
+//
+// When this router is mounted via `app.route('/api/publish', publishRoutes)`,
+// Hono can be picky about /api/publish vs /api/publish/. Register both '/'
+// and '' to accept both shapes.
 export const publishRoutes = new Hono<AppContext>();
 
-publishRoutes.post('/', async (c) => {
+const publishCreate = async (c: import('hono').Context<AppContext>) => {
 	try {
 		const body = await c.req.json<{ slug: string; title?: string; markdown: string; visibility?: 'public' | 'unlisted' }>();
 		if (!body.slug || !body.markdown) {
@@ -17,7 +21,9 @@ publishRoutes.post('/', async (c) => {
 	} catch (err) {
 		return c.json({ error: err instanceof Error ? err.message : String(err) }, 500);
 	}
-});
+};
+
+publishRoutes.post('/', publishCreate);
 
 publishRoutes.get('/list', async (c) => {
 	const svc = new PublishService(c.env);

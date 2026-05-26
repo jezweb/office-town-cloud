@@ -207,6 +207,14 @@ export const DEFAULT_COLLECTIONS: CollectionDef[] = [
 		required_fields: ['title'],
 		description: 'User feedback, escalations, retros',
 	},
+	{
+		name: 'tasks',
+		shape: 'entity-as-folder',
+		canonical_filename: 'task.md',
+		required_fields: ['title'],
+		description:
+			'Tasks, todos, and in-flight work items — surfaced on the kanban dashboard by frontmatter.status',
+	},
 ];
 
 /**

@@ -387,8 +387,8 @@ For external collaborators (once public):
 - ✅ M3 — Cloud v1: Wiki backbone (deployed 2026-05-27)
 - ✅ M4 — Cloud v1: Files + Publish + Kanban + Cron + Dashboard (deployed 2026-05-27)
 - ⏸ M5 — v1.0 public release
-- ⏸ M6 — Cloud v1.1: Killer extensions
-- ⏸ M7 — Role packs + v1.1 launch
+- 🔄 M6 — Cloud v1.1: Killer extensions (browser + devops + email deployed 2026-05-27; voice/sandbox/search design docs at docs/M6-DESIGN-VOICE-SANDBOX-SEARCH.md)
+- ✅ M7 — Role packs scaffolded (7 packs: startup, design, hosting, wordpress, business, cloudflare, comms — shipped 2026-05-27)
 - ⏸ M8 — Sustained release
 
 ## One-sentence summary
