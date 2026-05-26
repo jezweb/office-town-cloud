@@ -44,6 +44,22 @@ wiki (action: list | get | search | write | supersede | link | archive | history
 
 **Design note on browsing:** the read/search/get surface alone produces "I need to know what I'm looking for" UX. The `tree`/`list`/`recent`/`related`/`glob`/`head_many` actions let agents *casually explore* the wiki the way they'd `ls` and `cat` local files — see structure, peek at candidates, follow relationships. Critical for agents joining a new town or building understanding gradually. Plus the optional goannad local mirror gives users who want actual files-on-disk that experience too.
 
+**The Unix tool mapping** — wiki MCP actions consciously mirror standard file-system commands so the mental model is "this is a filesystem with tools" not "this is a database I have to query":
+
+| Unix tool | Wiki MCP action |
+|---|---|
+| `tree` / `ls -R` | `wiki.tree(path?, depth?)` |
+| `ls <dir>` | `wiki.list(collection)` |
+| `cat <file>` | `wiki.get(slug)` |
+| `head <file>` | `wiki.head(slug, lines?)` |
+| `head -n 5 *.md` | `wiki.head_many([slugs])` |
+| `find . -name "*.md" -newer 1week` | `wiki.recent(since='1 week')` |
+| `grep -r "X"` | `wiki.search(query='X')` |
+| `find . -name "pattern*"` | `wiki.glob(pattern)` |
+| `ls -R \| xargs cat \| grep relates_to:` | `wiki.related(slug)` |
+
+When designing future wiki actions, the question is: "what Unix tool would I reach for here?" If the answer is "none, this is a query I'd type into a SQL prompt," the action probably doesn't belong as a casual-browse tool — it belongs as a `search` filter parameter.
+
 Per `~/.claude/rules/mcp-gateway-pattern.md` — gateway with action verb beats many separate tools (smaller context cost, clearer LLM intent).
 
 **Critical design contracts:**
