@@ -51,17 +51,19 @@ Verify the template actually works under real use before we build the backend.
 
 **Skip if:** dogfooding can run alongside M3/M4. Not blocking. But discovery here informs every subsequent phase.
 
-### M2 — Office Town as a Goose plugin (2-3 days)
+### M2 — Office Town as an Open Plugin Spec plugin (2-3 days)
 
-Convert the template from "folder you copy" to "plugin you install."
+Convert the template from "folder you copy" to "plugin you install." Package follows the **[Open Plugin Spec v1.0.0](https://github.com/vercel-labs/open-plugin-spec)** which Goose committed to adopting in their May 2026 roadmap. **Cross-host portable** — same plugin works in any conformant host (Goose today; potentially Claude Code, other agents tomorrow).
 
 **Deliverables:**
 - `github.com/jezweb/office-town-plugin` — new repo
-- `plugin.json` with metadata
-- `skills/` — one skill per role (curate.md, extract.md, build.md, scan.md, dispatch.md)
+- `.plugin/plugin.json` manifest with `name: office-town`, `version`, `description`, `author: Jezweb`, `license: MIT`, `mcpServers` references, component path declarations
+- `agents/` — one markdown file per role (boss, librarian, worker, scout — extended by future packs)
+- `skills/<name>/SKILL.md` — per-role techniques (curate, extract, build, scan, dispatch)
+- `commands/` — slash-command recipes (3-5 starter playbooks: weekly news sweep, knowledge graduation, project onboarding)
 - `hooks/hooks.json` — SessionStart (load briefing + recent journal + open tasks), SessionEnd (write journal entry)
-- `recipes/` — 3-5 starter playbooks (weekly news sweep, knowledge graduation, project onboarding)
-- Documentation: how to install, what comes with it
+- `rules/` — Office Town town-wide standing orders
+- README explaining what's in the plugin and how to install
 - Install command works: `goose plugin install jezweb/office-town-plugin`
 
 **Verification:** Fresh Goose install + `goose plugin install` puts the user immediately at "ready to use a town." No manual file copying.

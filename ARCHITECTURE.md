@@ -333,6 +333,33 @@ Agents learn the pattern quickly: search to triage, read to expand. Role pack st
 - `goosed` on Cloudflare — not feasible (Rust binary, persistent TCP, cert pinning). Goose runs on the user's Mac.
 - **Hosted memory services** (Engram, Lumetra, etc.) — these are useful for other workflows but don't fit Office Town's "your data, your infrastructure" positioning. We integrate with Goose's built-in Memory + our own wiki MCP backed by the user's R2 bucket.
 
+## Open Plugin Spec — packaging and distribution
+
+Office Town's plugin (the bundled roles + skills + recipes + hooks + MCP server references) is packaged following the **[Open Plugin Spec v1.0.0](https://github.com/vercel-labs/open-plugin-spec)**, which Goose committed to adopting in their May 2026 roadmap (https://github.com/aaif-goose/goose/discussions/9173).
+
+**Why this matters:**
+
+1. **Cross-host portable.** A plugin authored against the Open Plugin Spec drops into any conformant host — Goose today, potentially Claude Code or other agents tomorrow. Our role packs become tool-neutral.
+2. **Standardised manifest** — `.plugin/plugin.json` declares everything. No bespoke config format.
+3. **Component types map cleanly to what we already have:**
+   - Our **role definitions** → `agents/` directory (markdown files)
+   - Our **recipes/playbooks** → `commands/` directory
+   - Our **skills (per-role techniques)** → `skills/<name>/SKILL.md`
+   - Our **hooks (SessionStart, SessionEnd)** → `hooks/hooks.json`
+   - Our **MCP servers** (wiki, share, cron, etc.) → `mcpServers` in the manifest (referencing user's deployed Cloudflare Worker URLs)
+4. **Namespacing** — `office-town:librarian`, `mcp__plugin_office-town_wiki__search` — no collisions with other plugins users have installed.
+5. **`${PLUGIN_ROOT}` substitution** in subprocess configs means our plugin can reference its own files cleanly.
+
+The full plugin manifest design is documented at `docs/PLUGIN-MANIFEST.md`.
+
+## ACP+ alignment
+
+Goose has committed to **ACP+ (Agent Client Protocol over streamable HTTP/WebSocket)** as the canonical protocol for clients talking to the main harness (May 2026 roadmap). Our wiki MCP and all extensions use streamable HTTP, which matches the accepted [ACP transport RFD](https://github.com/agentclientprotocol/agent-client-protocol/blob/main/docs/rfds/streamable-http-websocket-transport.mdx). No spec drift risk — Office Town Cloud's MCP layer is aligned with where Goose is going.
+
+## Desktop Refresh (`ui/goose2`)
+
+Goose is shipping a refreshed desktop UI in `ui/goose2`. When we build MCP Apps for Office Town (town map, kanban board, etc., in M6), we design and test against goose2 — not the legacy UI. The current desktop will be deprecated as goose2 stabilises.
+
 ## Integration with Goose's `Source` system
 
 Goose is consolidating around a `Source` system (PRs #8739 + #9084, both merged). Projects, agents, and skills are now markdown files with YAML frontmatter, backend-injected into the system prompt once per session, cacheable. Office Town integrates with this system rather than running parallel to it.
