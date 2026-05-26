@@ -99,36 +99,62 @@ Round out the v1 cloud features.
 - Each MCP has its own streamable-HTTP endpoint
 - One-click "Deploy to Cloudflare" button configured
 
+**Cron execution model (decided):** v1 uses *poll model* — the user's Goose Desktop polls our Worker for due jobs and runs them via Headless Goose locally. Pros: zero daemon dependency, simpler install. Cons: routines only fire while desktop is open. v1.1 adds optional *remote `goosed` mode* for power users with always-on Mac minis.
+
 **Verification:** End-to-end test:
 1. Open dashboard, log in
 2. See town map with current activity
 3. Click into a building, see its tasks + recent journal entries
 4. Open Goose, ask the librarian to file a finding — appears in dashboard within 30s
-5. Schedule a routine via `cron.schedule`, watch it fire on schedule
+5. Schedule a routine via `cron.schedule`, watch it fire on schedule (with Goose Desktop open)
 6. Publish a markdown page, visit the public URL
 
 **Effort:** ~10-12 days of focused sessions.
 
-### M5 — v1.0 public release (3-5 days)
+### M5 — v1.0 public release (1 week)
 
-Polish, document, market.
+Polish, document, market. **Now includes Custom Distribution** (white-labelled Goose Desktop).
 
 **Deliverables:**
 - All three repos flipped public:
   - `github.com/jezweb/office-town`
   - `github.com/jezweb/office-town-cloud`
   - `github.com/jezweb/office-town-plugin`
-- Landing page (likely `office-town.dev` or `town.jezweb.au`) — short, opinionated, "Deploy to Cloudflare" button
+- **`github.com/jezweb/office-town-desktop`** — Custom Distribution build of Goose with:
+  - App rebranded (icon, name, accent colour)
+  - Our MCPs bundled via `init-config.yaml`
+  - Default recipes pre-loaded
+  - Default provider/model config (Opus planner + Sonnet executor)
+  - Default system prompt extension
+  - Built via `goose build --custom-distribution`
+  - Code-signed + notarised .app for macOS distribution (requires Apple Developer account)
+- Landing page at `officetown.au` — short, opinionated, three buttons:
+  - "Deploy to Cloudflare" (the backend)
+  - "Download Office Town Desktop" (the app)
+  - "Use vanilla Goose" (for users who want full control)
 - README polished on each repo
-- A 90-second demo video showing the install + first delegation
+- A 90-second demo video: download .app → "Deploy to Cloudflare" → first delegation
 - Blog post on jezweb.com explaining the why and the how
-- HN post (lurk-then-post strategy: post when there's something genuinely demo-able)
+- HN post once there's something genuinely demo-able
 - Goose Discord post in #show-and-tell
 - Office Town pages added to the Goose docs (one MCP page per extension via PR)
 
-**Verification:** A stranger can follow the README + click the deploy button + have a working town within 30 minutes.
+**Install UX comparison (the win from Custom Distribution):**
 
-**Effort:** ~3-5 days. Mostly writing + video editing.
+| Without Custom Distribution | With Custom Distribution |
+|---|---|
+| 1. Install Goose | 1. Download Office Town Desktop |
+| 2. `goose plugin install jezweb/office-town-plugin` | 2. Open it; sign in with Google |
+| 3. Click "Deploy to Cloudflare" | 3. Click "Deploy to Cloudflare" |
+| 4. Open Goose Settings → Extensions | 4. Paste bearer token in setup screen |
+| 5. Add streamable-http extension × 6 (wiki, files, publish, kanban, cron, search) | (done) |
+| 6. Paste 6 different URLs + bearer tokens | |
+| 7. Configure providers | |
+| 8. Restart Goose | |
+
+**Effort:** ~7-10 days (includes Custom Distribution build setup + Apple Developer account + notarisation flow). The Custom Distribution itself is half a day; the rest is one-time setup that pays back forever.
+
+**Verification:** A stranger downloads the .app + clicks the deploy button + has a working town within 15 minutes (versus 60+ minutes without Custom Distribution).
 
 ### M6 — Cloud v1.1: The killer Cloudflare extensions (3-4 weeks)
 
@@ -153,13 +179,27 @@ Distribution maturity.
 
 **Deliverables:**
 - `github.com/jezweb/office-town-pack-business` published (5 roles: estimator, project-manager, product-manager, marketer, writer)
-- `github.com/jezweb/office-town-pack-creative` published (4 roles: designer, copywriter, video-editor, web-designer)
+- `github.com/jezweb/office-town-pack-creative` published (4 roles: designer, copywriter, video-editor, web-designer) — **includes Remotion-based video creation recipe** for video-editor role
 - `github.com/jezweb/office-town-pack-technical` (4 roles: wordpress-specialist, hostmaster, devops, code-reviewer)
 - `github.com/jezweb/office-town-pack-comms` (3 roles: helpdesk, social-poster, newsletter-editor)
 - Each pack: roles + skills + recipes + briefings + README
 - Update Office Town docs with the pack catalogue
-- v1.1 release announcement focused on the killer trio (voice + browser + email)
+- v1.1 release announcement focused on the killer trio (voice + browser + email) plus the creative bonus (agent-generated videos via Remotion)
 - Updated demo video
+
+**Remotion recipe (creative pack):**
+
+The video-editor role ships with `recipes/make-video.yaml` that wraps the Remotion Summon skill. Sample use:
+
+```
+@video-editor make a 30-second client onboarding intro for example-corp
+  with kinetic typography, brand colours from business/voice.md,
+  music from assets/onboarding-music.mp3
+```
+
+Generates a React-based Remotion composition, renders to MP4 (~30s, 30fps, 1080p), saves to `~/Documents/{town}/output/videos/` and optionally publishes via the publish MCP.
+
+This is a v1.1 demo-able novelty: "yes, your agents can make videos."
 
 **Effort:** ~5-7 days. Roles are mostly content; packaging is fast once we've done it once.
 

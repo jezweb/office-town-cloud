@@ -33,9 +33,22 @@ Verification: `pnpm deploy` produces a deployed Worker; `curl /health` returns 2
 
 ## Phase 2 — Wiki extension (substrate Worker core)
 
-**Effort:** 2 days
+**Effort:** 2-3 days (includes MCP Sampling spike)
 
 The wiki MCP is the central differentiator. Get this working before anything else.
+
+### Sub-phase 2.0 — MCP Sampling spike (half-day, do first)
+
+Before writing the wiki CRUD, validate that MCP Sampling works for our classification use case. **This determines whether our cost model is $2/month (sampling) or $15/month (own LLM calls).**
+
+- Set up a minimal `packages/mcp-wiki-spike/` server
+- Implement one tool that does an MCP Sampling call to classify content
+- Test via Goose CLI with a real LLM provider
+- Verify: the host LLM responds, latency is acceptable (<2s), token costs land on the user's bill, not ours
+
+If passes: wiki MCP uses sampling for classification, synthesis, and any "is this safe?" gating. If fails: fall back to Workers AI gpt-oss-20b as the cost-side classifier.
+
+### Sub-phase 2.1 — Wiki CRUD + FTS (1.5-2 days)
 
 Deliverables:
 - `packages/core/src/server/modules/wiki/` with:
@@ -45,18 +58,18 @@ Deliverables:
   - Frontmatter parser (js-yaml or similar)
   - INDEX.md regenerator (worker-managed)
 - `packages/mcp-wiki/` — streamable-HTTP MCP adapter exposing:
-  - `wiki.create` — write entry
-  - `wiki.read` — fetch entry
+  - `wiki.create` — write entry (with optional sampling-based type classification)
+  - `wiki.read` — fetch entry (full body)
   - `wiki.update` — modify entry
   - `wiki.delete` — remove entry (with archive)
-  - `wiki.search` — FTS query
+  - `wiki.search` — FTS query returning **triage shapes** (frontmatter + 300-char excerpt + signed URL); `expanded: true` for full bodies
   - `wiki.list_collections` — discover schema
   - `wiki.register_collection` — add a new collection deliberately
 - R2 binding + event notifications wired to a Queue
 - Workflow consumer: read R2 → parse → upsert D1 FTS
 - Tests for each tool
 
-Verification: A test agent (Goose CLI in headless mode) calls wiki.create with a contact, then wiki.search finds it. INDEX.md regenerates correctly.
+Verification: A test agent (Goose CLI in headless mode) calls wiki.create with a contact (no category specified → sampling classifies → librarian collection), then wiki.search finds it (returns triage shape), then wiki.read(expanded=true) returns full body. INDEX.md regenerates correctly. Smart Context Management doesn't compact away the search results.
 
 ## Phase 3 — Goose integration test
 

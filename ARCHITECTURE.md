@@ -272,18 +272,56 @@ If the user runs Goose on multiple machines:
 | D1 storage + ops | <500 MB, ~50k queries | $0 (free tier) |
 | Vectorize | 20-50M stored dims | ~$0.01-0.02 |
 | Workers AI embeddings | ~6M tokens/month | ~$1.20 |
-| Workers AI gpt-oss-20b (ingest extraction) | ~45M tokens/month | ~$10.50 |
+| ~~Workers AI gpt-oss-20b (ingest extraction)~~ | ~~~45M tokens/month~~ | ~~$10.50~~ — *now via MCP Sampling (host LLM pays)* |
 | Worker requests | <100k/month | $0 (free tier) |
 | Workflows | <10k invocations | $0 (free tier) |
-| **Total** | | **~$12-15/month** |
+| **Total (Office Town's cost)** | | **~$1-2/month** |
 
-Ingest extraction is the cost driver. If a deployment uses rule-based parsing instead of LLM extraction, total drops to ~$2/month.
+**MCP Sampling shift:** the original cost driver (ingest extraction LLM) is moved to MCP Sampling. The user's Goose LLM does the classification — they're paying for it anyway. Office Town adds *no per-user LLM cost*. This is the product's positioning: "$2/month infrastructure; your model, your bill."
+
+For the user's LLM bill, expect:
+- ~$0.50-2/month additional from Office Town extraction sampling (small classification calls)
+- The bulk of their LLM cost is their normal Goose usage; we add a thin layer
+
+## Context-aware MCP response shapes
+
+Smart Context Management in Goose auto-summarises sessions at 80% of token capacity. A wiki recall returning 25KB of markdown will get compacted into a 200-token summary — the agent then makes decisions on the summary, not the source content.
+
+**Mitigation: triage shapes by default.** Every MCP that can return substantial content returns a *triage shape* unless explicitly asked for the full body:
+
+```typescript
+// Default response from wiki.search
+{
+  results: [
+    {
+      collection: "contacts",
+      slug: "jane-doe",
+      frontmatter: { ... },
+      excerpt: "...first 300 chars of body...",
+      relevance: 0.87,
+      full_content_url: "/api/wiki/contacts/jane-doe?signed=..."
+    },
+    // ... more hits
+  ],
+  count: 12
+}
+
+// Explicit full-body retrieval
+wiki.read(collection: "contacts", slug: "jane-doe", expanded: true)
+// Returns full frontmatter + full body
+```
+
+**Applies to:** wiki.search, wiki.list, files.list, search.query, kanban tools that return many cards.
+
+**Doesn't apply to:** wiki.read (single entity, expanded by default), single-entity tools.
+
+Agents learn the pattern quickly: search to triage, read to expand. Role pack standing orders should reinforce this.
 
 ## Open questions (deferred)
 
 1. **AI Search vs DIY** — Cloudflare AI Search (announced April 2026, free in beta) does most of what our memory MCP does. Plan: ship DIY first behind an MCP abstraction, evaluate AI Search at 90 days, swap if it wins on quality + cost.
 2. **Per-deployment data sync across machines** — single-tenant assumed v1. Multi-machine via goannad-style daemon is optional.
-3. **Custom Distribution** (white-labelled Goose .app) — supported by Goose; defer until product matures.
+3. ~~**Custom Distribution**~~ — **promoted to v1**: ships as "Office Town Desktop" white-labelled Goose .app with our MCPs pre-wired. Eliminates the manual-6-MCP-config UX disaster.
 
 ## What we deliberately don't build
 
@@ -292,3 +330,19 @@ Ingest extraction is the cost driver. If a deployment uses rule-based parsing in
 - Per-role memory MCP (Cloudflare-style 4-category) — use Goose's built-in Memory; we add the wiki layer
 - A custom auth provider — better-auth + Google OAuth
 - A bespoke UI framework — Goose's MCP Apps spec for in-chat UI; standard React + shadcn for the web dashboard
+- `goosed` on Cloudflare — not feasible (Rust binary, persistent TCP, cert pinning). Goose runs on the user's Mac.
+
+## The Goose-runs-locally model
+
+Office Town's architectural foundation: **Goose runs on the user's machine; our Workers serve MCPs over streamable-HTTP**. This is not a limitation we work around — it's the right shape for the product.
+
+Why this matters:
+- Our cost model only works because we don't run the agent loop
+- The user's LLM bill is paid by the user, not us (positioning: "$2/month, bring your own LLM")
+- Single-user, single-tenant fits "Office Town per Cloudflare account"
+- Custom Distribution (white-labelled Goose .app) is the install flow
+
+What this is NOT:
+- We are not building a server-side autonomous agent SaaS
+- Users who want 24/7 always-on agents need to either keep their Mac open, run a Mac mini with Goose Desktop, or set up remote `goosed` themselves
+- Cron routines fire via Headless Goose on the user's machine — if their machine is asleep, the routine waits
