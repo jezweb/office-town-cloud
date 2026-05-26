@@ -333,6 +333,46 @@ Agents learn the pattern quickly: search to triage, read to expand. Role pack st
 - `goosed` on Cloudflare — not feasible (Rust binary, persistent TCP, cert pinning). Goose runs on the user's Mac.
 - **Hosted memory services** (Engram, Lumetra, etc.) — these are useful for other workflows but don't fit Office Town's "your data, your infrastructure" positioning. We integrate with Goose's built-in Memory + our own wiki MCP backed by the user's R2 bucket.
 
+## Integration with Goose's `Source` system
+
+Goose is consolidating around a `Source` system (PRs #8739 + #9084, both merged). Projects, agents, and skills are now markdown files with YAML frontmatter, backend-injected into the system prompt once per session, cacheable. Office Town integrates with this system rather than running parallel to it.
+
+| Office Town concept | Goose Source type | Where it lives |
+|---|---|---|
+| Building | `SourceType::Project` | Markdown file with frontmatter — referenced by sessions; instructions injected on session start |
+| Role (agent definition) | `SourceType::Agent` | Markdown file — Goose's desktop UI shows a switcher; future features light up automatically |
+| Static skill / playbook | `SourceType::Skill` | Same markdown format |
+| **Dynamic state (decisions, journal, findings, etc.)** | **Office Town wiki (this MCP)** | R2 + D1 + Vectorize — dynamic, queryable, on-demand |
+
+**The split:** Sources provide the static spec ("this is the librarian, here's their role"). The wiki provides the dynamic state ("here's what the librarian has filed today, last week, ever"). The two complement each other.
+
+**Implication for the wiki MCP:** at session start, the wiki extension's static preamble references the active project ID (the building) and pulls that building's pinned slugs first. Everything else is on-demand.
+
+## The "extension instructions read once at handshake" constraint
+
+Goose's MCP integration reads each extension's `instructions` field once at the initial MCP handshake (per `extension_manager.rs:1077` + `mcp_client.rs:88-92`). This string becomes part of every session's system prompt. **It cannot be updated mid-session** — a wiki write during a session does not update the preamble until the next session.
+
+Consequences for our wiki MCP design:
+
+1. **The static preamble must be a fixed ≤2KB summary**, never a content dump. Goose Memory's failure mode (all globals injected into every system prompt forever) is the anti-pattern we must avoid.
+2. **All current content retrieval happens through tool calls**, not the preamble.
+3. **The preamble is recomputed at handshake** (every session start), so it can include up-to-date counts and pinned slug references — but never bodies.
+
+The preamble template:
+
+```
+# Office Town Wiki
+Town: <name>
+You have access to wiki tools. Use wiki.search() for facts, wiki.list() to browse, wiki.get(slug) for full entries.
+
+Active building (project): <building-slug>
+Pinned for this building: <slug1>, <slug2>, <slug3>
+
+Counts (across town): 42 decisions, 18 contacts, 7 projects, 3 active findings.
+```
+
+Static; ~500 bytes; tells the LLM what's available without dumping any content.
+
 ## Memory architecture — one system, not two
 
 Office Town deployments use **the wiki as their only memory layer**. Goose's built-in Memory extension is **disabled** by default in Office Town deployments. Reason: one memory system, one dashboard, one backup story, one search engine, no confusion about where preferences vs facts vs team knowledge live.

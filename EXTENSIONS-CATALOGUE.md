@@ -8,22 +8,46 @@ All extensions are streamable-HTTP MCP servers hosted in the user's Cloudflare a
 
 ### `office-town-wiki`
 
-**Purpose:** team knowledge layer — entity-as-folder collections with FTS5 + Vectorize hybrid search.
+**Purpose:** team knowledge layer — entity-as-folder collections with FTS5 + Vectorize hybrid search, designed to be measurably better than Goose's built-in Memory extension.
 
-**Tools:**
-- `wiki.create(collection, slug, body, frontmatter?)` — create entry
-- `wiki.read(collection, slug)` — fetch full entry
-- `wiki.update(collection, slug, patch)` — modify
-- `wiki.delete(collection, slug)` — soft-delete with archive
-- `wiki.search(query, collections?, filters?)` — FTS + vector hybrid
-- `wiki.list(collection)` — list entries in a collection
-- `wiki.list_collections()` — discover schema
-- `wiki.register_collection(name, description, convention, purpose)` — add a collection deliberately
-- `wiki.export(format='markdown' | 'json')` — bulk export
+**Why we build our own:** Goose's built-in Memory has confirmed weaknesses (audited from source): all globals baked into system prompt at server start, no semantic search, tag-string-as-HashMap-key broken, substring-match deletion, no audit trail, no supersession, no concurrency safety, no path traversal protection. Office Town's wiki fixes all of these.
 
-**Bindings:** R2, D1, Vectorize, Workers AI (embeddings).
+**Tool surface (gateway pattern, one tool with actions):**
 
-**Effort:** 2 days.
+```
+wiki (action: list | get | search | write | supersede | link | archive | history)
+  list      { kind?, tag?, status?, limit?, cursor? }
+  get       { slug }
+  search    { query, top_k?, kinds?, synthesize?, filters? }
+  write     { slug?, kind, frontmatter, body, supersedes?, why }
+  supersede { old_slug, new_frontmatter, new_body, why }
+  link      { from_slug, to_slug, relation }   // typed graph edges
+  archive   { slug, why }
+  history   { slug, limit? }
+```
+
+Per `~/.claude/rules/mcp-gateway-pattern.md` — gateway with action verb beats many separate tools (smaller context cost, clearer LLM intent).
+
+**Critical design contracts:**
+
+1. **List/search endpoints NEVER return bodies.** Triage shape only: `{slug, title, tags, ts, snippet (≤300 chars), summary, byte_count}`. Bodies fetched separately via `wiki.get(slug)`. Prevents context bloat from Smart Context Management auto-summarisation.
+2. **Static preamble at MCP handshake is ≤2KB, count-only**. Town name + counts + pinned slugs. NEVER content dumps (the Goose Memory failure mode).
+3. **Required `why:` field on every write/supersede/archive.** Forces the LLM to articulate intent; logged to audit trail.
+4. **Stable UUIDs per entry** returned on write. Identity-based operations, not substring-match (Memory's footgun).
+5. **Atomic supersession via D1 transaction.** `wiki.supersede(old, new)` writes new entry + updates old's `status` + `superseded_by` + logs audit row, all in one transaction.
+6. **Search filters to `status: active` by default**; `include_superseded: true` for history queries.
+7. **MCP Sampling for synthesis.** `wiki.search(synthesize: true)` calls back to host LLM for synthesised answer with citations. Costs go to user's LLM bill (per architecture decision); we never make our own LLM calls.
+8. **Audit table in D1** logs every write: `{audit_id, ts, action, slug, agent_slug, session_id, prev_hash, new_hash, why}`. Queryable via `wiki.history(slug)`.
+
+**Bindings:** R2 (canonical), D1 (FTS5 + index + audit), Vectorize (semantic), Workers AI (embeddings + via sampling).
+
+**Goose integration:**
+- Registers as `SourceType::Project` consumer (uses active project ID as building anchor)
+- The static preamble references the active building when set
+- Plays nicely with PR #8995 chain-card UX (tool action names read well in summaries)
+- Designed for `GOOSE_DISABLE_TOOL_CALL_SUMMARY=true` (default in Custom Distribution)
+
+**Effort:** 2-3 days including MCP Sampling spike.
 
 ### `office-town-share` (merged files + publish)
 
