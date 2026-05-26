@@ -333,6 +333,24 @@ Agents learn the pattern quickly: search to triage, read to expand. Role pack st
 - `goosed` on Cloudflare — not feasible (Rust binary, persistent TCP, cert pinning). Goose runs on the user's Mac.
 - **Hosted memory services** (Engram, Lumetra, etc.) — these are useful for other workflows but don't fit Office Town's "your data, your infrastructure" positioning. We integrate with Goose's built-in Memory + our own wiki MCP backed by the user's R2 bucket.
 
+## Memory architecture — one system, not two
+
+Office Town deployments use **the wiki as their only memory layer**. Goose's built-in Memory extension is **disabled** by default in Office Town deployments. Reason: one memory system, one dashboard, one backup story, one search engine, no confusion about where preferences vs facts vs team knowledge live.
+
+| What | Where it lives in Office Town |
+|---|---|
+| Personal preferences ("user prefers Sonnet") | `wiki/owner/preferences.md` |
+| Role behaviour | The role's `.md` file (e.g., `~/.agents/agents/librarian.md`) |
+| Team knowledge (orgs, contacts, projects) | The named wiki collections |
+| Project memory | `wiki/projects/<slug>/` and per-building findings/journal |
+| Cross-session facts | Appropriate collection per fact type |
+
+**Trade-off:** slightly more latency on session start (wiki query vs local file read), and a network dependency for recall. We accept these for the architectural clarity.
+
+**For users not yet deploying Office Town Cloud:** pure Goose with its built-in Memory remains a viable fallback — same vocabulary, just no cloud-backed wiki. Office Town Cloud is the recommended path; built-in Memory is the lite version.
+
+**The Custom Distribution we ship in M5** (Office Town Desktop) disables Goose's built-in Memory by default — users don't need to remember to do it.
+
 ## Memory visibility — your data, your infrastructure
 
 A natural worry: "if the wiki lives in Cloudflare, can I see my data? Am I locked in?"

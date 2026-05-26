@@ -25,38 +25,34 @@ All extensions are streamable-HTTP MCP servers hosted in the user's Cloudflare a
 
 **Effort:** 2 days.
 
-### `office-town-files`
+### `office-town-share` (merged files + publish)
 
-**Purpose:** file storage + content extraction + signed sharing.
-
-**Tools:**
-- `files.upload(content, name?, mime?)` — store in R2, return key
-- `files.download(key)` — retrieve
-- `files.list(prefix?)` — list files
-- `files.share(key, ttl?)` — generate signed URL
-- `files.extract(key)` — content extraction (markdown/text from PDF/DOCX/audio/video — mediabox-shaped)
-- `files.delete(key)`
-
-**Bindings:** R2, Workers AI, Workers Media Transformations.
-
-**Effort:** 1 day.
-
-### `office-town-publish`
-
-**Purpose:** markdown → public web page with permanent URL.
+**Purpose:** dead-simple sharing for agents. One tool call to share anything — screenshots, images, docs, HTML, markdown, PDFs. Mode parameter chooses between temporary signed URL and permanent public page.
 
 **Tools:**
-- `publish.page(slug, markdown, title?, theme?)` — create published page
-- `publish.list()` — list published pages
-- `publish.read(slug)` — get current published version
-- `publish.update(slug, markdown)` — modify
-- `publish.revoke(slug)` — unpublish
+- `share(content, mode?, filename?, title?, ttl_days?)` — share anything; returns URL
+  - `mode: 'temp'` (default) — signed R2 URL, expires after `ttl_days` (default 7)
+  - `mode: 'public'` — permanent published page at `<deployment>/p/<slug>`
+- `list_shares(mode?, since?, limit?)` — recent shares
+- `revoke(url_or_id)` — invalidate a temp share or unpublish a page
+- `extract(content_or_url)` — content extraction (markdown/text from PDF/DOCX/audio/video — mediabox-shaped). Useful when agents need to ingest a file
+- `download(url_or_id)` — retrieve (server-side, for chaining)
 
-Pages live at `/p/<slug>` with rendered HTML + simple theming. Distinct from `files.share` (temp URLs for binaries) — publish is for permanent rendered pages.
+**Behaviour by content type:**
 
-**Bindings:** R2, Workers Markdown rendering (or built-in).
+| Input | mode='temp' | mode='public' |
+|---|---|---|
+| Image (PNG/JPG/WebP) | Signed R2 URL with TTL | Hosted at `/p/<slug>.png` |
+| Markdown | Signed R2 URL to raw .md | Rendered to HTML at `/p/<slug>` with theming |
+| HTML | Signed R2 URL | Hosted at `/p/<slug>` with sandboxed iframe |
+| PDF | Signed R2 URL | Hosted at `/p/<slug>.pdf` |
+| Any binary | Signed R2 URL | Public R2 URL at `/p/<slug>.<ext>` |
 
-**Effort:** half-day.
+**Agent ergonomics:** one call from any role to share anything. No splitting "is this a file or a publication?" — the mode parameter handles it.
+
+**Bindings:** R2, Workers AI (for extract), Workers Media Transformations.
+
+**Effort:** 1.5 days (combined effort of the previous files + publish extensions).
 
 ### `office-town-cron`
 

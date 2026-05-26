@@ -98,18 +98,26 @@ Deliverables:
 
 Verification: search returns semantically-similar entries even when keyword match is poor.
 
-## Phase 5 — Files + Publish extensions
+## Phase 5 — Share extension (unified files + publish)
 
-**Effort:** 1 day
+**Effort:** 1.5 days
 
-Files: R2 upload, content extraction (wraps mediabox or implements similar), signed share URLs.
-Publish: markdown → public web page with a permanent URL.
+One extension, one tool, handles all agent-shareable artefacts. Mode parameter chooses temp signed URL vs permanent public page. Content type drives rendering (markdown → HTML, image → image, PDF → PDF, etc.).
 
 Deliverables:
-- `packages/mcp-files/` — `files.upload`, `files.list`, `files.share` (with TTL), `files.extract` (markdown/text from any file)
-- `packages/mcp-publish/` — `publish.page` (markdown → HTML at `/p/<slug>`), `publish.list`, `publish.revoke`
+- `packages/mcp-share/` exposing:
+  - `share(content, mode='temp'|'public', filename?, title?, ttl_days?)` — share anything
+  - `list_shares(mode?, since?, limit?)` — recent shares
+  - `revoke(url_or_id)` — invalidate temp / unpublish permanent
+  - `extract(content_or_url)` — content extraction (markdown/text from any file — mediabox-shaped)
+  - `download(url_or_id)` — server-side retrieval
+- Routes: `/p/<slug>` for public pages, `/s/<token>` for signed temporary shares
+- Theming for HTML renders (markdown → styled HTML page)
+- Image transformation via Cloudflare Images binding (optional)
 
-Verification: agents can upload files, get share URLs, publish a markdown doc and visit it in a browser.
+**Why merged from files + publish:** agent ergonomics. One tool call to share anything. Mode parameter, not separate extensions.
+
+Verification: agent generates a screenshot, calls `share(content, mode='temp')`, gets URL back, URL works for 7 days. Agent writes a markdown doc, calls `share(content, mode='public', title='Q3 Report')`, URL is permanent at `/p/<slug>`.
 
 ## Phase 6 — Kanban view + Town map dashboard (MCP Apps + HTML)
 
