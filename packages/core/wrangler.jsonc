@@ -1,0 +1,46 @@
+{
+	"$schema": "https://json.schemastore.org/wrangler.json",
+	"name": "office-town-core",
+	"main": "src/index.ts",
+	"compatibility_date": "2024-12-30",
+	"compatibility_flags": ["nodejs_compat"],
+	"workers_dev": true,
+	"observability": {
+		"enabled": true,
+		"logs": { "invocation_logs": true, "head_sampling_rate": 1 }
+	},
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "office-town-d1",
+			"database_id": "29609657-4b16-47d7-bff2-fb2b41293c13",
+			"migrations_dir": "drizzle"
+		}
+	],
+	"r2_buckets": [
+		{
+			"binding": "WIKI",
+			"bucket_name": "office-town-wiki",
+			"preview_bucket_name": "office-town-wiki-preview"
+		},
+		{
+			"binding": "FILES",
+			"bucket_name": "office-town-files",
+			"preview_bucket_name": "office-town-files-preview"
+		}
+	],
+	"vectorize": [
+		{ "binding": "VECTOR_INDEX", "index_name": "office-town-vec" }
+	],
+	"ai": { "binding": "AI" },
+	"queues": {
+		"producers": [{ "binding": "INDEX_QUEUE", "queue": "office-town-index" }],
+		"consumers": [{ "queue": "office-town-index", "max_batch_size": 10, "max_batch_timeout": 5 }]
+	},
+	"vars": {
+		"ENVIRONMENT": "production",
+		"ALLOWED_AUTH_DOMAINS": "jezweb.net,jezweb.com.au"
+	},
+	"routes": [],
+	"placement": { "mode": "smart" }
+}

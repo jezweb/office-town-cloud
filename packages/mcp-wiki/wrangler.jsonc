@@ -1,0 +1,19 @@
+{
+	"$schema": "https://json.schemastore.org/wrangler.json",
+	"name": "office-town-mcp-wiki",
+	"main": "src/index.ts",
+	"compatibility_date": "2024-12-30",
+	"compatibility_flags": ["nodejs_compat"],
+	"workers_dev": true,
+	"observability": {
+		"enabled": true,
+		"logs": { "invocation_logs": true, "head_sampling_rate": 1 }
+	},
+	"vars": {
+		"CORE_BASE_URL": "https://office-town-core.jezweb.workers.dev",
+		"ENVIRONMENT": "production"
+	},
+	"services": [
+		{ "binding": "CORE", "service": "office-town-core" }
+	]
+}
