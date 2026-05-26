@@ -386,9 +386,11 @@ For external collaborators (once public):
 - ✅ M2 — Office Town as a plugin (shipped 2026-05-27 at github.com/jezweb/office-town-plugin)
 - ✅ M3 — Cloud v1: Wiki backbone (deployed 2026-05-27)
 - ✅ M4 — Cloud v1: Files + Publish + Kanban + Cron + Dashboard (deployed 2026-05-27)
-- ⏸ M5 — v1.0 public release
+- 🔄 M5 — v1.0 public release (artefacts ready: blog/HN/Discord drafts, landing page deployed at officetown-landing.jezweb.workers.dev, init-config.yaml for Custom Distribution; .app build + Apple notarisation still requires Apple Developer account setup)
 - 🔄 M6 — Cloud v1.1: Killer extensions (browser + devops + email deployed 2026-05-27; voice/sandbox/search design docs at docs/M6-DESIGN-VOICE-SANDBOX-SEARCH.md)
-- ✅ M7 — Role packs scaffolded (7 packs: startup, design, hosting, wordpress, business, cloudflare, comms — shipped 2026-05-27)
+- ✅ M6.6 — Knowledge starter pack (17 portable concepts + 35 coding gotchas extracted from goanna audit; pack at github.com/jezweb/office-town-pack-knowledge)
+- ✅ M7 — 8 role packs shipped (startup, design, hosting, wordpress, business, cloudflare, comms, knowledge)
+- 🔄 Dogfood: startup-town simulation 2026-05-27 surfaced 2 P1 bugs (publish trailing slash, missing tasks/ collection) both fixed; killer feature identified (commitments tracking) and shipped in pack-startup
 - ⏸ M8 — Sustained release
 
 ## One-sentence summary
