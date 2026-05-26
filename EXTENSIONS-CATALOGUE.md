@@ -212,6 +212,30 @@ Inbound emails fire tool calls automatically; the role can act on them.
 
 ---
 
+## Role + capability packs — domain-focused bundles
+
+Office Town distributes packs by **work domain**, not by abstract category. Each pack combines roles + wiki additions + skills + recipes for a specific kind of work.
+
+| Pack | Roles added | Wiki additions | Skills | Audience |
+|---|---|---|---|---|
+| `office-town-pack-design` | designer, copywriter, video-editor | brand assets templates; references design.md per deployment | brand-mockup, typography, layout-review, remotion-video | Creative shops, agencies |
+| `office-town-pack-hosting` | hostmaster, devops | `properties/{websites,apps,hosting}/` collections | dns-audit, ssl-cert-renew, server-health | Hosting providers, ops teams |
+| `office-town-pack-wordpress` | wordpress-specialist | extends `properties/websites/` with WP-specific frontmatter | theme-update, plugin-audit, wp-security, wp-content-migration | WordPress shops |
+| `office-town-pack-business` | estimator, project-manager, product-manager, marketer, writer | `quotes/`, expanded `projects/` | proposal-draft, client-onboarding, scope-estimation | Service businesses, consultancies |
+| `office-town-pack-cloudflare` | (helper agents, not core roles) | — | Bundles **official Cloudflare skills** from `github.com/cloudflare/skills` + **official MCP servers** from `github.com/cloudflare/mcp` | Cloudflare-deployed teams (everyone using Office Town Cloud) |
+| `office-town-pack-comms` | helpdesk, social-poster, newsletter-editor | — | inbox-triage, social-draft | High-comms-volume teams |
+
+### `office-town-pack-cloudflare` — special case
+
+This pack doesn't add new roles. It bundles **Cloudflare's own** skills + MCP servers so the user gets one-install setup for managing their Cloudflare account from Goose:
+
+- Cloudflare skills (R2 management, Workers deploy, DNS edits) — from https://github.com/cloudflare/skills
+- Cloudflare MCP servers (Workers, DNS, KV, R2, D1) — from https://github.com/cloudflare/mcp
+
+Because Office Town Cloud runs on Cloudflare, this pack is included **by default** in the Office Town Desktop Custom Distribution. Users can disable it if they're not managing their own CF infrastructure.
+
+This replaces what I'd been calling `office-town-devops` — instead of building our own Cloudflare MCP, we use Cloudflare's official ones plus add our deployment-specific recipes.
+
 ## Composing with Goose built-ins
 
 Office Town deployments also enable Goose's built-in extensions:

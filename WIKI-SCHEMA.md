@@ -21,7 +21,7 @@ The Office Town wiki collections, their conventions, and how the schema evolves 
 | 5 | `projects/` | Bounded work with outcomes | Entity-as-folder + earned sub-folders (`plans/`, `sessions/`, `research/`, `notes/`) | Active → done → archived |
 | 6 | `knowledge/` | Portable patterns graduated from findings | Entity-as-folder (`<topic>/concept.md`) | Persistent + status (active/superseded/deprecated) |
 | 7 | `decisions/` | ADRs — choices made with rationale | `<NNNN-slug>/decision.md` (numbered) | Append-only |
-| 8 | `broadcasts/` | Fleet-wide announcements | Dated stream (`YYYY-MM-DD-<topic>.md`) | Append-only |
+| 8 | ~~`broadcasts/`~~ — **dropped** | ~~Fleet-wide announcements~~ — replaced by per-recipient inbox routing | — | — |
 | 9 | `team/` | Internal staff + agent roster | Mixed (`humans/<slug>.md`, `agents/<slug>.md`) | Persistent |
 | 10 | `templates/` | Page-shape templates for each collection | Flat (one file per entity type) | Stable reference |
 
@@ -64,6 +64,16 @@ These concepts live inside their natural parent rather than at wiki root. Folder
 | products / services | `business/products.md` taxonomy + per-product app records in `properties/apps/` |
 
 The rule: **if a "thing" is a variant of an existing entity type (an org is an org regardless of relationship), use frontmatter; if it's a fundamentally different shape, use a folder.**
+
+## Fleet comms — per-recipient inbox routing, not broadcasts
+
+Office Town's primary fleet-comms pattern is **tailored messages dropped in each recipient's inbox**, not generic broadcasts. When the boss needs to tell the team something, she drops different messages in each role's inbox tailored to that role's responsibilities — worker gets "you'll be doing X next", scout gets "scan for Y next week", librarian gets "file these contacts from yesterday's meeting".
+
+Why: a tailored message is actionable. A broadcast everyone has to interpret is overhead disguised as efficiency. Goanna's fleet already does this; codifying it for Office Town.
+
+Inbox files use the existing dated-stream convention: `<recipient-building>/inbox/YYYY-MM-DD-<from>-<topic>.md`. Frontmatter: `from`, `to`, `priority`, `subject`, `relates_to`. The recipient role processes inbox at session start (via the SessionStart hook — see `docs/HOOKS.md`).
+
+For genuinely fleet-wide announcements (rare): drop the same message in every role's inbox. The repetition is the point — it costs negligible storage, and every role sees it on next session start. A `broadcasts/` collection would just be a dated archive of these, which we can recover from inbox archives if needed.
 
 ## Universal conventions
 

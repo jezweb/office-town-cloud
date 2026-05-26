@@ -128,6 +128,8 @@ Contribute Cloudflare Workers AI as a native provider to upstream Goose, AND shi
 
 **Effort:** ~1 day. PR review timeline upstream is out of our control; the Custom Distribution config doesn't wait on it.
 
+**Status update (2026-05-26):** ✅ Upstream PR opened at https://github.com/aaif-goose/goose/pull/9425. 4 files changed, 432 insertions, 6 unit tests passing, `cargo check -p goose` clean. Awaiting review. Custom Distribution config can proceed in parallel.
+
 ### M5 — v1.0 public release (1 week)
 
 Polish, document, market. **Now includes Custom Distribution** (white-labelled Goose Desktop).
@@ -194,11 +196,13 @@ The differentiators that nobody else has built for Goose.
 
 Distribution maturity.
 
-**Deliverables:**
-- `github.com/jezweb/office-town-pack-business` published (5 roles: estimator, project-manager, product-manager, marketer, writer)
-- `github.com/jezweb/office-town-pack-creative` published (4 roles: designer, copywriter, video-editor, web-designer) — **includes Remotion-based video creation recipe** for video-editor role
-- `github.com/jezweb/office-town-pack-technical` (4 roles: wordpress-specialist, hostmaster, devops, code-reviewer)
-- `github.com/jezweb/office-town-pack-comms` (3 roles: helpdesk, social-poster, newsletter-editor)
+**Deliverables (revised packs — domain-focused):**
+- `github.com/jezweb/office-town-pack-design` (designer, copywriter, video-editor — includes Remotion recipe + brand-mockup, typography, layout-review skills)
+- `github.com/jezweb/office-town-pack-hosting` (hostmaster, devops — adds `properties/{websites,apps,hosting}/` wiki collections, dns-audit, ssl-cert-renew, server-health skills)
+- `github.com/jezweb/office-town-pack-wordpress` (wordpress-specialist — extends `properties/websites/` with WP frontmatter; theme-update, plugin-audit, wp-security skills)
+- `github.com/jezweb/office-town-pack-business` (estimator, project-manager, product-manager, marketer, writer — adds `quotes/` collection)
+- `github.com/jezweb/office-town-pack-cloudflare` (no new roles — bundles **official Cloudflare skills** from `github.com/cloudflare/skills` + **official MCP servers** from `github.com/cloudflare/mcp`; ships by default in Office Town Desktop since OTC runs on CF)
+- `github.com/jezweb/office-town-pack-comms` (helpdesk, social-poster, newsletter-editor)
 - Each pack: roles + skills + recipes + briefings + README
 - Update Office Town docs with the pack catalogue
 - v1.1 release announcement focused on the killer trio (voice + browser + email) plus the creative bonus (agent-generated videos via Remotion)

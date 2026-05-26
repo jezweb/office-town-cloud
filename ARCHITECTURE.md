@@ -398,9 +398,25 @@ The full plugin manifest design is documented at `docs/PLUGIN-MANIFEST.md`.
 
 Goose has committed to **ACP+ (Agent Client Protocol over streamable HTTP/WebSocket)** as the canonical protocol for clients talking to the main harness (May 2026 roadmap). Our wiki MCP and all extensions use streamable HTTP, which matches the accepted [ACP transport RFD](https://github.com/agentclientprotocol/agent-client-protocol/blob/main/docs/rfds/streamable-http-websocket-transport.mdx). No spec drift risk — Office Town Cloud's MCP layer is aligned with where Goose is going.
 
-## Desktop Refresh (`ui/goose2`)
+## Desktop Refresh — paused, refresh path now phased
 
-Goose is shipping a refreshed desktop UI in `ui/goose2`. When we build MCP Apps for Office Town (town map, kanban board, etc., in M6), we design and test against goose2 — not the legacy UI. The current desktop will be deprecated as goose2 stabilises.
+Update (per https://github.com/aaif-goose/goose/discussions/9367): the experimental `ui/goose2` codebase has been **discontinued**. The dual transition (ACP server + UI refresh in one codebase) proved too risky. New plan:
+
+- **Phase A** — migrate `ui/desktop` from `goose-server` to the ACP server. Backend swap, UI unchanged.
+- **Phase B** — refresh the UI separately, after Phase A stabilises.
+
+**Implication for Office Town:** when we build MCP Apps in M6, target current `ui/desktop` (not goose2). The new UI direction will become clearer post-Phase A. The *design intent* shown in the discontinued goose2 (projects as first-class with icon picker, custom instructions, provider override, git worktree isolation) is still committed by the team — Office Town's "building = Goose project" mapping aligns naturally with that intent.
+
+## Cloudflare Secrets Store (v1.1 consideration)
+
+Cloudflare's [Secrets Store](https://developers.cloudflare.com/secrets-store/) centralises secret management across an account. For Office Town's multi-Worker deployment, it could replace per-Worker `wrangler secret put` calls with a single shared store referenced from all Workers.
+
+**Use cases for Office Town:**
+- LLM provider API key shared between substrate Worker + tools Worker + voice Worker
+- Office Town Cloud bearer token shared across all our MCPs in one deployment
+- Per-deployment Cloudflare API token (used by the Cloudflare pack's MCP for devops actions)
+
+**Decision for v1:** stay with per-Worker `wrangler secret put` (simpler, no extra binding). Migrate to Secrets Store in v1.1 if multi-Worker secret sharing becomes painful.
 
 ## Integration with Goose's `Source` system
 
