@@ -1,0 +1,29 @@
+{
+  "name": "office-town-cloud",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Cloudflare-backed backend for Office Town AI agent fleet on Goose",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jezweb/office-town-cloud.git"
+  },
+  "scripts": {
+    "build": "pnpm -r build",
+    "dev": "pnpm -r --parallel dev",
+    "deploy": "pnpm -r deploy",
+    "test": "pnpm -r test",
+    "lint": "biome check .",
+    "format": "biome format --write ."
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
+    "typescript": "^5.6.0",
+    "wrangler": "^3.85.0"
+  },
+  "engines": {
+    "node": ">=20",
+    "pnpm": ">=9"
+  },
+  "packageManager": "pnpm@9.15.0"
+}
