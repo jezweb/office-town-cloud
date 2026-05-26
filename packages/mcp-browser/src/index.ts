@@ -1,6 +1,9 @@
-// office-town-mcp-browser — MCP server wrapping Cloudflare Browser Rendering.
+// office-town-mcp-browser — MCP server wrapping Cloudflare Browser Rendering
+// via @cloudflare/puppeteer. The BROWSER binding exposes a Puppeteer-compatible
+// instance, NOT a REST endpoint — earlier version using bare fetch was wrong.
 
 import { Hono } from 'hono';
+import puppeteer from '@cloudflare/puppeteer';
 
 interface Env {
 	BROWSER: Fetcher;
@@ -26,27 +29,29 @@ interface JsonRpcResult<T = unknown> {
 
 const TOOLS = {
 	'browser.fetch': {
-		description: 'Fetch the rendered HTML of a URL using Cloudflare Browser Rendering. Returns the final DOM after JS execution.',
+		description: 'Fetch the rendered HTML of a URL using headless Chrome.',
 		inputSchema: {
 			type: 'object',
 			properties: {
 				url: { type: 'string' },
-				wait_for_selector: { type: 'string', description: 'Optional CSS selector to wait for before returning' },
-				wait_ms: { type: 'number', description: 'Optional fixed wait in ms after page load' },
+				wait_for_selector: { type: 'string' },
+				wait_ms: { type: 'number' },
+				viewport_width: { type: 'number' },
+				viewport_height: { type: 'number' },
 			},
 			required: ['url'],
 		},
 	},
 	'browser.screenshot': {
-		description: 'Take a screenshot of a URL. Returns base64 PNG. Files via Core MCP for sharing.',
+		description: 'Take a screenshot of a URL. Returns base64 PNG, or saves to FILES bucket if save_to_files is set.',
 		inputSchema: {
 			type: 'object',
 			properties: {
 				url: { type: 'string' },
-				full_page: { type: 'boolean', description: 'Capture full scrollable page (default false)' },
-				viewport_width: { type: 'number', description: 'Viewport width (default 1280)' },
-				viewport_height: { type: 'number', description: 'Viewport height (default 800)' },
-				save_to_files: { type: 'string', description: 'If set, saves screenshot to FILES bucket at this path (instead of returning base64)' },
+				full_page: { type: 'boolean' },
+				viewport_width: { type: 'number' },
+				viewport_height: { type: 'number' },
+				save_to_files: { type: 'string' },
 			},
 			required: ['url'],
 		},
@@ -57,67 +62,73 @@ const TOOLS = {
 			type: 'object',
 			properties: {
 				url: { type: 'string' },
-				selectors: { type: 'object', description: 'Map of field name -> CSS selector' },
+				selectors: { type: 'object' },
 			},
 			required: ['url', 'selectors'],
 		},
 	},
 } as const;
 
-interface BrowserFetchOptions {
-	url: string;
-	html?: boolean;
-	screenshot?: boolean;
-	gotoOptions?: { waitUntil?: 'load' | 'networkidle0' | 'networkidle2'; timeout?: number };
-	viewport?: { width: number; height: number };
-	waitForSelector?: { selector: string; timeout?: number };
+async function withBrowser<T>(env: Env, fn: (page: import('@cloudflare/puppeteer').Page) => Promise<T>): Promise<T> {
+	const browser = await puppeteer.launch(env.BROWSER as never);
+	try {
+		const page = await browser.newPage();
+		return await fn(page);
+	} finally {
+		await browser.close();
+	}
 }
 
-async function callBrowser(env: Env, path: string, body: BrowserFetchOptions): Promise<{ status: number; body: unknown }> {
-	const resp = await env.BROWSER.fetch(`https://browser.internal${path}`, {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify(body),
-	});
-	const text = await resp.text();
-	try {
-		return { status: resp.status, body: text ? JSON.parse(text) : null };
-	} catch {
-		return { status: resp.status, body: text };
+function toBase64(bytes: Uint8Array): string {
+	let binary = '';
+	const chunkSize = 0x8000;
+	for (let i = 0; i < bytes.length; i += chunkSize) {
+		const chunk = bytes.subarray(i, i + chunkSize);
+		binary += String.fromCharCode(...chunk);
 	}
+	return btoa(binary);
 }
 
 async function handleToolCall(env: Env, tool: string, args: Record<string, unknown>): Promise<unknown> {
 	switch (tool) {
 		case 'browser.fetch': {
-			const opts: BrowserFetchOptions = { url: args.url as string, html: true };
-			if (args.wait_for_selector) {
-				opts.waitForSelector = { selector: args.wait_for_selector as string, timeout: 8000 };
-			}
-			if (args.wait_ms) {
-				opts.gotoOptions = { waitUntil: 'networkidle2', timeout: 30000 };
-			}
-			const result = await callBrowser(env, '/content', opts);
-			if (result.status >= 400) throw new Error(JSON.stringify(result.body));
-			return result.body;
+			return withBrowser(env, async (page) => {
+				if (args.viewport_width || args.viewport_height) {
+					await page.setViewport({
+						width: (args.viewport_width as number) ?? 1280,
+						height: (args.viewport_height as number) ?? 800,
+					});
+				}
+				await page.goto(args.url as string, { waitUntil: 'domcontentloaded', timeout: 30_000 });
+				if (args.wait_for_selector) {
+					await page.waitForSelector(args.wait_for_selector as string, { timeout: 8_000 });
+				}
+				if (args.wait_ms) {
+					await new Promise((r) => setTimeout(r, args.wait_ms as number));
+				}
+				const html = await page.content();
+				const title = await page.title();
+				const finalUrl = page.url();
+				return { url: finalUrl, title, html, length: html.length };
+			});
 		}
+
 		case 'browser.screenshot': {
-			const opts: BrowserFetchOptions = {
-				url: args.url as string,
-				screenshot: true,
-				viewport: {
+			return withBrowser(env, async (page) => {
+				await page.setViewport({
 					width: (args.viewport_width as number) ?? 1280,
 					height: (args.viewport_height as number) ?? 800,
-				},
-			};
-			const result = await callBrowser(env, '/screenshot', opts);
-			if (result.status >= 400) throw new Error(JSON.stringify(result.body));
-			// If save_to_files is set, POST the result to the core files endpoint
-			if (args.save_to_files) {
-				const path = args.save_to_files as string;
-				const screenshotData = (result.body as { screenshot?: string }).screenshot;
-				if (screenshotData) {
-					await env.CORE.fetch('https://core.internal/api/files/upload', {
+				});
+				await page.goto(args.url as string, { waitUntil: 'domcontentloaded', timeout: 30_000 });
+				const buffer = (await page.screenshot({
+					fullPage: (args.full_page as boolean) ?? false,
+					type: 'png',
+				})) as Uint8Array;
+
+				if (args.save_to_files) {
+					const path = args.save_to_files as string;
+					const base64 = toBase64(buffer);
+					const resp = await env.CORE.fetch('https://core.internal/api/files/upload', {
 						method: 'POST',
 						headers: {
 							Authorization: `Bearer ${env.MCP_BEARER_TOKEN}`,
@@ -125,33 +136,45 @@ async function handleToolCall(env: Env, tool: string, args: Record<string, unkno
 						},
 						body: JSON.stringify({
 							path,
-							content_base64: screenshotData,
+							content_base64: base64,
 							content_type: 'image/png',
 						}),
 					});
-					return { saved_to: path, size_bytes: Math.floor((screenshotData.length * 3) / 4) };
+					const json = await resp.json();
+					return { saved_to: path, size_bytes: buffer.byteLength, file_meta: json };
 				}
-			}
-			return result.body;
-		}
-		case 'browser.extract': {
-			// Browser Rendering supports /scrape with selector map; otherwise fetch HTML + parse server-side.
-			const opts = {
-				url: args.url as string,
-				elements: Object.entries(args.selectors as Record<string, string>).map(([name, selector]) => ({
-					name,
-					selector,
-				})),
-			};
-			const resp = await env.BROWSER.fetch('https://browser.internal/scrape', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify(opts),
+
+				return {
+					url: args.url,
+					size_bytes: buffer.byteLength,
+					screenshot_base64: toBase64(buffer),
+				};
 			});
-			const text = await resp.text();
-			if (resp.status >= 400) throw new Error(text);
-			return text ? JSON.parse(text) : null;
 		}
+
+		case 'browser.extract': {
+			return withBrowser(env, async (page) => {
+				await page.goto(args.url as string, { waitUntil: 'domcontentloaded', timeout: 30_000 });
+				const selectors = args.selectors as Record<string, string>;
+				const result: Record<string, string | null> = {};
+				for (const [field, selector] of Object.entries(selectors)) {
+					try {
+						const elementHandle = await page.$(selector);
+						if (elementHandle) {
+							const text = await elementHandle.evaluate((el: Element) => el.textContent?.trim() ?? '');
+							result[field] = text;
+							await elementHandle.dispose();
+						} else {
+							result[field] = null;
+						}
+					} catch {
+						result[field] = null;
+					}
+				}
+				return { url: page.url(), extracted: result };
+			});
+		}
+
 		default:
 			throw new Error(`Unknown tool: ${tool}`);
 	}
@@ -171,7 +194,7 @@ async function handleRpc(env: Env, req: JsonRpcRequest): Promise<JsonRpcResult> 
 					result: {
 						protocolVersion: '2025-03-26',
 						capabilities: { tools: {} },
-						serverInfo: { name: 'office-town-mcp-browser', version: '0.1.0' },
+						serverInfo: { name: 'office-town-mcp-browser', version: '0.2.0' },
 					},
 				};
 			case 'tools/list':
@@ -209,6 +232,6 @@ app.post('/mcp', async (c) => {
 	return c.json(result);
 });
 
-app.get('/health', (c) => c.json({ status: 'ok', service: 'office-town-mcp-browser' }));
+app.get('/health', (c) => c.json({ status: 'ok', service: 'office-town-mcp-browser', version: '0.2.0' }));
 
 export default app;

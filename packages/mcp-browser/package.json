@@ -10,6 +10,7 @@
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
+		"@cloudflare/puppeteer": "^1.1.0",
 		"@office-town/shared": "workspace:*",
 		"hono": "^4.6.0"
 	},
