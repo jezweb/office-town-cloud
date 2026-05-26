@@ -51,7 +51,7 @@ Verify the template actually works under real use before we build the backend.
 
 **Skip if:** dogfooding can run alongside M3/M4. Not blocking. But discovery here informs every subsequent phase.
 
-### M2 — Office Town as an Open Plugin Spec plugin (2-3 days)
+### M2 — Office Town as an Open Plugin Spec plugin + test pack (3-4 days)
 
 Convert the template from "folder you copy" to "plugin you install." Package follows the **[Open Plugin Spec v1.0.0](https://github.com/vercel-labs/open-plugin-spec)** which Goose committed to adopting in their May 2026 roadmap. **Cross-host portable** — same plugin works in any conformant host (Goose today; potentially Claude Code, other agents tomorrow).
 
@@ -66,7 +66,9 @@ Convert the template from "folder you copy" to "plugin you install." Package fol
 - README explaining what's in the plugin and how to install
 - Install command works: `goose plugin install jezweb/office-town-plugin`
 
-**Verification:** Fresh Goose install + `goose plugin install` puts the user immediately at "ready to use a town." No manual file copying.
+**Verification:** Fresh Goose install + `goose plugin install jezweb/office-town` + open Goose → all four core roles available via `@-mention`, recipes show as slash commands, hooks fire at session start/end, MCP servers (wiki, share, cron) are wired.
+
+**Sub-deliverable: Test pack (`tests/`)** — seeded from M1 dogfood; codifies role-identity + delegation + briefing-loading tests. Runner shells out to `goose run --no-session --quiet` and checks pattern presence. Lives in `office-town-cloud/tests/` initially; moves to `office-town-plugin/tests/` when the plugin repo exists. Becomes CI on every PR to roles/briefings/packs.
 
 **Effort:** ~2-3 days. Mostly content (skills + recipes) — the plugin format itself is straightforward.
 
@@ -112,6 +114,19 @@ Round out the v1 cloud features.
 6. Publish a markdown page, visit the public URL
 
 **Effort:** ~10-12 days of focused sessions.
+
+### M4.5 — Cloudflare Workers AI provider (1 day, parallel with M4)
+
+Contribute Cloudflare Workers AI as a native provider to upstream Goose, AND ship it preconfigured in Office Town Desktop.
+
+**Deliverables:**
+- **Custom Distribution config** (for our M5 build): Workers AI preconfigured as a provider option via Goose's declarative custom-provider mechanism. Uses OpenAI-compatible endpoint at `https://api.cloudflare.com/client/v4/accounts/{ACCOUNT_ID}/ai/v1/`. Default model: `@cf/openai/gpt-oss-20b`. Users see "Cloudflare Workers AI" in the provider picker.
+- **Documented workaround** for vanilla Goose users (config.yaml with OPENAI_HOST override)
+- **Upstream PR** to `block/goose` (or `aaif-goose/goose`): native `crates/goose/src/providers/cloudflare.rs` implementing the `Provider` trait, ~300-500 lines of Rust based on similar provider implementations. Adds to `provider_registry`. Handles Workers AI-specific quirks (model API shapes per `workers-ai-gotchas.md`).
+
+**Verification:** Office Town Desktop user picks "Cloudflare Workers AI" from provider list; selects `@cf/openai/gpt-oss-20b`; runs `@librarian who are you?` successfully. Upstream PR opened with passing tests.
+
+**Effort:** ~1 day. PR review timeline upstream is out of our control; the Custom Distribution config doesn't wait on it.
 
 ### M5 — v1.0 public release (1 week)
 

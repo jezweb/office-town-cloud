@@ -333,6 +333,48 @@ Agents learn the pattern quickly: search to triage, read to expand. Role pack st
 - `goosed` on Cloudflare — not feasible (Rust binary, persistent TCP, cert pinning). Goose runs on the user's Mac.
 - **Hosted memory services** (Engram, Lumetra, etc.) — these are useful for other workflows but don't fit Office Town's "your data, your infrastructure" positioning. We integrate with Goose's built-in Memory + our own wiki MCP backed by the user's R2 bucket.
 
+## Cloudflare Workers AI as a Goose provider
+
+Cloudflare Workers AI is **not currently in Goose's provider list** (confirmed against source — Goose has 30+ providers including anthropic, openai, openrouter, groq, mistral, xai, ollama, etc. but no native cloudflare). This is an opportunity, not a blocker.
+
+### Three-stage approach
+
+**Stage 1 — Custom Distribution config (M5)**
+
+Office Town Desktop (the Custom Distribution build of Goose we ship in M5) preconfigures Cloudflare Workers AI as a first-class provider option via Goose's declarative custom-provider mechanism. Workers AI has an OpenAI-compatible endpoint:
+
+```
+https://api.cloudflare.com/client/v4/accounts/{ACCOUNT_ID}/ai/v1/
+```
+
+Our distribution wires this up so users see "Cloudflare Workers AI" in the provider picker without writing config. Cost-effective default: `@cf/openai/gpt-oss-20b` at ~$0.20/M tokens.
+
+**Stage 2 — Workaround for vanilla Goose users**
+
+For users not using Office Town Desktop, document the OpenAI-provider-with-custom-base-URL workaround in setup docs:
+
+```yaml
+# ~/.config/goose/config.yaml
+OPENAI_HOST: https://api.cloudflare.com/client/v4/accounts/<account-id>/ai
+OPENAI_API_KEY: <cf-api-token>
+active_provider: openai
+openai:
+  model: '@cf/openai/gpt-oss-20b'
+```
+
+Works today, no code changes needed.
+
+**Stage 3 — Upstream PR to Goose (v1.1)**
+
+Contribute a native `cloudflare.rs` provider to `crates/goose/src/providers/` in the Goose repo. A real PR worth doing:
+
+- Implements the `Provider` trait for Cloudflare Workers AI's native API (not just OpenAI-compatible)
+- Handles Workers AI's specific quirks (FLUX 2 multipart vs JSON for image gen, model-specific API shapes per `workers-ai-gotchas.md`)
+- Adds Workers AI to the `provider_registry`
+- ~300-500 lines of Rust based on similar provider implementations (e.g., `openrouter.rs`, `groq.rs`)
+
+Genuinely valuable to the wider Goose community. Cloudflare Workers AI is one of the most cost-effective providers available ($0.20/M tokens for gpt-oss-20b vs $15/M for Sonnet). Office Town's contribution shows good citizenship and gives us discoverable presence in the Goose ecosystem.
+
 ## Open Plugin Spec — packaging and distribution
 
 Office Town's plugin (the bundled roles + skills + recipes + hooks + MCP server references) is packaged following the **[Open Plugin Spec v1.0.0](https://github.com/vercel-labs/open-plugin-spec)**, which Goose committed to adopting in their May 2026 roadmap (https://github.com/aaif-goose/goose/discussions/9173).
