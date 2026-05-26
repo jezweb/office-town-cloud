@@ -63,6 +63,68 @@ function formatBytes(n: number): string {
 	return `${(n / 1024 / 1024).toFixed(2)} MB`;
 }
 
+// Linkify frontmatter values that reference other wiki entries.
+//
+// Two patterns:
+//   1. Explicit "<collection>:<slug>"  -> direct link
+//   2. Field-name conventions like *_slug, *_org, *_project where the value is
+//      a bare slug -> link to the inferred collection.
+//
+// Strings that don't match either pattern are escaped + returned as text.
+
+const COLLECTION_PATTERN = /^([a-z][a-z-]{1,30}):([a-z0-9][a-z0-9-]{0,99})$/;
+const SLUG_PATTERN = /^[a-z][a-z0-9-]{0,99}$/;
+
+const FIELD_NAME_TO_COLLECTION: Array<{ match: RegExp; collection: string }> = [
+	{ match: /(^|_)org(_slug)?$/, collection: 'orgs' },
+	{ match: /^owner_org$/, collection: 'orgs' },
+	{ match: /^client_slug$/, collection: 'orgs' },
+	{ match: /^made_to$/, collection: 'orgs' },
+	{ match: /^responsible$/, collection: 'team' },
+	{ match: /^responsible_party$/, collection: 'team' },
+	{ match: /(^|_)contact(_slug)?$/, collection: 'contacts' },
+	{ match: /(^|_)project(_slug)?$/, collection: 'projects' },
+	{ match: /^primary_contact_slug$/, collection: 'contacts' },
+];
+
+function escapeHtml(s: string): string {
+	return s
+		.replace(/&/g, '&amp;')
+		.replace(/</g, '&lt;')
+		.replace(/>/g, '&gt;')
+		.replace(/"/g, '&quot;');
+}
+
+function linkifyValue(key: string, raw: unknown): string {
+	if (Array.isArray(raw)) {
+		return raw.map((item) => linkifyValue(key, item)).join(', ');
+	}
+	if (typeof raw !== 'string') {
+		return escapeHtml(JSON.stringify(raw));
+	}
+
+	const value = raw.trim();
+	if (!value) return '';
+
+	// Pattern 1: explicit "<collection>:<slug>"
+	const explicit = COLLECTION_PATTERN.exec(value);
+	if (explicit) {
+		const [, coll, slug] = explicit;
+		return `<a href="/dashboard/wiki/${escapeHtml(coll)}/${escapeHtml(slug)}">${escapeHtml(value)}</a>`;
+	}
+
+	// Pattern 2: field-name suggests a foreign key and value is slug-shaped
+	if (SLUG_PATTERN.test(value)) {
+		for (const rule of FIELD_NAME_TO_COLLECTION) {
+			if (rule.match.test(key)) {
+				return `<a href="/dashboard/wiki/${rule.collection}/${escapeHtml(value)}">${escapeHtml(value)}</a>`;
+			}
+		}
+	}
+
+	return escapeHtml(value);
+}
+
 dashboardRoutes.get('/', async (c) => {
 	const env = c.env;
 
@@ -159,15 +221,20 @@ dashboardRoutes.get('/dashboard/wiki/:collection/:slug', async (c) => {
 	const frontmatter = JSON.parse(row.frontmatter_json) as Record<string, unknown>;
 	const renderedBody = renderMarkdownToHtml(row.body, row.title ?? row.slug);
 	const fmRows = Object.entries(frontmatter)
-		.map(([k, v]) => `<tr><th>${k}</th><td>${String(v).replace(/</g, '&lt;')}</td></tr>`)
+		.map(([k, v]) => `<tr><th>${escapeHtml(k)}</th><td>${linkifyValue(k, v)}</td></tr>`)
 		.join('');
 
 	const bodyMatch = MAIN_REGEX.exec(renderedBody);
 	const innerBody = bodyMatch ? bodyMatch[1] : `<pre>${row.body.replace(/</g, '&lt;')}</pre>`;
 
 	const content = `
-<div style="margin-bottom: 1.5rem;"><a href="/dashboard/wiki?c=${row.collection}" style="color: var(--accent);">&larr; ${row.collection}</a></div>
-<h1 style="margin-top: 0;">${row.title ?? row.slug}</h1>
+<nav class="muted" style="margin-bottom: 1rem; font-size: 0.9em;">
+  <a href="/" style="color: var(--accent);">Home</a> ›
+  <a href="/dashboard/wiki" style="color: var(--accent);">Wiki</a> ›
+  <a href="/dashboard/wiki?c=${row.collection}" style="color: var(--accent);">${row.collection}</a> ›
+  <span>${escapeHtml(row.slug)}</span>
+</nav>
+<h1 style="margin-top: 0;">${escapeHtml(row.title ?? row.slug)}</h1>
 <div class="card" style="margin-bottom: 1.5rem;">
   <h2>Frontmatter</h2>
   <table>${fmRows}</table>
