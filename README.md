@@ -1,107 +1,76 @@
 # Office Town Cloud
 
-Cloudflare-backed backend for the [Office Town](https://github.com/jezweb/office-town) AI agent fleet. Deploys to your own Cloudflare account; serves a set of MCP extensions to Goose; runs the wiki, kanban, search, voice, email, browser, and other agent capabilities.
+The Cloudflare Workers backend for [Office Town](https://github.com/jezweb/office-town). Wiki + files + publish + cron + dashboard, plus MCP servers for browser, devops, and email.
 
-**Status:** v0.1 — architecture spec phase. Code is being designed; not yet implemented.
+## Get started
+
+👉 [INSTALL.md](./INSTALL.md) — paste a prompt into your AI agent, it deploys this whole backend to your Cloudflare account.
+
+For users without a capable agent, the [README in office-town](https://github.com/jezweb/office-town#get-started) points at the manual setup path.
 
 ## What this is
 
-Office Town (the template) is markdown files + role definitions. That works on its own, but the team-knowledge layer is shallow without a backend. Office Town Cloud provides the cloud half:
+5 Cloudflare Workers + the data plane they need:
 
-- **Wiki extension** — entity-as-folder collections (orgs/contacts/knowledge/decisions/projects/team) with FTS + vector search, exposed as MCP tools
-- **Kanban view** — tasks across the town rendered as a board (HTML dashboard + markdown export)
-- **Voice extension** — "phone the librarian" via Cloudflare Realtime + Workers AI Nova-3/Aura-2
-- **Browser extension** — agents drive web pages via Browser Rendering + Stagehand
-- **Email extension** — each role gets a real email address; inbound becomes tool calls
-- **Search extension** — semantic + FTS search across the wiki
-- **Sandbox extension** — Containers-backed code execution
-- **Files / publish extensions** — R2-backed storage with signed share URLs and permanent publish URLs
-- **Cron / devops extensions** — recurring tasks, deployment management
+| Worker | Purpose | URL pattern |
+|---|---|---|
+| `office-town-core` | Wiki CRUD + FTS5/Vectorize search + files + publish + cron + dashboard | `app.<yourdomain>` or `*.workers.dev` |
+| `office-town-mcp-wiki` | Streamable-HTTP MCP — wiki.create/read/update/search/etc. | `mcp-wiki.<yourdomain>` |
+| `office-town-mcp-browser` | Browser Rendering MCP (puppeteer-based fetch/screenshot/extract) | `mcp-browser.<yourdomain>` |
+| `office-town-mcp-devops` | Cloudflare API wrapper (zones/workers/DNS/logs — read-only by default) | `mcp-devops.<yourdomain>` |
+| `office-town-mcp-email` | Outbound email via SMTP2Go, drafts to FILES bucket | `mcp-email.<yourdomain>` |
 
-## Who this is for
+Data plane provisioned per deployment:
 
-- **Office Town template users** who want the full backend
-- **Small businesses** deploying an AI agent fleet — one-click install to their own Cloudflare account
-- **Developers** wanting Cloudflare-backed Goose extensions as reference architecture
+- **D1**: `office-town-d1` — wiki index, FTS5 virtual table, cron jobs
+- **R2**: `office-town-wiki` (markdown source-of-truth), `office-town-files` (uploads + share links + published pages)
+- **Vectorize**: `office-town-vec` — 768-dim cosine + metadata indexes on collection/slug/entry_id
+- **Queue**: `office-town-index` — embedding pipeline
+- **Workers AI**: bge-base-en-v1.5 for embeddings
 
-## Quick start
+Live reference deployment (Jez's): https://app.officetown.au
 
-> Not yet implemented — see `BUILD-SPEC.md` for the build plan.
+## Cost
 
-When ready:
+Typical SMB volume: ~$2-5/month on Cloudflare.
 
-1. Click "Deploy to Cloudflare" — clones this repo into your account, sets up R2/D1/Vectorize bindings
-2. Configure secrets (LLM provider API key, comms channels)
-3. Goose desktop points at your deployed MCP endpoints
-4. Done — your town has memory, search, voice, browser, email
+Variables: Vectorize ($0.04 per 1M dimensions queried), Workers AI embeddings ($0.011 per 1M tokens), Queue ($0.40 per 1M messages). Other services (Workers, D1, R2) usually inside the free tier at this scale.
 
-## Architecture at a glance
+## Local development
 
-```
-User's machine                    User's Cloudflare account
-─────────────────                 ─────────────────────────
-Goose Desktop/CLI    ──MCP──→     Substrate Worker
-+ office-town                       - Wiki / kanban / search
-plugin (roles)                      - R2 + D1 + Vectorize
-                                  
-                     ──MCP──→     Tools Worker
-                                    - Voice / browser / email
-                                    - Sandbox / publish
+```bash
+# Hermit (Node 24 + pnpm 10.30) — required by goose ui workspace
+source bin/activate-hermit
 
-                     ──HTTP──→    Web Dashboard
-                                    - Town map
-                                    - Kanban board
-                                    - Search UI
+# Install
+cd ui/desktop-not-yet-a-workspace-here-just-our-packages
+pnpm install
+
+# Run wiki MCP locally
+pnpm -F @office-town/core dev
+
+# Typecheck everything
+pnpm -r typecheck
+
+# Run wiki service unit tests
+pnpm -F @office-town/core test
 ```
 
-Two workers, plus the web dashboard. Single repo, pnpm workspace. Deployed to user's Cloudflare account; one-time setup.
+## Architecture
 
-## Documents
+See [ARCHITECTURE.md](./ARCHITECTURE.md) for the deep design — substrate-as-R2 + index-in-D1 + vector-in-Vectorize hybrid, the universal sextet frontmatter, triage-shape search results, etc.
 
-- **[ARCHITECTURE.md](ARCHITECTURE.md)** — system architecture, primitive decisions, data flow
-- **[BUILD-SPEC.md](BUILD-SPEC.md)** — phased build plan with effort estimates
-- **[EXTENSIONS-CATALOGUE.md](EXTENSIONS-CATALOGUE.md)** — every planned MCP extension, in priority order
-- **[WIKI-SCHEMA.md](WIKI-SCHEMA.md)** — the v1 wiki collections and conventions
-- **[docs/](docs/)** — deeper references (memory architecture, voice agent stack, etc.)
+See [BUILD-SPEC.md](./BUILD-SPEC.md) for phased build plan.
 
-## Repo layout
+See [WIKI-SCHEMA.md](./WIKI-SCHEMA.md) for the 11 default collections.
 
-```
-office-town-cloud/
-├── README.md                 ← this file
-├── ARCHITECTURE.md           ← system architecture
-├── BUILD-SPEC.md             ← phased build plan
-├── EXTENSIONS-CATALOGUE.md   ← all planned extensions
-├── WIKI-SCHEMA.md            ← wiki collections + conventions
-├── LICENSE                   ← MIT
-├── package.json              ← root package (workspace orchestration)
-├── pnpm-workspace.yaml
-├── packages/
-│   ├── shared/               ← shared types, schemas, utilities
-│   ├── core/                 ← substrate Worker (wiki, kanban, search, dashboard)
-│   ├── tools/                ← tools Worker (email, files, publish, devops)
-│   ├── mcp-wiki/             ← MCP server adapter for wiki tools
-│   ├── mcp-files/            ← (per extension)
-│   ├── mcp-publish/
-│   ├── mcp-voice/
-│   ├── mcp-browser/
-│   ├── mcp-email/
-│   ├── mcp-search/
-│   ├── mcp-cron/
-│   ├── mcp-sandbox/
-│   └── mcp-devops/
-├── docs/                     ← deeper reference docs
-├── scripts/                  ← deploy-all.sh, seed-substrate.sh, verify.sh
-└── .github/workflows/        ← CI for tests + deploys
-```
+## Repos in this family
 
-## License
+- [office-town](https://github.com/jezweb/office-town) — methodology + template
+- [office-town-plugin](https://github.com/jezweb/office-town-plugin) — Open Plugin Spec plugin (roles + skills + recipes)
+- [office-town-desktop](https://github.com/jezweb/office-town-desktop) — Custom Distribution Goose Desktop .app
+- [office-town-pack-*](https://github.com/jezweb?tab=repositories&q=office-town-pack) — 8 role packs
 
-MIT — see [LICENSE](LICENSE). Copyright (c) 2026 Jezweb Pty Ltd.
+## Licence
 
-## Related
-
-- **Office Town template** (the markdown side): https://github.com/jezweb/office-town
-- **Goose** (the runtime): https://github.com/block/goose
-- **Canonical methodology doc**: `~/Documents/.jez/knowledge/office-town.md`
-- **Cloudflare AI Search** (potential migration target for memory): https://blog.cloudflare.com/ai-search-agent-primitive/
+MIT. © 2026 Jezweb Pty Ltd.
