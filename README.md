@@ -1,12 +1,14 @@
 # Office Town Cloud
 
-The Cloudflare Workers backend for [Office Town](https://github.com/jezweb/office-town). Wiki + files + publish + cron + dashboard, plus MCP servers for browser, devops, and email.
+The Cloudflare Workers backend that powers [Office Town](https://github.com/jezweb/office-town) — capabilities you add to your [Goose](https://block.github.io/goose/) installation. Wiki + files + publish + cron + dashboard, plus MCP servers for browser, devops, and email.
 
 ## Get started
 
-👉 [INSTALL.md](./INSTALL.md) — paste a prompt into your AI agent, it deploys this whole backend to your Cloudflare account.
+You need Goose installed first — https://block.github.io/goose/.
 
-For users without a capable agent, the [README in office-town](https://github.com/jezweb/office-town#get-started) points at the manual setup path.
+👉 [INSTALL.md](./INSTALL.md) — paste two prompts into any capable AI agent (Goose, Claude Code, Aider, etc.) and it deploys this backend to your Cloudflare account + wires it into Goose.
+
+Or [SETUP.md](https://github.com/jezweb/office-town/blob/main/SETUP.md) in the template repo for a manual step-by-step.
 
 ## What this is
 
