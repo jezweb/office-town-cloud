@@ -67,12 +67,6 @@ The single demo video for the v1.0 launch. Target: HN + Goose Discord + landing-
 - **30-second cut** for Twitter/X: scenes 1, 4, 5, 7
 - **15-second cut** for landing-page hero: scenes 1, 5
 
-## What we removed from the pre-pivot storyboard
-
-- The "Download Office Town Desktop" scene (Custom Distribution was parked)
-- The "click Deploy to Cloudflare from inside the app" scene (replaced with paste-prompt flow)
-- Any "no Goose required" framing (Goose IS required now)
-
 ## Tools
 
 - Screen recording: macOS Screenshot + QuickTime, or Loom

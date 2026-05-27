@@ -34,8 +34,6 @@ A few things I'd be interested in discussion on:
 
 2. The wiki MCP exposes triage-shape search by default; full-body reads are gated behind an `expanded:true` flag or per-entry `wiki.read`. This was the single most-impactful design choice — keeps Goose's context window clean across long sessions.
 
-3. We initially built a Custom Distribution of Goose Desktop (signed + notarised .app, CI on tag push, the works) but parked it before launch. Realised it doesn't add value over a vanilla Goose install + the agent-install prompt — Goose itself is upstream-mature enough that custom branding just adds maintenance burden. Files are preserved in a private repo for v1.1 if pre-baked init-config or first-launch wizard would change the calculus.
-
 What's missing from v1.0 (lands in v1.1, ~4 weeks):
 
 - Voice MCP (Cloudflare Realtime + Workers AI Nova-3 / Aura-2 — "phone the librarian")

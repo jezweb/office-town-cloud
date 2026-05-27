@@ -92,9 +92,9 @@ Per ARCHITECTURE.md, all our classification + synthesis goes through MCP Samplin
 
 Goose auto-summarises at 80% of token capacity. Our wiki MUST return triage shapes (snippets, not bodies) so search results survive compaction. The `wiki.search` default response is small enough to survive.
 
-### Custom Distribution disables Memory by default
+### Memory + wiki — disable one
 
-When Office Town ships as "Office Town Desktop" (Custom Distribution build of Goose), the built-in `memory` extension is disabled. Reason: enabling both creates conflicting "save proactively" instructions in the system prompt. Single source of truth.
+If both Goose's built-in `memory` extension and the Office Town wiki MCP are enabled, agents get conflicting "save proactively" instructions in the system prompt. Choose one source of truth. The Office Town `INSTALL.md` prompt instructs the agent to disable Goose's `memory` extension during setup — the wiki MCP replaces it.
 
 ## Migration path (for users coming from Goose Memory)
 

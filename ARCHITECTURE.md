@@ -1,8 +1,6 @@
 # Architecture
 
-> **Note (2026-05-27):** Some sections of this doc reference "Office Town Desktop" (a Custom Distribution of Goose) and "Custom Distribution build". That path was **parked in v1.0** — see SHIP-PLAN.md § "Pivot" for context. The architecture of the Cloudflare backend, MCPs, and methodology is unchanged. Office Town is now positioned as "capabilities for Goose" — see [README](./README.md).
-
-This document describes the system architecture, the primitive decisions, and the data flow. It's the contract that subsequent build phases execute against.
+This document describes the system architecture, the primitive decisions, and the data flow. It's the contract that subsequent build phases execute against. Office Town is positioned as **capabilities for Goose** — see [README](./README.md) for the user-facing framing.
 
 ## Goals
 
@@ -325,7 +323,6 @@ Agents learn the pattern quickly: search to triage, read to expand. Role pack st
 
 1. **AI Search vs DIY** — Cloudflare AI Search (announced April 2026, free in beta) does most of what our memory MCP does. Plan: ship DIY first behind an MCP abstraction, evaluate AI Search at 90 days, swap if it wins on quality + cost.
 2. **Per-deployment data sync across machines** — single-tenant assumed v1. Multi-machine via goannad-style daemon is optional.
-3. ~~**Custom Distribution**~~ — **promoted to v1**: ships as "Office Town Desktop" white-labelled Goose .app with our MCPs pre-wired. Eliminates the manual-6-MCP-config UX disaster.
 
 ## What we deliberately don't build
 
@@ -337,47 +334,15 @@ Agents learn the pattern quickly: search to triage, read to expand. Role pack st
 - `goosed` on Cloudflare — not feasible (Rust binary, persistent TCP, cert pinning). Goose runs on the user's Mac.
 - **Hosted memory services** (Engram, Lumetra, etc.) — these are useful for other workflows but don't fit Office Town's "your data, your infrastructure" positioning. We integrate with Goose's built-in Memory + our own wiki MCP backed by the user's R2 bucket.
 
-## Cloudflare Workers AI as a Goose provider
+## LLM providers
 
-Cloudflare Workers AI is **not currently in Goose's provider list** (confirmed against source — Goose has 30+ providers including anthropic, openai, openrouter, groq, mistral, xai, ollama, etc. but no native cloudflare). This is an opportunity, not a blocker.
+Office Town deployments call out to the user's chosen LLM via Goose's provider system. We don't ship a provider — we add capabilities for whichever one is configured.
 
-### Three-stage approach
+**Cheap-and-cheerful path:** Cloudflare Workers AI via Goose's OpenAI-compatible provider, pointing at `https://api.cloudflare.com/client/v4/accounts/<account-id>/ai/v1/` with `@cf/openai/gpt-oss-20b` (~$0.20/M tokens). Works today, no code changes needed in Goose.
 
-**Stage 1 — Custom Distribution config (M5)**
+**Higher quality:** Anthropic, OpenAI, Google, or Alibaba (Qwen via DashScope — we shipped a declarative provider upstream so it's a one-click provider pick in Goose). User chooses based on cost/quality preferences.
 
-Office Town Desktop (the Custom Distribution build of Goose we ship in M5) preconfigures Cloudflare Workers AI as a first-class provider option via Goose's declarative custom-provider mechanism. Workers AI has an OpenAI-compatible endpoint:
-
-```
-https://api.cloudflare.com/client/v4/accounts/{ACCOUNT_ID}/ai/v1/
-```
-
-Our distribution wires this up so users see "Cloudflare Workers AI" in the provider picker without writing config. Cost-effective default: `@cf/openai/gpt-oss-20b` at ~$0.20/M tokens.
-
-**Stage 2 — Workaround for vanilla Goose users**
-
-For users not using Office Town Desktop, document the OpenAI-provider-with-custom-base-URL workaround in setup docs:
-
-```yaml
-# ~/.config/goose/config.yaml
-OPENAI_HOST: https://api.cloudflare.com/client/v4/accounts/<account-id>/ai
-OPENAI_API_KEY: <cf-api-token>
-active_provider: openai
-openai:
-  model: '@cf/openai/gpt-oss-20b'
-```
-
-Works today, no code changes needed.
-
-**Stage 3 — Upstream PR to Goose (v1.1)**
-
-Contribute a native `cloudflare.rs` provider to `crates/goose/src/providers/` in the Goose repo. A real PR worth doing:
-
-- Implements the `Provider` trait for Cloudflare Workers AI's native API (not just OpenAI-compatible)
-- Handles Workers AI's specific quirks (FLUX 2 multipart vs JSON for image gen, model-specific API shapes per `workers-ai-gotchas.md`)
-- Adds Workers AI to the `provider_registry`
-- ~300-500 lines of Rust based on similar provider implementations (e.g., `openrouter.rs`, `groq.rs`)
-
-Genuinely valuable to the wider Goose community. Cloudflare Workers AI is one of the most cost-effective providers available ($0.20/M tokens for gpt-oss-20b vs $15/M for Sonnet). Office Town's contribution shows good citizenship and gives us discoverable presence in the Goose ecosystem.
+**Upstream contribution path:** A native `cloudflare.rs` provider in Goose (Workers AI quirks like FLUX 2 multipart vs JSON, model-specific API shapes) is a worthwhile follow-up PR — ~300-500 lines of Rust mirroring `openrouter.rs` / `groq.rs`. Genuinely useful to the wider Goose community at Workers AI's price points. Not blocking for v1.0.
 
 ## Open Plugin Spec — packaging and distribution
 
@@ -478,7 +443,7 @@ Office Town deployments use **the wiki as their only memory layer**. Goose's bui
 
 **For users not yet deploying Office Town Cloud:** pure Goose with its built-in Memory remains a viable fallback — same vocabulary, just no cloud-backed wiki. Office Town Cloud is the recommended path; built-in Memory is the lite version.
 
-**The Custom Distribution we ship in M5** (Office Town Desktop) disables Goose's built-in Memory by default — users don't need to remember to do it.
+**During install:** the agent walking the user through INSTALL.md disables Goose's built-in `memory` extension so it doesn't compete with the wiki MCP's `save_to_memory` analogue. One source of truth.
 
 ## Memory visibility — your data, your infrastructure
 
@@ -504,7 +469,7 @@ Why this matters:
 - Our cost model only works because we don't run the agent loop
 - The user's LLM bill is paid by the user, not us (positioning: "$2/month, bring your own LLM")
 - Single-user, single-tenant fits "Office Town per Cloudflare account"
-- Custom Distribution (white-labelled Goose .app) is the install flow
+- The install flow is a "Deploy to Cloudflare" button + paste-prompt — the agent host (Goose) stays vanilla, capabilities arrive via the plugin and the deployed Workers
 
 What this is NOT:
 - We are not building a server-side autonomous agent SaaS

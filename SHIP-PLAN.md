@@ -119,67 +119,58 @@ Round out the v1 cloud features.
 
 ### M4.5 — Cloudflare Workers AI provider (1 day, parallel with M4)
 
-Contribute Cloudflare Workers AI as a native provider to upstream Goose, AND ship it preconfigured in Office Town Desktop.
+Contribute Cloudflare Workers AI as a native provider to upstream Goose. Vanilla Goose users can also use Workers AI today via the OpenAI-compatible provider with a custom base URL.
 
 **Deliverables:**
-- **Custom Distribution config** (for our M5 build): Workers AI preconfigured as a provider option via Goose's declarative custom-provider mechanism. Uses OpenAI-compatible endpoint at `https://api.cloudflare.com/client/v4/accounts/{ACCOUNT_ID}/ai/v1/`. Default model: `@cf/openai/gpt-oss-20b`. Users see "Cloudflare Workers AI" in the provider picker.
-- **Documented workaround** for vanilla Goose users (config.yaml with OPENAI_HOST override)
-- **Upstream PR** to `block/goose` (or `aaif-goose/goose`): native `crates/goose/src/providers/cloudflare.rs` implementing the `Provider` trait, ~300-500 lines of Rust based on similar provider implementations. Adds to `provider_registry`. Handles Workers AI-specific quirks (model API shapes per `workers-ai-gotchas.md`).
+- **Documented workaround** for vanilla Goose users: config.yaml with `OPENAI_HOST` pointing at `https://api.cloudflare.com/client/v4/accounts/<account-id>/ai`. Works today, no code changes needed.
+- **Upstream PR** to `aaif-goose/goose`: native `crates/goose/src/providers/cloudflare.rs` implementing the `Provider` trait, ~300-500 lines of Rust based on similar provider implementations. Adds to `provider_registry`. Handles Workers AI-specific quirks (model API shapes per `workers-ai-gotchas.md`).
 
-**Verification:** Office Town Desktop user picks "Cloudflare Workers AI" from provider list; selects `@cf/openai/gpt-oss-20b`; runs `@librarian who are you?` successfully. Upstream PR opened with passing tests.
+**Verification:** User selects Cloudflare Workers AI from Goose's provider list (or uses the OpenAI-compatible workaround); `@librarian who are you?` runs successfully.
 
-**Effort:** ~1 day. PR review timeline upstream is out of our control; the Custom Distribution config doesn't wait on it.
+**Effort:** ~1 day. PR review timeline upstream is out of our control; vanilla-Goose workaround unblocks users immediately.
 
 **Status update (2026-05-27):** ✅ Upstream PR open at https://github.com/aaif-goose/goose/pull/9425.
 
 - Initial commit: 4 files changed, 432 insertions, 6 unit tests passing, `cargo check -p goose` clean (2026-05-26)
 - Codex P2 review caught `fetch_supported_models` not paginating Cloudflare's model catalog — accounts with >100 text-generation models would have got truncated picker lists. Fixed in 653b1cdde: loop on `result_info.total_pages`, MAX_PAGES=50 safety cap, sort+dedup defence, per-page error context. New test `test_fetch_supported_models_paginates_across_pages` mocks 3 pages with mixed task types. Now 7 tests passing.
-- Awaiting upstream maintainer review. Custom Distribution config can proceed in parallel.
+- Awaiting upstream maintainer review.
+- Companion PR for Alibaba (Qwen via DashScope) declarative provider: https://github.com/aaif-goose/goose/pull/9443 — shipped 2026-05-27.
 
 ### M5 — v1.0 public release (1 week)
 
-Polish, document, market. **Now includes Custom Distribution** (white-labelled Goose Desktop).
+Polish, document, market. Positioning: **Office Town adds capabilities to Goose** — users bring their own Goose install, paste one install prompt into any capable agent, Cloudflare's Deploy button provisions the backend, plugin install wires the methodology.
 
 **Deliverables:**
-- All three repos flipped public:
-  - `github.com/jezweb/office-town`
-  - `github.com/jezweb/office-town-cloud`
-  - `github.com/jezweb/office-town-plugin`
-- **`github.com/jezweb/office-town-desktop`** — Custom Distribution build of Goose with:
-  - App rebranded (icon, name, accent colour)
-  - Our MCPs bundled via `init-config.yaml`
-  - Default recipes pre-loaded
-  - Default provider/model config (Opus planner + Sonnet executor)
-  - Default system prompt extension
-  - Built via `goose build --custom-distribution`
-  - Code-signed + notarised .app for macOS distribution (requires Apple Developer account)
-- Landing page at `officetown.au` — short, opinionated, three buttons:
-  - "Deploy to Cloudflare" (the backend)
-  - "Download Office Town Desktop" (the app)
-  - "Use vanilla Goose" (for users who want full control)
-- README polished on each repo
-- A 90-second demo video: download .app → "Deploy to Cloudflare" → first delegation
+- All three primary repos flipped public:
+  - `github.com/jezweb/office-town` (template + methodology)
+  - `github.com/jezweb/office-town-cloud` (Cloudflare backend)
+  - `github.com/jezweb/office-town-plugin` (Goose plugin)
+- Landing page at `officetown.au` — short, opinionated, two CTAs:
+  - "Deploy to Cloudflare" (button — provisions the backend in ~2 min)
+  - "Copy install prompt" (paste into any capable agent to wire Goose + clone template)
+- README polished on each repo, pointing at `INSTALL.md` as primary path
+- A 90-second demo video: click Deploy → wire Goose → first delegation
 - Blog post on jezweb.com explaining the why and the how
 - HN post once there's something genuinely demo-able
 - Goose Discord post in #show-and-tell
 - Office Town pages added to the Goose docs (one MCP page per extension via PR)
 
-**Install UX comparison (the win from Custom Distribution):**
+**Install UX (the win from one-click Deploy):**
 
-| Without Custom Distribution | With Custom Distribution |
+| Step | Time |
 |---|---|
-| 1. Install Goose | 1. Download Office Town Desktop |
-| 2. `goose plugin install jezweb/office-town-plugin` | 2. Open it; sign in with Google |
-| 3. Click "Deploy to Cloudflare" | 3. Click "Deploy to Cloudflare" |
-| 4. Open Goose Settings → Extensions | 4. Paste bearer token in setup screen |
-| 5. Add streamable-http extension × 6 (wiki, files, publish, kanban, cron, search) | (done) |
-| 6. Paste 6 different URLs + bearer tokens | |
-| 7. Configure providers | |
-| 8. Restart Goose | |
+| 1. Install Goose (if needed) | ~2 min |
+| 2. Click "Deploy to Cloudflare" button | ~2 min (Cloudflare provisions D1 + R2 + Vectorize + Queue + Workers AI + Browser + Email) |
+| 3. Paste the deployed URL + MCP_BEARER_TOKEN into any capable agent (Goose itself, Claude Code, Aider, Cline) | ~30s |
+| 4. Agent runs `goose plugin install jezweb/office-town-plugin` + `goose plugin install jezweb/office-town-pack-knowledge` | ~1 min |
+| 5. Agent wires 4 MCP entries in `~/.config/goose/config.yaml` (one base URL, four paths) | ~30s |
+| 6. Agent clones the `office-town` template repo to your town folder, runs smoke test | ~1 min |
 
-**Effort:** ~7-10 days (includes Custom Distribution build setup + Apple Developer account + notarisation flow). The Custom Distribution itself is half a day; the rest is one-time setup that pays back forever.
+End-to-end: **~5-7 minutes** for someone with Goose already installed; ~9 minutes including Goose install.
 
-**Verification:** A stranger downloads the .app + clicks the deploy button + has a working town within 15 minutes (versus 60+ minutes without Custom Distribution).
+**Effort:** ~5-7 days for documentation, demo video, marketing drafts, dogfooding.
+
+**Verification:** A stranger with no prior context completes the install in under 10 minutes following the prompt + button flow.
 
 ### M6 — Cloud v1.1: The killer Cloudflare extensions (3-4 weeks)
 
@@ -222,7 +213,7 @@ Distribution maturity.
 - `github.com/jezweb/office-town-pack-hosting` (hostmaster, devops — adds `properties/{websites,apps,hosting}/` wiki collections, dns-audit, ssl-cert-renew, server-health skills)
 - `github.com/jezweb/office-town-pack-wordpress` (wordpress-specialist — extends `properties/websites/` with WP frontmatter; theme-update, plugin-audit, wp-security skills)
 - `github.com/jezweb/office-town-pack-business` (estimator, project-manager, product-manager, marketer, writer — adds `quotes/` collection)
-- `github.com/jezweb/office-town-pack-cloudflare` (no new roles — bundles **official Cloudflare skills** from `github.com/cloudflare/skills` + **official MCP servers** from `github.com/cloudflare/mcp`; ships by default in Office Town Desktop since OTC runs on CF)
+- `github.com/jezweb/office-town-pack-cloudflare` (no new roles — bundles **official Cloudflare skills** from `github.com/cloudflare/skills` + **official MCP servers** from `github.com/cloudflare/mcp`; recommended for Office Town deployments since OTC runs on CF)
 - `github.com/jezweb/office-town-pack-comms` (helpdesk, social-poster, newsletter-editor)
 - Each pack: roles + skills + recipes + briefings + README
 - Update Office Town docs with the pack catalogue
@@ -321,7 +312,7 @@ Scope discipline. The following are explicitly out:
 - **Multi-tenant SaaS** — each user deploys their own town to their own CF account
 - **Our own agent runtime** — Goose handles this; we build extensions
 - **Our own memory MCP that competes with Goose's built-in Memory** — we add the wiki layer instead
-- **A custom Electron app** — Custom Distribution path exists for v2 if demand is there
+- **A custom Electron app** — Goose Desktop is the host; we don't ship our own
 - **Mobile app** — Goose mobile is archived; tunnelled goosed access exists if needed
 - **Per-deployment data sync across machines** — single-machine assumed; goannad-style daemon optional
 - **Custom UI framework** — Goose's MCP Apps for in-chat; standard React+shadcn for the web dashboard
@@ -386,30 +377,19 @@ For external collaborators (once public):
 - ✅ M2 — Office Town as a plugin (shipped 2026-05-27 at github.com/jezweb/office-town-plugin)
 - ✅ M3 — Cloud v1: Wiki backbone (deployed 2026-05-27)
 - ✅ M4 — Cloud v1: Files + Publish + Kanban + Cron + Dashboard (deployed 2026-05-27)
-- 🔄 M5 — v1.0 public release (artefacts ready: blog/HN/Discord drafts, landing page deployed at officetown-landing.jezweb.workers.dev, init-config.yaml for Custom Distribution; .app build + Apple notarisation still requires Apple Developer account setup)
+- 🔄 M5 — v1.0 public release (artefacts ready: blog/HN/Discord drafts, landing page deployed at officetown.au, single-worker collapse plan + build spec in `.jez/artifacts/` — pending execution to unlock the Deploy to Cloudflare button)
 - 🔄 M6 — Cloud v1.1: Killer extensions (browser + devops + email deployed 2026-05-27; voice/sandbox/search design docs at docs/M6-DESIGN-VOICE-SANDBOX-SEARCH.md)
 - ✅ M6.6 — Knowledge starter pack (17 portable concepts + 35 coding gotchas extracted from goanna audit; pack at github.com/jezweb/office-town-pack-knowledge)
 - ✅ M7 — 8 role packs shipped (startup, design, hosting, wordpress, business, cloudflare, comms, knowledge)
 - 🔄 Dogfood: startup-town simulation 2026-05-27 surfaced 2 P1 bugs (publish trailing slash, missing tasks/ collection) both fixed; killer feature identified (commitments tracking) and shipped in pack-startup
 - ⏸ M8 — Sustained release
 
-## Pivot — 2026-05-27 evening
+## Outstanding from M5
 
-After shipping the Custom Distribution (Office Town Desktop signed + notarised + CI-released), we recognised it doesn't add value over a vanilla Goose install + the agent-install prompt. Goose itself is upstream-mature enough (projects, MCPs, plugins all native) that a custom-branded distro doesn't fill any gap.
-
-Decision: **Office Town is "capabilities for Goose"**, not a host-agnostic methodology or a custom distro. Audience: existing Goose users + people willing to install Goose. The .app remains built and signed; we parked office-town-desktop + officetown-download as private repos. The pipeline (cert, CI, notarisation) is preserved for a v1.1 moment when bake-in init-config + first-launch wizard would make the .app genuinely value-add.
-
-What changed in repos:
-- office-town-desktop → private (preserved, not deleted)
-- officetown-download → private (the redirect worker still runs but the source is now private)
-- INSTALL.md → rewritten Goose-first as a single unified prompt with 4 internal phases (detect+prereqs / deploy backend / template+plugin / smoke test). Two-prompt structure (Prompt A + Prompt B) was a brief intermediate; collapsed because modern agents narrate + ask before destructive ops, so the audit-between-stages benefit was minimal.
-- All primary repo READMEs → repositioned as "capabilities for Goose"
-- Landing page → hero "Goose capabilities that work like a team", removed Download-for-Mac CTA
-
-Outstanding from M5 (now revised):
+- Single-worker collapse of office-town-cloud (per `.jez/artifacts/single-worker-collapse-plan-2026-05-27.md`) — unlocks the Deploy to Cloudflare button
 - Demo video (90s storyboard exists, not yet recorded)
-- HN/Discord/blog drafts (still in release/ but pre-pivot wording — needs editing pass before publishing)
+- HN/Discord/blog drafts polished + published
 
 ## One-sentence summary
 
-Office Town adds team-shaped capabilities (4 addressable roles + Cloudflare-backed wiki + 8 role packs) to your Goose installation; install via two paste-able prompts that any capable agent can execute.
+Office Town adds team-shaped capabilities (4 addressable roles + Cloudflare-backed wiki + 8 role packs) to your Goose installation; install via a one-click Cloudflare deploy + a paste-able prompt that any capable agent can execute.

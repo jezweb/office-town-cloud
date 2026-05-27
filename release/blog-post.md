@@ -93,7 +93,6 @@ Scope discipline matters. The following are explicitly out:
 
 - **Multi-tenant SaaS** — each user deploys their own town to their own Cloudflare account
 - **Our own agent runtime** — Goose handles that; we add capabilities on top
-- **A custom-branded Mac app** — we built one (signed, notarised, the full pipeline) but parked it before launch. Goose's own Desktop is good enough; a custom distro doesn't add value over a vanilla Goose install + the agent-install prompt.
 - **Mobile app** — Goose mobile is archived; tunnelled goosed access exists if needed
 - **Per-deployment data sync across machines** — single-machine assumed; goannad-style daemon optional
 - **Selling tokens / hosting LLMs** — you bring your own Goose provider keys

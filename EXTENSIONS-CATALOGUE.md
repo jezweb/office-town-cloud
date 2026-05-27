@@ -1,7 +1,5 @@
 # Extensions Catalogue
 
-> **Note (2026-05-27):** Office Town Desktop / Custom Distribution references reflect v1.0 planning. That path was parked — see SHIP-PLAN.md § "Pivot". The MCP server catalogue itself is unchanged and accurate.
-
 Every planned MCP extension for Office Town Cloud, in priority order, with the API surface, dependencies, and effort estimate per extension.
 
 All extensions are streamable-HTTP MCP servers hosted in the user's Cloudflare account. Each has a tool surface; agents call them via Goose's MCP integration.
@@ -81,7 +79,7 @@ Per `~/.claude/rules/mcp-gateway-pattern.md` — gateway with action verb beats 
 - Registers as `SourceType::Project` consumer (uses active project ID as building anchor)
 - The static preamble references the active building when set
 - Plays nicely with PR #8995 chain-card UX (tool action names read well in summaries)
-- Designed for `GOOSE_DISABLE_TOOL_CALL_SUMMARY=true` (default in Custom Distribution)
+- Designed for `GOOSE_DISABLE_TOOL_CALL_SUMMARY=true` (set by the install prompt during config wiring)
 
 **Effort:** 2-3 days including MCP Sampling spike.
 
@@ -268,7 +266,7 @@ This pack doesn't add new roles. It bundles **Cloudflare's own** skills + MCP se
 - Cloudflare skills (R2 management, Workers deploy, DNS edits) — from https://github.com/cloudflare/skills
 - Cloudflare MCP servers (Workers, DNS, KV, R2, D1) — from https://github.com/cloudflare/mcp
 
-Because Office Town Cloud runs on Cloudflare, this pack is included **by default** in the Office Town Desktop Custom Distribution. Users can disable it if they're not managing their own CF infrastructure.
+Because Office Town Cloud runs on Cloudflare, this pack is bundled with the standard install prompt so users get the Cloudflare ops MCPs alongside their Office Town deployment. Users can disable it from their Goose config if they're not managing their own CF infrastructure.
 
 This replaces what I'd been calling `office-town-devops` — instead of building our own Cloudflare MCP, we use Cloudflare's official ones plus add our deployment-specific recipes.
 

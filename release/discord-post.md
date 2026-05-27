@@ -33,8 +33,6 @@ A few specific asks for review:
 
 2. **Goose plugin install path** — we use the standard `goose plugin install jezweb/office-town-plugin` + edit config.yaml flow. Curious if there's a cleaner pattern for distributing custom MCP server wirings alongside a plugin.
 
-3. **Custom Distribution detour** — we built and shipped a signed .app via Custom Distribution (rebranded Goose Desktop) then realised it didn't add value over vanilla Goose + paste-prompt install. Goose Desktop's own UX is good enough. Parked the .app for v1.1 when init-config auto-load + first-launch wizard would justify it. Has anyone else explored Custom Distribution and reached similar conclusions?
-
 Happy to help anyone get their first Office Town running.
 
 — Jez (Jezweb)
