@@ -66,6 +66,11 @@ STEPS:
          url: <URL>/mcp/wiki
          headers:
            Authorization: Bearer <MCP_BEARER_TOKEN>
+       office-town-files:
+         type: streamable_http
+         url: <URL>/mcp/files
+         headers:
+           Authorization: Bearer <MCP_BEARER_TOKEN>
        office-town-browser:
          type: streamable_http
          url: <URL>/mcp/browser
@@ -149,9 +154,9 @@ Steps (no button click needed — the workers are already up):
 2. curl -s <URL>/health — verify the deployment is reachable.
 3. goose plugin install jezweb/office-town-plugin
 4. goose plugin install jezweb/office-town-pack-knowledge
-5. Edit ~/.config/goose/config.yaml — add the same 4 streamable_http
-   extension entries (wiki/browser/devops/email under <URL>/mcp/<name>
-   with Bearer <token>).
+5. Edit ~/.config/goose/config.yaml — add the same 5 streamable_http
+   extension entries (wiki/files/browser/devops/email under
+   <URL>/mcp/<name> with Bearer <token>).
 6. git clone https://github.com/jezweb/office-town <town path>.
 7. Smoke test: open Goose in the town folder, ask wiki.search "" —
    should return entries from my existing town.

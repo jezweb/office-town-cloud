@@ -2,7 +2,7 @@
 //   • HTTP API   at /api/{wiki,files,publish,cron}
 //   • Dashboard  at /, /dashboard/*
 //   • Publish    at /p/<slug>, /s/<token>
-//   • 4 MCP servers at /mcp/{wiki,browser,devops,email}
+//   • 5 MCP servers at /mcp/{wiki,files,browser,devops,email}
 // All capabilities share one binding surface (see wrangler.jsonc + types.ts).
 
 import { Hono } from 'hono';
@@ -16,6 +16,7 @@ import { publicReaderRoutes, publishRoutes } from './publish/routes';
 import type { AppContext, Env, IndexMessage } from './types';
 import { wikiRoutes } from './wiki/routes';
 import { wikiMcpRoutes } from './mcp-server/wiki';
+import { filesMcpRoutes } from './mcp-server/files';
 import { browserMcpRoutes } from './mcp-server/browser';
 import { devopsMcpRoutes } from './mcp-server/devops';
 import { emailMcpRoutes } from './mcp-server/email';
@@ -68,6 +69,7 @@ app.route('/api/cron', cronRoutes);
 // auth internally; mounted at /mcp/{name}. Goose connects to each path as a
 // separate MCP server.
 app.route('/mcp/wiki', wikiMcpRoutes);
+app.route('/mcp/files', filesMcpRoutes);
 app.route('/mcp/browser', browserMcpRoutes);
 app.route('/mcp/devops', devopsMcpRoutes);
 app.route('/mcp/email', emailMcpRoutes);

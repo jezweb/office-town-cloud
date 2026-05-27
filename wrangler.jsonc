@@ -40,6 +40,10 @@
 
 	"browser": { "binding": "BROWSER" },
 
+	// Cloudflare Images — for resize/format-convert/strip-EXIF on uploads.
+	// Free transformations up to 100k/month per zone. No API key needed.
+	"images": { "binding": "IMAGES" },
+
 	// Outbound email via Cloudflare Email Routing — no API key required.
 	// Requires Email Routing set up on the user's domain with destination
 	// addresses verified. Email Routing is free up to 100 sends/day.
