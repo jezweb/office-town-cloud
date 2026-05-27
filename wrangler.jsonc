@@ -14,7 +14,7 @@
 		{
 			"binding": "DB",
 			"database_name": "office-town-d1",
-			"database_id": "29609657-4b16-47d7-bff2-fb2b41293c13",
+			"database_id": "00000000-0000-0000-0000-000000000000",
 			"migrations_dir": "drizzle"
 		}
 	],
