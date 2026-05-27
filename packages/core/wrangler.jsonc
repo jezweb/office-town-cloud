@@ -41,6 +41,8 @@
 		"ENVIRONMENT": "production",
 		"ALLOWED_AUTH_DOMAINS": "jezweb.net,jezweb.com.au"
 	},
-	"routes": [],
+	"routes": [
+		{ "pattern": "app.officetown.au", "custom_domain": true }
+	],
 	"placement": { "mode": "smart" }
 }
