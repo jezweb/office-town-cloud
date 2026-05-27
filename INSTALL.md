@@ -189,7 +189,13 @@ If you're using a smaller model and want a deterministic path: there's also a `d
 
 ## Bonus — claim your `.town` domain
 
-`.town` is a real TLD (~$30 AUD/yr at most registrars including Synergy Wholesale, Hover, Porkbun). If your town deserves its own URL, register `<yourbusiness>.town` and point it at your Office Town Cloud deployment.
+`.town` is a real TLD operated by Identity Digital. **Cloudflare Registrar is cheapest long-term at $28.20 USD/yr flat** (~$42-45 AUD; Cloudflare passes registry wholesale with no markup, no surprise renewal hikes).
+
+Some registrars (Synergy Wholesale, Hover, Porkbun) offer first-year promo pricing ~$12 USD but renew at $55+/yr — read the renewal price before clicking buy. Year-2 onwards, Cloudflare wins.
+
+Bonus of Cloudflare Registrar: DNS is already on Cloudflare → no nameserver swap needed when wiring custom worker domains.
+
+Heads-up: short / brand-name `.town` domains (e.g. `office.town`, single-word company names) are mostly already taken — usually defensive registrations from 2014. Check availability before getting attached.
 
 After registration, ask your agent:
 
