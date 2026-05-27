@@ -17,22 +17,61 @@ Paste this into your agent. It checks what's installed, installs what's missing,
 
 ```
 You are preparing this machine for an Office Town install. Office Town
-is an AI agent fleet methodology on Cloudflare Workers. Source repos
-live at https://github.com/jezweb (office-town, office-town-cloud,
-office-town-plugin, office-town-pack-knowledge). DO NOT install Office
-Town yet — that's the next prompt. This prompt is prerequisites only.
+is a CONTENT BUNDLE (markdown agents + skills + recipes + a Cloudflare
+Workers backend) that installs INTO an existing AI agent host. It is
+NOT an agent runtime itself — it doesn't replace Claude Code, Goose,
+or whatever host you're already running in.
 
-Office Town is HOST-AGNOSTIC. It works with any Open Plugin Spec host:
-Claude Code, Goose, Aider, Cline, Cursor agent, OpenAI Codex, Hermes,
-etc. Don't install Goose just because the repo names mention it.
+WHAT YOU ARE NOT DOING:
+- You are NOT installing Goose. Goose is one possible host, not a
+  dependency. If Goose is already this user's host, fine — but don't
+  install it just because the repos mention it.
+- You are NOT installing a new agent runtime. The host you are running
+  in IS the runtime. You'll lay Office Town content into ITS config dir.
+- You are NOT creating a custom CLI called "office-town". There is no
+  such command. There's a methodology + cloud backend + plugin content.
+
+WHAT OFFICE TOWN ACTUALLY IS (so you know what to install in Prompt B):
+- 5 Cloudflare Workers deployed to the user's CF account (the cloud
+  backend — wiki + files + publish + cron + 4 MCP servers)
+- A plugin (markdown agents/, skills/, commands/, rules/) that gets
+  copied or symlinked into the user's existing host config dir
+  (~/.claude/ for Claude Code, ~/.config/goose/ for Goose, etc.)
+- A template folder (4 buildings + 11 wiki collection dirs + AGENTS.md)
+  cloned to the user's machine — typically ~/Documents/my-town
+- 4 MCP server registrations in the host's config, pointing at the
+  user's freshly-deployed workers
+
+Source repos (all public, github.com/jezweb):
+- office-town          (template + methodology — buildings/, roles/, wiki/)
+- office-town-cloud    (Cloudflare Workers backend)
+- office-town-plugin   (Open Plugin Spec plugin — agents/skills/commands)
+- office-town-pack-knowledge  (17 portable concepts to seed the wiki)
+
+DO NOT install Office Town in THIS prompt. This prompt is prerequisites
+ONLY (toolchain + Cloudflare access + host detection). Stop at "ready
+for Prompt B".
 
 Procedure:
 
-1. DETECT AGENT HOST.
-   You are running as my agent. Identify which host you are running
-   inside (Claude Code, Goose, etc.) and tell me. If you genuinely
-   can't tell, ask once and don't ask again.
-   Record the host name; we'll use it in the next prompt.
+1. DETECT AGENT HOST (don't install one).
+
+   You ARE the agent host's runtime. Office Town will install into
+   whatever you are. Identify yourself:
+   - If running inside Claude Code (anthropic CLI), say "Claude Code".
+     Common signals: ~/.claude/ exists, `claude --version` works,
+     or you can tell from your own internal context.
+   - If running inside Goose (`goose run` or Goose Desktop), say "Goose".
+   - If running inside another Open Plugin Spec host (Aider, Cline,
+     Cursor agent, OpenAI Codex CLI, Hermes, etc.), say which one.
+   - If you genuinely can't introspect, ask me once and don't ask again.
+
+   Record the host name for Prompt B.
+
+   ⚠️ DO NOT install Goose just because the Office Town repos mention it.
+   ⚠️ DO NOT install Claude Code if Goose is what's here.
+   ⚠️ DO NOT install a NEW agent host because the user "doesn't have one" —
+      if they're running you, they have one (you).
 
 2. DETECT + INSTALL TOOLCHAIN.
 
@@ -128,20 +167,42 @@ After Prompt A reports `READY FOR PROMPT B`, paste this. It does the actual Offi
 You completed Office Town prerequisites in the previous prompt. The
 toolchain is installed, Cloudflare credentials are in env vars
 (CLOUDFLARE_ACCOUNT_ID + CLOUDFLARE_API_TOKEN), and you know which
-agent host I use. Now install Office Town.
+agent host I'm using.
+
+REMINDER OF WHAT YOU ARE INSTALLING (4 things, into MY EXISTING host):
+
+  1. CLOUD BACKEND -> 5 Cloudflare Workers deployed to my CF account
+                       (uses my CLOUDFLARE_API_TOKEN; creates resources
+                       under my account ID; ~$2-5/month)
+  2. PLUGIN CONTENT -> markdown agents/ + skills/ + commands/ + rules/
+                       laid into MY agent host's config dir
+                       (~/.claude/ for Claude Code,
+                        ~/.config/goose/ for Goose, etc.)
+                       NOT into a new "office-town" directory.
+  3. TEMPLATE FOLDER -> github.com/jezweb/office-town cloned to my
+                       chosen path (typically ~/Documents/my-town).
+                       Contains 4 buildings + 11 wiki collection dirs.
+  4. MCP REGISTRATIONS -> 4 MCP servers added to MY host's config,
+                       pointing at the 4 worker URLs from #1, each
+                       authenticated with the same bearer token.
+
+WHAT YOU ARE NOT DOING:
+- NOT installing Goose (unless my host IS Goose; you checked in Prompt A)
+- NOT installing any new "office-town" CLI — no such command exists
+- NOT creating a sandbox/container/venv called "office-town"
+- NOT replacing my agent host with something else
+
+The user is still chatting with you (Claude Code, Goose, or whatever
+host you actually are) — Office Town doesn't change that. After all 4
+things above are installed, the user will keep talking to YOU, but you
+will now have access to 4 new MCP servers, and the agent files
+(@boss, @librarian, etc.) will be available for @-mention.
 
 Source repos (all public on github.com/jezweb):
 - office-town          (template + methodology)
 - office-town-cloud    (Cloudflare Workers backend)
 - office-town-plugin   (Open Plugin Spec plugin — agents/skills/recipes)
 - office-town-pack-knowledge  (17 portable concepts to seed wiki)
-
-The end-state I want:
-- 5 workers deployed to my Cloudflare account
-- 4 MCP servers wired into my agent host (each pointing at one of those
-  workers, authenticated by a bearer token)
-- A town folder on my machine with the 4 building folders + AGENTS.md
-- The plugin's agents/skills/commands accessible to my host
 
 Procedure:
 
