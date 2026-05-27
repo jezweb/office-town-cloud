@@ -20,7 +20,7 @@ const LAYOUT = (title: string, content: string) => `<!DOCTYPE html>
 body { font: 15px/1.55 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: var(--fg); background: var(--bg); margin: 0; }
 header { background: white; border-bottom: 1px solid var(--border); padding: 1rem 1.5rem; }
 header h1 { margin: 0; font-size: 1.4rem; font-weight: 600; }
-nav { display: flex; gap: 1rem; margin-top: 0.5rem; }
+nav { display: flex; gap: 1rem; margin-top: 0.5rem; align-items: center; }
 nav a { color: var(--accent); text-decoration: none; font-size: 0.9em; }
 nav a:hover { text-decoration: underline; }
 main { max-width: 1280px; margin: 0 auto; padding: 2rem 1.5rem; }
@@ -51,6 +51,7 @@ th { color: var(--muted); font-weight: 500; }
     <a href="/dashboard/cron">Routines</a>
     <a href="/dashboard/files">Files</a>
     <a href="/dashboard/published">Published</a>
+    <a href="/dashboard/connect" style="margin-left: auto;">Connect Goose →</a>
   </nav>
 </header>
 <main>${content}</main>
@@ -154,8 +155,17 @@ dashboardRoutes.get('/', async (c) => {
 		)
 		.join('');
 
+	const noEntriesYet = totalEntries === 0;
+	const connectCallout = noEntriesYet
+		? `<div class="card" style="margin-bottom: 1.5rem; background: linear-gradient(180deg, #eff6ff 0%, white 100%); border-color: var(--accent);">
+  <h2 style="margin-top: 0;">First time here? Wire your Goose.</h2>
+  <p style="margin: 0.5rem 0;">Nothing in the wiki yet. To start putting things into Office Town, connect your local Goose to this worker — one paste in a terminal wires all 6 MCPs.</p>
+  <a href="/dashboard/connect" style="display: inline-block; margin-top: 0.5rem; padding: 0.5rem 1rem; background: var(--accent); color: white; border-radius: 6px; text-decoration: none; font-weight: 500;">Get the install script →</a>
+</div>`
+		: '';
+
 	const content = `
-<h1 style="margin-top: 0;">Town overview</h1>
+${connectCallout}<h1 style="margin-top: 0;">Town overview</h1>
 <div class="kpi" style="margin: 1rem 0 2rem;">
   <div><div class="label">Wiki entries</div><div class="value">${totalEntries}</div></div>
   <div><div class="label">Active routines</div><div class="value">${cronJobsRes?.n ?? 0}</div></div>
@@ -375,4 +385,142 @@ dashboardRoutes.get('/dashboard/kanban', async (c) => {
   ${renderLane('Done', 'done')}
 </div>`;
 	return c.html(LAYOUT('Kanban', content));
+});
+
+// /dashboard/connect — one-paste install for the 6 MCPs.
+//
+// Renders a form: worker URL (prefilled from request host) + bearer token
+// (user pastes). JS regenerates a shell script on input change. One copy
+// button copies the script — user pastes into terminal, all 6 MCPs wired.
+//
+// We don't use goose:// deeplinks because their streamable_http format
+// doesn't accept a headers/Authorization parameter (verified against
+// goose-docs.ai 2026-05-28), so deeplinks would only register the URL and
+// leave the user to manually add the bearer.
+dashboardRoutes.get('/dashboard/connect', async (c) => {
+	const reqUrl = new URL(c.req.url);
+	const defaultWorkerUrl = `${reqUrl.protocol}//${reqUrl.host}`;
+
+	// Server-side rendered with placeholders the JS replaces on the fly.
+	// The bearer never round-trips through the server — pure browser-side
+	// string assembly.
+	const content = `
+<h1 style="margin-top: 0;">Connect your Goose</h1>
+<p class="muted">Wire all 6 Office Town MCPs into your local Goose installation with one paste.</p>
+
+<div class="card" style="max-width: 800px; margin-top: 1.5rem;">
+  <label style="display: block; margin-bottom: 1rem;">
+    <div style="font-weight: 600; margin-bottom: 0.25rem;">Worker URL</div>
+    <div class="muted" style="font-size: 0.85em; margin-bottom: 0.4rem;">The URL of this deployment. Edit if you're configuring a different one.</div>
+    <input id="worker-url" type="url" value="${defaultWorkerUrl}" style="width: 100%; padding: 0.5rem 0.6rem; border: 1px solid var(--border); border-radius: 6px; font-size: 0.95em; font-family: ui-monospace, SFMono-Regular, monospace;">
+  </label>
+
+  <label style="display: block; margin-bottom: 1rem;">
+    <div style="font-weight: 600; margin-bottom: 0.25rem;">MCP_BEARER_TOKEN</div>
+    <div class="muted" style="font-size: 0.85em; margin-bottom: 0.4rem;">The token you set when deploying (or generate one with <code>openssl rand -hex 32</code>). Never leaves your browser.</div>
+    <input id="bearer" type="text" placeholder="Paste your MCP_BEARER_TOKEN" autocomplete="off" spellcheck="false" style="width: 100%; padding: 0.5rem 0.6rem; border: 1px solid var(--border); border-radius: 6px; font-size: 0.95em; font-family: ui-monospace, SFMono-Regular, monospace;">
+  </label>
+
+  <div style="display: flex; gap: 0.75rem; align-items: center; margin-bottom: 0.75rem;">
+    <button id="copy-btn" type="button" onclick="copyScript()" style="padding: 0.5rem 1rem; border: 0; border-radius: 6px; background: var(--accent); color: white; font-size: 0.95em; font-weight: 500; cursor: pointer;">Copy install script</button>
+    <span id="copy-status" class="muted" style="font-size: 0.85em;"></span>
+  </div>
+
+  <pre id="script" style="background: var(--code); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; font-size: 0.85em; overflow-x: auto; line-height: 1.45; max-height: 360px;"></pre>
+
+  <p class="muted" style="margin-top: 1rem; font-size: 0.9em;">
+    Paste the script into a terminal. It checks Goose is installed, then runs <code>goose mcp add</code> 6 times + <code>goose mcp disable memory</code>. Idempotent — safe to re-run.
+  </p>
+</div>
+
+<div class="card" style="max-width: 800px; margin-top: 1.5rem;">
+  <h2>What gets installed</h2>
+  <table style="margin-top: 0.5rem;">
+    <thead><tr><th>MCP</th><th>Endpoint</th><th>What it does</th></tr></thead>
+    <tbody>
+      <tr><td><code>office-town-wiki</code></td><td><code>/mcp/wiki</code></td><td>Team wiki + replaces Goose Memory (22 actions)</td></tr>
+      <tr><td><code>office-town-files</code></td><td><code>/mcp/files</code></td><td>Files + share + publish + AI conversion + browser + image-gen + TTS (14 actions)</td></tr>
+      <tr><td><code>office-town-email</code></td><td><code>/mcp/email</code></td><td>Outbound email via Cloudflare Email Routing (2 actions)</td></tr>
+      <tr><td><code>office-town-cron</code></td><td><code>/mcp/cron</code></td><td>Recurring agent work + one-off scheduled jobs (7 actions)</td></tr>
+      <tr><td><code>office-town-voice</code></td><td><code>/mcp/voice</code></td><td>STT/TTS today, voice rooms in v1.2 (6 actions, 3 stubbed)</td></tr>
+      <tr><td><code>office-town-sandbox</code></td><td><code>/mcp/sandbox</code></td><td>Sandboxed code execution — Python/Node/TS/Bash (6 actions)</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<script>
+const MCPS = ['wiki', 'files', 'email', 'cron', 'voice', 'sandbox'];
+
+function escapeShell(s) {
+  // single-quote, escape embedded singles via the close-escape-reopen pattern
+  return "'" + s.replace(/'/g, "'\\\\''") + "'";
+}
+
+function generateScript() {
+  const url = document.getElementById('worker-url').value.replace(/\\/+$/, '');
+  const bearer = document.getElementById('bearer').value.trim();
+  const urlSafe = url || 'https://YOUR-WORKER-URL.workers.dev';
+  const bearerSafe = bearer || 'YOUR_MCP_BEARER_TOKEN';
+
+  const lines = [
+    "#!/usr/bin/env bash",
+    "# Office Town — wire all 6 MCPs into the local Goose installation.",
+    "# Generated from " + window.location.href,
+    "set -euo pipefail",
+    "",
+    "if ! command -v goose >/dev/null 2>&1; then",
+    "  echo 'Goose is not installed. Install from https://block.github.io/goose/ first.' >&2",
+    "  exit 1",
+    "fi",
+    "",
+    "WORKER_URL=" + escapeShell(urlSafe),
+    "BEARER=" + escapeShell(bearerSafe),
+    "AUTH_HEADER=\"Authorization: Bearer $BEARER\"",
+    "",
+    "echo 'Disabling Goose built-in Memory — wiki MCP replaces it.'",
+    "goose mcp disable memory 2>/dev/null || true",
+    "",
+  ];
+
+  for (const name of MCPS) {
+    lines.push("echo 'Adding office-town-" + name + " (" + name + " MCP)...'");
+    lines.push("goose mcp add office-town-" + name + " \\\\");
+    lines.push("  --transport streamable_http \\\\");
+    lines.push("  --url \"$WORKER_URL/mcp/" + name + "\" \\\\");
+    lines.push("  --header \"$AUTH_HEADER\"");
+    lines.push("");
+  }
+
+  lines.push("echo ''");
+  lines.push("echo '✓ All 6 Office Town MCPs wired into Goose.'");
+  lines.push("echo '  Run: goose mcp list — to verify.'");
+  lines.push("echo '  Then restart Goose Desktop or start a fresh CLI session.'");
+
+  return lines.join("\\n");
+}
+
+function refreshScript() {
+  document.getElementById('script').textContent = generateScript();
+}
+
+function copyScript() {
+  const text = generateScript();
+  const status = document.getElementById('copy-status');
+  const btn = document.getElementById('copy-btn');
+  navigator.clipboard.writeText(text).then(() => {
+    status.textContent = '✓ Copied — paste into terminal';
+    status.style.color = 'var(--green)';
+    btn.style.background = 'var(--green)';
+    setTimeout(() => { status.textContent = ''; btn.style.background = 'var(--accent)'; }, 2500);
+  }).catch((err) => {
+    status.textContent = 'Copy failed: ' + err.message;
+    status.style.color = 'var(--red)';
+  });
+}
+
+document.getElementById('worker-url').addEventListener('input', refreshScript);
+document.getElementById('bearer').addEventListener('input', refreshScript);
+refreshScript();
+</script>`;
+	return c.html(LAYOUT('Connect your Goose - Office Town', content));
 });

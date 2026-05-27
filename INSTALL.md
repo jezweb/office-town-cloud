@@ -2,7 +2,7 @@
 
 Office Town adds **team-shaped capabilities** to your [Goose](https://block.github.io/goose/) installation: four addressable roles (boss, librarian, worker, scout), a Cloudflare-backed wiki that replaces Goose's built-in Memory extension, and the Cloudflare primitives an agent needs to handle every kind of file/input/output.
 
-## Two steps
+## The shortest path (recommended)
 
 ### 1. Deploy the backend (one click)
 
@@ -10,7 +10,7 @@ Office Town adds **team-shaped capabilities** to your [Goose](https://block.gith
 
 Click the button. Cloudflare's flow signs you in (no API token required), provisions D1 + R2 + Vectorize + Queue + Workers AI + Images + Email Routing from `wrangler.jsonc`, and prompts you for one required secret:
 
-- **`MCP_BEARER_TOKEN`** — generate via `openssl rand -hex 32`. Keep this; you'll paste it into Goose's config.
+- **`MCP_BEARER_TOKEN`** — generate via `openssl rand -hex 32`. Keep this; you'll paste it on the next step.
 
 Optional fields:
 
@@ -19,7 +19,25 @@ Optional fields:
 
 ~2 minutes later you'll have a worker URL like `https://office-town-<you>.<account>.workers.dev`.
 
-### 2. Wire it into Goose (paste prompt into any capable AI agent)
+### 2. Open `<your-worker-url>/dashboard/connect`
+
+That page has a form: paste your `MCP_BEARER_TOKEN`, click **Copy install script**, paste into a terminal. The script wires all 6 MCPs into your local Goose installation (`goose mcp add` × 6 + `goose mcp disable memory`) using `goose --version` to detect Goose first. Token never leaves your browser.
+
+### 3. Clone the town template
+
+```bash
+git clone https://github.com/jezweb/office-town ~/Documents/my-town
+```
+
+Restart Goose, smoke-test: `wiki(action: 'list', collection: 'contacts')` should return cleanly. Then `@boss "introduce the team"`.
+
+That's it — about 5 minutes total.
+
+---
+
+## Fallback path — agent-driven install (if the connect page is unreachable)
+
+Paste this prompt into any capable AI agent (Claude Code, Goose, Aider, Cline):
 
 ```
 I want to add Office Town capabilities to my Goose installation.
