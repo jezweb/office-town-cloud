@@ -1,19 +1,24 @@
 // MCP server — voice gateway tool.
 //
-// Per MASTER-PLAN v1.1 Phase 3.1. Wraps Cloudflare Realtime (SFU/WebRTC) +
-// Workers AI Nova-3 (STT) + Aura-2 (TTS) into an agent-facing MCP gateway.
+// Wraps Workers AI Nova-3 STT + Aura-2 TTS into an agent-facing MCP gateway,
+// plus stubbed surface for the "AI joins a voice room" pattern (v1.2 — see
+// note on call_* actions below).
 //
 // Actions:
-//   transcribe     — audio bytes/URL → text (Nova-3 or Whisper)
-//   synthesize     — text → audio bytes (Aura-2; sugar over files MCP's speak action)
-//   call_create    — create a Realtime session, return signed WebRTC join URL
-//   call_end       — close a Realtime session, return transcript
-//   call_status    — current state of an active call
-//   list_voices    — Aura-2 voice catalog
+//   transcribe   — audio bytes/URL → text. Works today via Workers AI Nova-3.
+//   synthesize   — text → audio. Works today via Workers AI Aura-2 (40 voices).
+//                  Sugar over files(action:speak).
+//   list_voices  — Aura-2 voice catalog. Works today.
+//   call_create  — start a "phone the librarian" voice session. STUBBED for v1.1.
+//   call_end     — end a voice session, return transcript. STUBBED for v1.1.
+//   call_status  — current call state. STUBBED for v1.1.
 //
-// NOTE: The browser-side WebRTC widget for "phone the librarian" lives at
-// /dashboard/call/<session-id>. This MCP is the agent-facing surface; users
-// interact via the widget.
+// call_* path forward (v1.2): @cloudflare/realtime-agents — RealtimeAgent
+// extends DurableObject, agent joins a RealtimeKit meeting, browser widget
+// at /dashboard/call/<id> uses the RealtimeKit Web SDK. Pattern verified
+// against developers.cloudflare.com/realtime/agents/getting-started/ on
+// 2026-05-28. Workers CAN hold persistent voice peers via Durable Objects —
+// the older "Workers can't do WebRTC" claim is wrong.
 
 import { Hono } from 'hono';
 import type { AppContext, Env } from '../types';
@@ -181,34 +186,26 @@ async function handleAction(env: Env, args: Record<string, unknown>): Promise<un
 			};
 		}
 
-		case 'call_create': {
-			// Realtime SFU session creation requires Realtime bindings + a signed-URL
-			// generation step. Implementation deferred to a follow-up Cloudflare
-			// Realtime integration commit — for now this is a stub that returns
-			// a recognisable placeholder so agents know the surface exists.
-			return {
-				session_id: crypto.randomUUID(),
-				join_url: '(realtime session creation pending — see V1.1-PLAN §3.1)',
-				agent_slug: args.agent_slug ?? 'librarian',
-				status: 'not_yet_wired',
-				note: 'Realtime SFU session creation requires CALLS binding in wrangler.jsonc + signed-URL generation. Tracked in V1.1-PLAN §3.1.',
-			};
-		}
-
-		case 'call_end': {
-			return {
-				session_id: args.session_id,
-				transcript: '',
-				status: 'not_yet_wired',
-				note: 'Realtime session lifecycle pending — see V1.1-PLAN §3.1.',
-			};
-		}
-
+		case 'call_create':
+		case 'call_end':
 		case 'call_status': {
+			// Real implementation path (confirmed against developers.cloudflare.com
+			// 2026-05-28): use @cloudflare/realtime-agents — RealtimeAgent extends
+			// DurableObject, initPipeline([RealtimeKitTransport, WorkersAINova3STT,
+			// textProcessor, WorkersAITTS, RealtimeKitTransport]). Agent joins a
+			// RealtimeKit meeting via meetingId + authToken from the dashboard.
+			// Browser side: standard RealtimeKit Web SDK in /dashboard/call/<id>.
+			//
+			// Why still stubbed in v1.1: adds @cloudflare/realtime-agents dep + a
+			// new DO class + the browser widget + Realtime app id/secret per
+			// deployer. Achievable but a v1.2 piece. transcribe/synthesize/
+			// list_voices work today — use those for non-interactive voice.
 			return {
-				session_id: args.session_id,
-				status: 'not_yet_wired',
-				note: 'Realtime session tracking pending — see V1.1-PLAN §3.1.',
+				session_id: (args.session_id as string | undefined) ?? crypto.randomUUID(),
+				status: 'not_yet_wired_v1_2',
+				action,
+				note: 'Voice call_* actions are v1.2. Use transcribe / synthesize / list_voices today (they work in this MCP + via files(action:speak)).',
+				docs: 'https://developers.cloudflare.com/realtime/agents/getting-started/',
 			};
 		}
 
