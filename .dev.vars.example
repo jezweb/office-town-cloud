@@ -3,23 +3,15 @@
 # this file and prompts you to fill in each value during the deploy flow.
 # Empty defaults force you to provide them.
 
-# Required — gates the HTTP API + all 4 MCP servers (wiki, browser, devops, email).
+# REQUIRED — gates the HTTP API + all 4 MCP servers (wiki, files, browser, email).
 # Generate via: openssl rand -hex 32
 MCP_BEARER_TOKEN=
 
-# Required — better-auth session secret for the dashboard.
+# REQUIRED — better-auth session secret for the dashboard.
 # Generate via: openssl rand -hex 32
 BETTER_AUTH_SECRET=
 
-# Required if you want dashboard Google sign-in.
+# OPTIONAL — for dashboard Google sign-in.
 # Get from https://console.cloud.google.com/apis/credentials
 GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
-
-# Optional — devops MCP. Without these, devops tools throw a config error.
-# Cloudflare API token with read access to your account's Workers/Zones.
-CF_API_TOKEN=
-
-# Optional — email MCP outbound. Without this, email.send throws a config error.
-# Get from https://app.smtp2go.com/settings/apikeys
-SMTP2GO_API_KEY=

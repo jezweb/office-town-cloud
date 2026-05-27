@@ -29,23 +29,20 @@ export interface Env {
 	IMAGES: ImagesBinding;
 
 	// Outbound email via Cloudflare Email Routing — no API key needed.
-	// Falls back to SMTP2Go (SMTP2GO_API_KEY) if Email Routing isn't set up.
+	// Recipients must be verified destinations on the user's Email Routing setup.
 	SEND_EMAIL: SendEmail;
 
 	// Vars
 	ENVIRONMENT: 'development' | 'staging' | 'production';
 	ALLOWED_AUTH_DOMAINS: string;
-	CF_ACCOUNT_ID?: string;          // devops MCP
-	DEFAULT_FROM_EMAIL?: string;     // email MCP
-	DEFAULT_FROM_NAME?: string;      // email MCP
+	DEFAULT_FROM_EMAIL?: string;     // email MCP sender
+	DEFAULT_FROM_NAME?: string;      // email MCP sender display
 
 	// Secrets (set via dashboard or .dev.vars)
 	BETTER_AUTH_SECRET?: string;
 	GOOGLE_CLIENT_ID?: string;
 	GOOGLE_CLIENT_SECRET?: string;
 	MCP_BEARER_TOKEN?: string;
-	CF_API_TOKEN?: string;           // devops MCP
-	SMTP2GO_API_KEY?: string;        // email MCP (optional)
 }
 
 export interface IndexMessage {

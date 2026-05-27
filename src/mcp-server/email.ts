@@ -1,16 +1,20 @@
 // MCP server — email tools.
 //
-// Mounted on the office-town worker at /mcp/email. Outbound via SMTP2Go
-// (recommended; reply-to via custom_headers per the smtp2go rule). Logs sends
-// to wiki/research/ via in-process WikiService. Drafts saved to FILES bucket
-// via in-process FilesService.
+// Mounted on the office-town worker at /mcp/email. Outbound via Cloudflare
+// Email Routing's send_email binding (no API key, free up to 100/day). Logs
+// sends to wiki/research/ via in-process WikiService. Drafts saved to FILES
+// bucket via in-process FilesService.
 //
-// Inbound email landing (Cloudflare Email Routing → Worker email handler) is
-// wired at the worker level, not exposed via MCP.
+// Inbound email landing (Cloudflare Email Routing → Worker email handler)
+// is wired at the worker level (src/index.ts), not exposed via MCP.
+//
+// Sending requirements (set up once per domain):
+//   1. Enable Email Routing on the user's domain in Cloudflare dashboard.
+//   2. Add each recipient address as a verified destination.
+// The binding then sends to any verified destination — no per-message API
+// key, no external service.
 
 import { Hono } from 'hono';
-// EmailMessage from the cloudflare:email module is the wire shape for the
-// send_email binding. Used by sendViaCloudflare below.
 import { EmailMessage } from 'cloudflare:email';
 import type { Env, AppContext } from '../types';
 import { WikiService } from '../wiki/service';
@@ -27,18 +31,19 @@ interface JsonRpcRequest {
 
 const TOOLS = {
 	'email.send': {
-		description: 'Send an outbound email via SMTP2Go. Logs the send to wiki/research/ with kind:outbound-email.',
+		description:
+			'Send an outbound email via Cloudflare Email Routing. Recipients must be verified destinations on your Email Routing setup. Logs the send to wiki/research/ with kind:outbound-email.',
 		inputSchema: {
 			type: 'object',
 			properties: {
-				to: { type: 'array', items: { type: 'string' }, description: 'Recipient email(s)' },
+				to: { type: 'array', items: { type: 'string' }, description: 'Recipient email(s). Each must be a verified Email Routing destination.' },
 				cc: { type: 'array', items: { type: 'string' } },
 				bcc: { type: 'array', items: { type: 'string' } },
 				subject: { type: 'string' },
 				html: { type: 'string', description: 'HTML body (preferred for rich content)' },
 				text: { type: 'string', description: 'Plain text body (fallback when no html)' },
-				reply_to: { type: 'string', description: 'Reply-To address (set via custom_headers)' },
-				from_email: { type: 'string', description: 'Override default sender' },
+				reply_to: { type: 'string', description: 'Reply-To address' },
+				from_email: { type: 'string', description: 'Override default sender. Must be on a verified domain.' },
 				from_name: { type: 'string' },
 			},
 			required: ['to', 'subject'],
@@ -61,10 +66,10 @@ const TOOLS = {
 } as const;
 
 /**
- * Build a RFC 5322 message string from agent-friendly args. Hand-rolled because
- * we want zero deps and our requirements are simple (one HTML or text body,
- * optional Reply-To, no attachments via this path — use email.draft + share if
- * attachments are needed).
+ * Build a RFC 5322 message string. Hand-rolled because the send_email binding
+ * takes raw MIME and our requirements are simple (one HTML or text body,
+ * optional Reply-To, no attachments via this path — use email.draft + share
+ * if attachments are needed).
  */
 function buildMime(args: Record<string, unknown>, sender: string): string {
 	const to = (args.to as string[]).join(', ');
@@ -86,8 +91,8 @@ function buildMime(args: Record<string, unknown>, sender: string): string {
 	if (replyTo) headers.push(`Reply-To: ${replyTo}`);
 	if (args.cc) headers.push(`Cc: ${(args.cc as string[]).join(', ')}`);
 	// Bcc deliberately omitted from headers — that's how Bcc works
+
 	if (html && text) {
-		// multipart/alternative
 		const boundary = `boundary-${crypto.randomUUID()}`;
 		headers.push(`Content-Type: multipart/alternative; boundary="${boundary}"`);
 		const body = [
@@ -118,7 +123,7 @@ async function sendViaCloudflare(env: Env, args: Record<string, unknown>): Promi
 	const fromName = (args.from_name as string | undefined) ?? env.DEFAULT_FROM_NAME;
 	if (!fromEmail) {
 		throw new Error(
-			'Cloudflare Email send: no sender. Set DEFAULT_FROM_EMAIL var or pass from_email arg',
+			'No sender configured. Set DEFAULT_FROM_EMAIL var on this worker (an address on a domain you control with Email Routing enabled), or pass from_email arg.',
 		);
 	}
 	const sender = fromName ? `${fromName} <${fromEmail}>` : fromEmail;
@@ -135,58 +140,25 @@ async function sendViaCloudflare(env: Env, args: Record<string, unknown>): Promi
 			await env.SEND_EMAIL.send(message);
 			results.push({ to: recipient, ok: true });
 		} catch (err) {
-			results.push({ to: recipient, ok: false, error: err instanceof Error ? err.message : String(err) });
+			results.push({
+				to: recipient,
+				ok: false,
+				error: err instanceof Error ? err.message : String(err),
+			});
 		}
 	}
 	const failed = results.filter((r) => !r.ok);
 	if (failed.length === recipients.length) {
-		// every recipient failed — bubble the first error so the caller knows
 		throw new Error(
-			`Cloudflare Email Routing failed for all recipients. First error: ${failed[0]?.error}. ` +
-				`Hint: verify your domain has Email Routing set up and each recipient is registered as a verified destination, ` +
-				`or set SMTP2GO_API_KEY secret on this worker to fall back to SMTP2Go.`,
+			`Cloudflare Email Routing send failed for all recipients. First error: ${failed[0]?.error}. ` +
+				`Setup: (1) enable Email Routing on your sender domain in the Cloudflare dashboard, ` +
+				`(2) add each recipient address as a verified destination in Email Routing → Destination Addresses.`,
 		);
 	}
 	return { recipients: results };
 }
 
-async function sendViaSmtp2go(env: Env, args: Record<string, unknown>): Promise<unknown> {
-	const customHeaders: { header: string; value: string }[] = [];
-	if (args.reply_to) {
-		customHeaders.push({ header: 'Reply-To', value: args.reply_to as string });
-	}
-	const payload: Record<string, unknown> = {
-		api_key: env.SMTP2GO_API_KEY,
-		sender: args.from_email
-			? `${args.from_name ?? env.DEFAULT_FROM_NAME ?? ''} <${args.from_email}>`.trim()
-			: `${env.DEFAULT_FROM_NAME ?? ''} <${env.DEFAULT_FROM_EMAIL ?? ''}>`.trim(),
-		to: args.to,
-		subject: args.subject,
-		html_body: args.html,
-		text_body: args.text,
-	};
-	if (args.cc) payload.cc = args.cc;
-	if (args.bcc) payload.bcc = args.bcc;
-	if (customHeaders.length > 0) payload.custom_headers = customHeaders;
-
-	const resp = await fetch('https://api.smtp2go.com/v3/email/send', {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify(payload),
-	});
-	const json = (await resp.json()) as { data?: unknown };
-	if (resp.status >= 400) {
-		throw new Error(`SMTP2Go send failed: ${JSON.stringify(json)}`);
-	}
-	return json.data;
-}
-
-async function logSend(
-	env: Env,
-	args: Record<string, unknown>,
-	providerResult: unknown,
-	provider: 'cloudflare-email' | 'smtp2go',
-): Promise<void> {
+async function logSend(env: Env, args: Record<string, unknown>, providerResult: unknown): Promise<void> {
 	const slug = `${new Date().toISOString().slice(0, 10)}-${(args.subject as string)
 		.toLowerCase()
 		.replace(/[^a-z0-9]+/g, '-')
@@ -197,7 +169,7 @@ async function logSend(
 		to: args.to,
 		from: args.from_email ?? env.DEFAULT_FROM_EMAIL,
 		sent_at: new Date().toISOString(),
-		provider,
+		provider: 'cloudflare-email',
 	};
 	const body = `## Subject\n${args.subject}\n\n## Body\n\n${args.html ?? args.text ?? ''}\n\n## Provider response\n\`\`\`\n${JSON.stringify(providerResult, null, 2)}\n\`\`\``;
 
@@ -212,49 +184,14 @@ async function logSend(
 async function handleToolCall(env: Env, tool: string, args: Record<string, unknown>): Promise<unknown> {
 	switch (tool) {
 		case 'email.send': {
-			// Prefer the Cloudflare Email Routing binding (no API key, free up
-			// to 100/day, sends from a domain you own). Fall back to SMTP2Go
-			// if the user has set SMTP2GO_API_KEY. If neither is usable, fail
-			// with a clear message naming both options.
-			const cfAvailable = env.SEND_EMAIL && typeof env.SEND_EMAIL.send === 'function';
-			const smtpAvailable = !!env.SMTP2GO_API_KEY;
-
-			if (!cfAvailable && !smtpAvailable) {
+			if (!env.SEND_EMAIL || typeof env.SEND_EMAIL.send !== 'function') {
 				throw new Error(
-					'Email send not configured. Two options:\n' +
-						'  (a) Set up Cloudflare Email Routing on your domain + add destination addresses ' +
-						'(zero secrets, free up to 100 sends/day).\n' +
-						"  (b) Set SMTP2GO_API_KEY secret on this worker (`wrangler secret put SMTP2GO_API_KEY`) " +
-						'for unlimited sends via SMTP2Go.',
+					'Email send binding unavailable. The Worker needs the send_email binding (declared in wrangler.jsonc). Setup: enable Email Routing on your sender domain in the Cloudflare dashboard and add destination addresses to verify recipients.',
 				);
 			}
-
-			let result: unknown;
-			let provider: 'cloudflare-email' | 'smtp2go';
-			if (cfAvailable) {
-				try {
-					result = await sendViaCloudflare(env, args);
-					provider = 'cloudflare-email';
-				} catch (err) {
-					if (smtpAvailable) {
-						console.warn(
-							JSON.stringify({
-								event: 'cf_email_failed_falling_back_to_smtp2go',
-								error: err instanceof Error ? err.message : String(err),
-							}),
-						);
-						result = await sendViaSmtp2go(env, args);
-						provider = 'smtp2go';
-					} else {
-						throw err;
-					}
-				}
-			} else {
-				result = await sendViaSmtp2go(env, args);
-				provider = 'smtp2go';
-			}
-			await logSend(env, args, result, provider);
-			return { sent: true, provider, provider_result: result };
+			const result = await sendViaCloudflare(env, args);
+			await logSend(env, args, result);
+			return { sent: true, provider: 'cloudflare-email', provider_result: result };
 		}
 		case 'email.draft': {
 			const slug =
