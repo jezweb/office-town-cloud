@@ -26,19 +26,39 @@ collapse." Everything that existed survived.
 
 ## What the original design said
 
-From `office-town.md` (last revised 2026-05-26 v1.1):
+> **CORRECTION 2026-05-28**: an earlier version of this audit cited
+> `office-town.md` v1.1 (2026-05-26) saying "use Goose built-in Memory
+> for per-role preferences." **That was pre-pivot.**
+> `docs/MEMORY-COMPARISON.md` (2026-05-27) is the authoritative later
+> decision and says the OPPOSITE: build our own wiki, DISABLE Goose's
+> Memory extension entirely. Wiki replaces Memory. The audit below has
+> been rewritten to reflect the actual pivot.
 
-> **Memory architecture: use Goose built-ins; Office Town adds the wiki**
+From `docs/MEMORY-COMPARISON.md` (the authoritative decision):
+
+> **Three reasons to build our own memory layer:**
 >
-> | Layer | Existing extension | Purpose |
-> |---|---|---|
-> | Per-role preferences | **Memory** (built-in) | Save preferences and patterns |
-> | Per-turn guardrails | **Top of Mind / MOIM** (built-in) | Injected every turn |
-> | Relational reasoning | **Knowledge Graph** (npm package) | Multi-hop queries |
-> | Cross-session FTS | **Chat Recall** (built-in) | What did we talk about last week |
-> | **Team knowledge curation** | `office-town-wiki` (we build) | Shared wiki |
->
-> The other four layers are **existing Goose primitives we *enable*, not replace.**
+> 1. Goose Memory has confirmed structural weaknesses we cannot work
+>    around (system prompt bloat, tag-as-HashMap-key bug, substring
+>    deletion, no path traversal protection, race-prone writes, no
+>    semantic search, no supersession, no audit, no versioning, no
+>    cross-machine sync, returns Rust debug format)
+> 2. Our wiki integrates with Cloudflare-native primitives (R2, D1, Vectorize)
+> 3. Our wiki integrates with Goose's emerging `Source` system
+
+> **Memory + wiki — disable one.** The Office Town INSTALL.md prompt
+> instructs the agent to disable Goose's `memory` extension during
+> setup — the wiki MCP replaces it.
+
+So the memory architecture is:
+
+| Layer | Decision |
+|---|---|
+| Goose's built-in `memory` extension | **REPLACE** with our wiki. Disable in INSTALL.md (we do). |
+| **Top of Mind / MOIM** (Goose default) | Keep enabled — per-turn standing orders. |
+| **Chat Recall** | Not in Goose's 8 defaults, not in v1 scope. |
+| **Knowledge Graph (npm)** | Not in v1 scope. |
+| **`office-town-wiki`** | Team-scale shared knowledge with FTS5 + Vectorize + audit + supersession. THE memory layer. |
 
 And:
 
@@ -157,43 +177,72 @@ INSTALL.md becomes a list of external extensions to wire.
 **Effort**: ~1.5 hours. **Result**: tightest scope, biggest reliance
 on ecosystem maturing. Trades feature breadth for maintenance simplicity.
 
-## My honest recommendation
+## Wiki MCP — actual gaps against MEMORY-COMPARISON.md promises
 
-**Option A** — drop over-built MCPs, add the missing memory tools,
-document the integration map. This:
+The wiki IS the memory layer. So everything MEMORY-COMPARISON.md said
+the wiki provides is what we must ship for v1.0 to actually deliver
+the pivot's premise:
 
-1. Honours the original design intent (use Goose built-ins for memory,
-   external MCPs for browser/email, build only the wiki + things we
-   genuinely need).
-2. Fixes the actual user complaint (can't browse the wiki, no
-   guidance on what other extensions to install).
-3. Doesn't throw away the genuinely useful pieces (files.convert is
-   real value — Workers AI's toMarkdown is genuinely better than asking
-   the user to install their own PDF extractor; files.transform_image
-   ditto for Cloudflare Images).
-4. Cleans up the README to be honest about what comes from where.
+| Promised in MEMORY-COMPARISON.md | Shipped today | Gap |
+|---|---|---|
+| 1 gateway `wiki` tool with **8 actions** | 7 separate tools (wiki.create / read / update / delete / search / list_collections / register_collection) | **structural** — gateway-vs-separate-tools mismatch; missing 1 action |
+| Triage shapes on search | ✓ wiki.search returns triage shapes | none |
+| Synthesis on recall via MCP Sampling | ✗ not built | `wiki.search` needs `synthesize: true` mode |
+| Stable UUID + slug returned on write | partial (slug yes; UUID unclear) | check + add |
+| YAML frontmatter + markdown body | ✓ | none |
+| FTS5 + Vectorize hybrid + RRF | ✓ | none |
+| `wiki_audit` table with who/when/what/prev_hash/new_hash/why | ✗ not in schema | **add table + populate on every write** |
+| Supersession (atomic old → new in D1) | ✗ — current updates are PATCH | **add wiki.supersede** |
+| **Browse-without-search** (`wiki.list`, `wiki.recent`, find-by-frontmatter) | ✗ not exposed | **the librarian needs this** |
+| Per-session awareness (`session_id` + `agent_slug` per audit row) | ✗ | depends on audit being added |
+| Sizes designed for 10,000+ entries | infrastructure yes; tooling for browsing at scale no | listing tools fix this |
 
-The work would be:
+## Recommendation (replacing the earlier A/B/C)
 
-1. Remove `/mcp/browser` from the worker (it's a v1.1 thing per the plan;
-   users get browser via Playwright plugin or Cloudflare's MCP)
-2. Remove `/mcp/email` *outbound* MCP from the worker (Gmail MCP handles
-   reading; outbound send-via-Cloudflare can stay as a worker route if
-   we want, but doesn't need MCP exposure since the librarian doesn't
-   need to send email — that's user-driven)
-3. Keep the `email()` inbound handler — that's binding-based and ties
-   inbound email into the wiki, which IS our value-add
-4. Add `wiki.list`, `wiki.recent`, `wiki.list_recent_changes` to the
-   wiki MCP — fills the memory gap
-5. Rewrite INSTALL.md step 4 to list ALL the extensions a user should
-   wire:
-   - Our 1 (or 2) MCPs from the worker
-   - Goose built-ins to enable
-   - External MCPs to install via `goose mcp add` (Cloudflare's,
-     Playwright, optional Gmail)
-   - The Knowledge Graph npm package install if reasoning wanted
+**Path A** — fill the wiki gaps to actually deliver the
+MEMORY-COMPARISON.md promises + drop over-built MCPs.
+
+Work:
+
+1. **Wiki listing tools** (the immediate "can't browse" pain):
+   - `wiki.list({collection, limit, cursor, filter?: {frontmatter?}})`
+   - `wiki.recent({collection?, since_days, limit})`
+   - `wiki.find_by_frontmatter({collection, where: {kind: "contact", status: "open"}})`
+2. **Audit + supersession** (the durability promise):
+   - Drizzle migration: `wiki_audit` table
+   - `wiki.update` populates audit row with `why` (required arg)
+   - `wiki.supersede({collection, slug, new_body, new_frontmatter, why})` — atomic
+   - All deletes write an audit row before removing
+3. **Synthesis** (the recall-quality promise):
+   - `wiki.search({...args, synthesize: true})` — uses MCP Sampling
+     to summarise top hits into a single coherent answer
+4. **Drop over-built MCPs**:
+   - Remove `/mcp/browser` (was v1.1 per EXTENSIONS-CATALOGUE.md; Playwright
+     plugin + Cloudflare's official browser MCP cover this)
+   - Remove `/mcp/email` outbound MCP (was v1.1; users wire send via
+     direct HTTP or wait for v1.1 to expose properly)
+   - Keep the `email()` inbound handler (binding-based, ties to wiki)
+5. **Rewrite INSTALL.md** to document the full extension surface a
+   user wires alongside ours — for v1, that's:
+   - Our wiki MCP from the worker (mandatory)
+   - Our files MCP from the worker (optional, for convert+transform)
+   - Goose's built-in Top of Mind (default-enabled, leave it)
+   - DISABLE Goose's built-in `memory` (we already say this; keep it
+     and explain why — wiki replaces)
+   - Cloudflare's official MCPs from `github.com/cloudflare/mcp` —
+     installed via `goose mcp add` for ops on the user's CF account
+
+Effort: ~4-5 hours. Result: the wiki actually delivers what the
+pivot decision promised.
+
+**Path B** — minimal patch: just the listing tools, defer audit /
+supersession / synthesis to v1.1.
+
+Work: items 1 + 4 + 5 above (skip 2 and 3).
+
+Effort: ~2 hours. Result: librarian can browse, but the durability
++ synthesis promises remain v1.1.
 
 ## Decision needed
 
-Pick A / B / C, or propose a different shape. Then I execute that
-without scope creep.
+Pick A or B. Or push back if I'm misreading MEMORY-COMPARISON.md.
