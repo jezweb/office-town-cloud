@@ -8,7 +8,7 @@ Office Town adds **team-shaped capabilities** to your [Goose](https://block.gith
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/jezweb/office-town-cloud)
 
-Click the button. Cloudflare's flow signs you in (no API token required), provisions D1 + R2 + Vectorize + Queue + Workers AI + Images + Email Routing from `wrangler.jsonc`, and prompts you for one required secret:
+Click the button. Cloudflare's flow signs you in (no API token required), provisions D1 + R2 + Vectorize + Queue + Workers AI + Images + Email Routing + Containers (for the sandbox MCP) from `wrangler.jsonc`, and prompts you for one required secret:
 
 - **`MCP_BEARER_TOKEN`** — generate via `openssl rand -hex 32`. Keep this; you'll paste it on the next step.
 
@@ -17,7 +17,9 @@ Optional fields:
 - `BETTER_AUTH_SECRET` — for dashboard sign-in (`openssl rand -hex 32`)
 - `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` — for dashboard Google auth
 
-~2 minutes later you'll have a worker URL like `https://office-town-<you>.<account>.workers.dev`.
+~2-3 minutes later you'll have a worker URL like `https://office-town-<you>.<account>.workers.dev`. (First deploy is ~30 sec slower than subsequent ones — Cloudflare builds the sandbox container image once and caches it.)
+
+> **Self-deploying via `wrangler deploy` instead of the button?** You'll need Docker running locally for that first deploy — wrangler builds the sandbox container image on your machine and pushes it to Cloudflare's registry. After that, normal deploys reuse the cached image. End-users clicking the button above don't need Docker (Cloudflare's hosted build infra handles it).
 
 ### 2. Open `<your-worker-url>/dashboard/connect`
 
