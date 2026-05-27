@@ -1,3 +1,5 @@
+> ⚠️ **PRE-PIVOT DRAFT (2026-05-27)** — written when Office Town was framed as a host-agnostic methodology with a Custom Distribution Mac app. After dogfood + reflection, Office Town was repositioned as "capabilities for Goose" and the .app was parked. This draft needs an editing pass before publishing: remove Office Town Desktop references, lead with the Goose-first install path.
+
 # 90-second demo video storyboard
 
 The single demo video for the v1.0 launch. Target: HN + Discord + landing-page hero.

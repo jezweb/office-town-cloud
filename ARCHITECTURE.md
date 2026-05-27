@@ -1,5 +1,7 @@
 # Architecture
 
+> **Note (2026-05-27):** Some sections of this doc reference "Office Town Desktop" (a Custom Distribution of Goose) and "Custom Distribution build". That path was **parked in v1.0** — see SHIP-PLAN.md § "Pivot" for context. The architecture of the Cloudflare backend, MCPs, and methodology is unchanged. Office Town is now positioned as "capabilities for Goose" — see [README](./README.md).
+
 This document describes the system architecture, the primitive decisions, and the data flow. It's the contract that subsequent build phases execute against.
 
 ## Goals

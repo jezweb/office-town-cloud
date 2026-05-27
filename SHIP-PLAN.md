@@ -393,6 +393,23 @@ For external collaborators (once public):
 - 🔄 Dogfood: startup-town simulation 2026-05-27 surfaced 2 P1 bugs (publish trailing slash, missing tasks/ collection) both fixed; killer feature identified (commitments tracking) and shipped in pack-startup
 - ⏸ M8 — Sustained release
 
+## Pivot — 2026-05-27 evening
+
+After shipping the Custom Distribution (Office Town Desktop signed + notarised + CI-released), we recognised it doesn't add value over a vanilla Goose install + the agent-install prompt. Goose itself is upstream-mature enough (projects, MCPs, plugins all native) that a custom-branded distro doesn't fill any gap.
+
+Decision: **Office Town is "capabilities for Goose"**, not a host-agnostic methodology or a custom distro. Audience: existing Goose users + people willing to install Goose. The .app remains built and signed; we parked office-town-desktop + officetown-download as private repos. The pipeline (cert, CI, notarisation) is preserved for a v1.1 moment when bake-in init-config + first-launch wizard would make the .app genuinely value-add.
+
+What changed in repos:
+- office-town-desktop → private (preserved, not deleted)
+- officetown-download → private (the redirect worker still runs but the source is now private)
+- INSTALL.md → rewritten Goose-first (Prompt A: prereqs; Prompt B: install)
+- All primary repo READMEs → repositioned as "capabilities for Goose"
+- Landing page → hero "Goose capabilities that work like a team", removed Download-for-Mac CTA
+
+Outstanding from M5 (now revised):
+- Demo video (90s storyboard exists, not yet recorded)
+- HN/Discord/blog drafts (still in release/ but pre-pivot wording — needs editing pass before publishing)
+
 ## One-sentence summary
 
-Office Town ships in two waves (v1 = wiki-shaped substrate over Goose; v1.1 = killer Cloudflare extensions like voice + browser + email), distributed as three repos (template + cloud + plugin), with a target of ~12 focused weeks from spec to v1.1 public release.
+Office Town adds team-shaped capabilities (4 addressable roles + Cloudflare-backed wiki + 8 role packs) to your Goose installation; install via two paste-able prompts that any capable agent can execute.

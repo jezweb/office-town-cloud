@@ -1,5 +1,7 @@
 # Extensions Catalogue
 
+> **Note (2026-05-27):** Office Town Desktop / Custom Distribution references reflect v1.0 planning. That path was parked — see SHIP-PLAN.md § "Pivot". The MCP server catalogue itself is unchanged and accurate.
+
 Every planned MCP extension for Office Town Cloud, in priority order, with the API surface, dependencies, and effort estimate per extension.
 
 All extensions are streamable-HTTP MCP servers hosted in the user's Cloudflare account. Each has a tool surface; agents call them via Goose's MCP integration.

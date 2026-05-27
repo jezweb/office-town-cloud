@@ -1,5 +1,7 @@
 # Build Spec — Office Town Cloud
 
+> **Note (2026-05-27):** Custom Distribution / Office Town Desktop references in later phases reflect v1.0 planning. That distribution was parked — see SHIP-PLAN.md § "Pivot" — but the cloud-backend build phases described here all shipped and are accurate.
+
 Phased build plan. Each phase ships value independently and is bounded by realistic time estimates. Total v1: ~6-8 focused days of work; v1.1 adds another ~5-7 days for the killer Cloudflare extensions.
 
 ## Phase 0 — Architecture spec (this folder, this commit)

@@ -69,8 +69,7 @@ See [WIKI-SCHEMA.md](./WIKI-SCHEMA.md) for the 11 default collections.
 ## Repos in this family
 
 - [office-town](https://github.com/jezweb/office-town) — methodology + template
-- [office-town-plugin](https://github.com/jezweb/office-town-plugin) — Open Plugin Spec plugin (roles + skills + recipes)
-- [office-town-desktop](https://github.com/jezweb/office-town-desktop) — Custom Distribution Goose Desktop .app
+- [office-town-plugin](https://github.com/jezweb/office-town-plugin) — Goose plugin (roles + skills + recipes + hooks)
 - [office-town-pack-*](https://github.com/jezweb?tab=repositories&q=office-town-pack) — 8 role packs
 
 ## Licence
