@@ -6,29 +6,43 @@ You shouldn't read setup docs. Your agent should.
 
 ## Prompt 1 — Full install (deploy backend + wire up + first town)
 
-Paste this into your agent. It'll deploy Office Town Cloud to your own Cloudflare account, install the Goose plugin, set up your first town, and verify everything works.
+Paste this into your agent. It'll deploy Office Town Cloud to your own Cloudflare account, wire the plugin into your existing agent host (NO Goose install unless that's already your host), set up your first town, and verify everything works.
 
 ```
 I want to install Office Town — a markdown-based AI agent fleet
-methodology running on Cloudflare Workers. Source repos:
+methodology running on Cloudflare Workers. Office Town is HOST-AGNOSTIC:
+it works with any Open Plugin Spec host (Goose, Claude Code, OpenAI
+Codex, Aider, Cline, etc.). Don't install Goose just because the plugin
+repo says "Goose plugin" — use whichever host I already have.
+
+Source repos:
 
 - https://github.com/jezweb/office-town (template + methodology)
 - https://github.com/jezweb/office-town-cloud (Workers backend)
-- https://github.com/jezweb/office-town-plugin (Goose plugin)
+- https://github.com/jezweb/office-town-plugin (Open Plugin Spec plugin)
 - https://github.com/jezweb/office-town-pack-knowledge (concept seed)
 
 Walk me through these in order, asking for input when needed:
 
 0. CLARIFY UPFRONT before doing anything else:
 
-   a. **Which agent host am I configuring?** Detect from what's installed:
-      - Goose CLI present (`goose --version` works) -> use Goose plugin path
-      - ~/.claude/ exists / you're running inside Claude Code -> use Claude Code path
-      - both / neither -> ask me
+   a. **Which agent host am I configuring?** Detect what's already installed
+      and DON'T install another host just because the plugin repo mentions
+      one. Office Town doesn't need Goose; it needs an Open Plugin Spec
+      host, and Claude Code / Aider / Cline / Cursor agent / OpenAI Codex
+      all qualify.
+
+      Detection order:
+      - You're running inside Claude Code (~/.claude/ exists, `claude` CLI
+        responds) -> use Claude Code path. DON'T install Goose.
+      - Goose CLI present (`goose --version` works) -> use Goose path.
+      - Both installed -> ask me which one I prefer.
+      - Neither -> ask me. Common picks: Claude Code (free, terminal-based)
+        or Goose Desktop (GUI). Don't pick for me.
+
       The end-game is: 4 MCP servers wired into my agent host pointing at
-      my deployed workers. The plugin contents (agents/, skills/, commands/)
-      translate to whichever host I use; don't force Goose if Claude Code is
-      what's here.
+      my deployed workers, and the plugin's agents/skills/commands sitting
+      in the right host-specific config dir.
 
    b. **Toolchain bootstrap if missing.** On a fresh Mac you'll often have only
       git. Check for: node 20+, pnpm 10+, wrangler. If absent, install via
