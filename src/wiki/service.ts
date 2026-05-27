@@ -1,13 +1,13 @@
 // Wiki service — owns the CRUD lifecycle over R2 + D1 + Queue.
 
-import { DEFAULT_COLLECTIONS, isValidSlug, r2KeyFor, WikiError } from '@office-town/shared';
+import { DEFAULT_COLLECTIONS, isValidSlug, r2KeyFor, WikiError } from '../lib/shared';
 import type {
 	CollectionDef,
 	WikiCreateInput,
 	WikiEntry,
 	WikiReadResult,
 	WikiUpdateInput,
-} from '@office-town/shared';
+} from '../lib/shared';
 import { applySextectDefaults, parseMarkdown, renderMarkdown, validateUniversalSextet } from './frontmatter';
 import type { Env, IndexMessage } from '../types';
 

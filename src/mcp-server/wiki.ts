@@ -1,18 +1,18 @@
-// office-town-mcp-wiki — streamable-HTTP MCP server exposing wiki tools.
+// MCP server — wiki tools.
 //
-// Goose (and any MCP-compatible host) connects to /sse for SSE transport
-// or /mcp for the streamable HTTP transport. We translate JSON-RPC tool
-// calls into HTTP calls against office-town-core's /api/wiki/* routes.
+// Mounted on the office-town worker at /mcp/wiki. Speaks streamable-HTTP MCP
+// (POST /mcp/wiki for JSON-RPC, GET /mcp/wiki/sse for SSE transport endpoint
+// advertising). Translates JSON-RPC tool calls into direct in-process calls
+// against the WikiService and searchWiki — no cross-worker fetches, no
+// service bindings.
 
 import { Hono } from 'hono';
+import type { Env, AppContext } from '../types';
+import { WikiService } from '../wiki/service';
+import { searchWiki } from '../wiki/search';
+import type { WikiSearchInput } from '../lib/shared';
 
-interface Env {
-	CORE_BASE_URL: string;
-	MCP_BEARER_TOKEN: string;
-	CORE: Fetcher; // Service binding to office-town-core
-}
-
-const app = new Hono<{ Bindings: Env }>();
+const app = new Hono<AppContext>();
 
 interface JsonRpcRequest {
 	jsonrpc: '2.0';
@@ -113,74 +113,62 @@ const TOOL_SCHEMA = {
 	},
 } as const;
 
-async function callCore(env: Env, method: string, path: string, body?: unknown): Promise<{ status: number; body: unknown }> {
-	const headers: Record<string, string> = {
-		Authorization: `Bearer ${env.MCP_BEARER_TOKEN}`,
-	};
-	if (body !== undefined) headers['Content-Type'] = 'application/json';
-
-	// Use service binding (env.CORE) when available — avoids cross-zone fetch overhead
-	// and CF "1042 origin connection error" on Worker-to-Worker public URLs.
-	const fetchImpl = env.CORE?.fetch?.bind(env.CORE) ?? fetch;
-	const url = env.CORE ? `https://core.internal${path}` : `${env.CORE_BASE_URL}${path}`;
-
-	const resp = await fetchImpl(url, {
-		method,
-		headers,
-		body: body !== undefined ? JSON.stringify(body) : undefined,
-	});
-	const text = await resp.text();
-	try {
-		return { status: resp.status, body: text ? JSON.parse(text) : null };
-	} catch {
-		return { status: resp.status, body: text };
-	}
-}
-
 async function handleToolCall(env: Env, tool: string, args: Record<string, unknown>): Promise<unknown> {
+	const svc = new WikiService(env);
+	const editor = 'mcp-agent'; // MCP calls don't carry session identity; use a stable agent slug
+
 	switch (tool) {
 		case 'wiki.create': {
 			const collection = (args.collection as string) ?? 'knowledge';
-			const result = await callCore(env, 'POST', `/api/wiki/${collection}`, {
-				slug: args.slug,
-				frontmatter: args.frontmatter,
-				body: args.body,
-			});
-			if (result.status >= 400) throw new Error(JSON.stringify(result.body));
-			return result.body;
+			return await svc.create(
+				{
+					collection,
+					slug: args.slug as string | undefined,
+					frontmatter: (args.frontmatter as Record<string, unknown>) ?? {},
+					body: (args.body as string) ?? '',
+				},
+				editor,
+			);
 		}
 		case 'wiki.read': {
-			const result = await callCore(env, 'GET', `/api/wiki/${args.collection}/${args.slug}`);
-			if (result.status >= 400) throw new Error(JSON.stringify(result.body));
-			return result.body;
+			return await svc.read(args.collection as string, args.slug as string);
 		}
 		case 'wiki.update': {
-			const result = await callCore(env, 'PATCH', `/api/wiki/${args.collection}/${args.slug}`, {
-				frontmatter_patch: args.frontmatter_patch,
-				body: args.body,
-				last_change_summary: args.last_change_summary,
-			});
-			if (result.status >= 400) throw new Error(JSON.stringify(result.body));
-			return result.body;
+			return await svc.update(
+				{
+					collection: args.collection as string,
+					slug: args.slug as string,
+					frontmatter_patch: args.frontmatter_patch as Record<string, unknown> | undefined,
+					body: args.body as string | undefined,
+					last_change_summary: args.last_change_summary as string,
+				},
+				editor,
+			);
 		}
 		case 'wiki.delete': {
-			const result = await callCore(env, 'DELETE', `/api/wiki/${args.collection}/${args.slug}`);
-			if (result.status >= 400) throw new Error(JSON.stringify(result.body));
+			await svc.delete(args.collection as string, args.slug as string);
 			return { ok: true };
 		}
 		case 'wiki.search': {
-			const result = await callCore(env, 'POST', '/api/wiki/search', args);
-			if (result.status >= 400) throw new Error(JSON.stringify(result.body));
-			return result.body;
+			const input = args as unknown as WikiSearchInput;
+			const hits = await searchWiki(env, input);
+			if (input.expanded) {
+				const expanded = await Promise.all(
+					hits.map(async (h) => {
+						const read = await svc.read(h.collection, h.slug).catch(() => null);
+						return { ...h, body: read?.body ?? '' };
+					}),
+				);
+				return { hits: expanded };
+			}
+			return { hits };
 		}
 		case 'wiki.list_collections': {
-			const result = await callCore(env, 'GET', '/api/wiki/collections');
-			if (result.status >= 400) throw new Error(JSON.stringify(result.body));
-			return result.body;
+			const collections = await svc.listCollections();
+			return { collections };
 		}
 		case 'wiki.register_collection': {
-			const result = await callCore(env, 'POST', '/api/wiki/collections', args);
-			if (result.status >= 400) throw new Error(JSON.stringify(result.body));
+			await svc.registerCollection(args as unknown as Parameters<typeof svc.registerCollection>[0]);
 			return { ok: true };
 		}
 		default:
@@ -202,7 +190,7 @@ async function handleRpc(env: Env, req: JsonRpcRequest): Promise<JsonRpcResult> 
 					result: {
 						protocolVersion: '2025-03-26',
 						capabilities: { tools: {} },
-						serverInfo: { name: 'office-town-mcp-wiki', version: '0.1.0' },
+						serverInfo: { name: 'office-town-wiki', version: '1.0.0' },
 					},
 				};
 			case 'tools/list':
@@ -238,7 +226,8 @@ async function handleRpc(env: Env, req: JsonRpcRequest): Promise<JsonRpcResult> 
 	}
 }
 
-app.post('/mcp', async (c) => {
+// POST / — main JSON-RPC endpoint (mounted at /mcp/wiki by the root app)
+app.post('/', async (c) => {
 	const auth = c.req.header('authorization');
 	if (!auth || auth !== `Bearer ${c.env.MCP_BEARER_TOKEN}`) {
 		return c.json({ error: 'Unauthorised' }, 401);
@@ -248,9 +237,8 @@ app.post('/mcp', async (c) => {
 	return c.json(result);
 });
 
+// GET /sse — SSE transport endpoint advertising for legacy MCP clients
 app.get('/sse', async (c) => {
-	// SSE transport — open connection, send initial server-hello, then await
-	// POSTs to /sse/message. Minimal implementation for Goose compatibility.
 	const auth = c.req.header('authorization');
 	if (!auth || auth !== `Bearer ${c.env.MCP_BEARER_TOKEN}`) {
 		return c.json({ error: 'Unauthorised' }, 401);
@@ -258,7 +246,7 @@ app.get('/sse', async (c) => {
 	const encoder = new TextEncoder();
 	const stream = new ReadableStream({
 		start(controller) {
-			controller.enqueue(encoder.encode('event: endpoint\ndata: /mcp\n\n'));
+			controller.enqueue(encoder.encode('event: endpoint\ndata: /mcp/wiki\n\n'));
 		},
 	});
 	return new Response(stream, {
@@ -270,6 +258,6 @@ app.get('/sse', async (c) => {
 	});
 });
 
-app.get('/health', (c) => c.json({ status: 'ok', service: 'office-town-mcp-wiki' }));
+app.get('/health', (c) => c.json({ status: 'ok', service: 'office-town-wiki-mcp' }));
 
-export default app;
+export const wikiMcpRoutes = app;

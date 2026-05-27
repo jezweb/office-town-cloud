@@ -1,7 +1,7 @@
 // Frontmatter parsing + universal sextet validation.
 
 import yaml from 'js-yaml';
-import type { UniversalSextet } from '@office-town/shared';
+import type { UniversalSextet } from '../lib/shared';
 
 const FRONTMATTER_DELIMITER = '---';
 

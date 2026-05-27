@@ -1,17 +1,17 @@
-// office-town-mcp-browser — MCP server wrapping Cloudflare Browser Rendering
-// via @cloudflare/puppeteer. The BROWSER binding exposes a Puppeteer-compatible
-// instance, NOT a REST endpoint — earlier version using bare fetch was wrong.
+// MCP server — browser tools.
+//
+// Mounted on the office-town worker at /mcp/browser. Uses Cloudflare Browser
+// Rendering via @cloudflare/puppeteer (the BROWSER binding is a
+// Puppeteer-compatible instance, not a REST endpoint). Screenshots that opt
+// into `save_to_files` are stored via the in-process FilesService — no
+// cross-worker fetches.
 
 import { Hono } from 'hono';
 import puppeteer from '@cloudflare/puppeteer';
+import type { Env, AppContext } from '../types';
+import { FilesService } from '../files/service';
 
-interface Env {
-	BROWSER: Fetcher;
-	MCP_BEARER_TOKEN: string;
-	CORE: Fetcher;
-}
-
-const app = new Hono<{ Bindings: Env }>();
+const app = new Hono<AppContext>();
 
 interface JsonRpcRequest {
 	jsonrpc: '2.0';
@@ -128,20 +128,13 @@ async function handleToolCall(env: Env, tool: string, args: Record<string, unkno
 				if (args.save_to_files) {
 					const path = args.save_to_files as string;
 					const base64 = toBase64(buffer);
-					const resp = await env.CORE.fetch('https://core.internal/api/files/upload', {
-						method: 'POST',
-						headers: {
-							Authorization: `Bearer ${env.MCP_BEARER_TOKEN}`,
-							'Content-Type': 'application/json',
-						},
-						body: JSON.stringify({
-							path,
-							content_base64: base64,
-							content_type: 'image/png',
-						}),
+					const filesService = new FilesService(env);
+					const meta = await filesService.upload({
+						path,
+						content_base64: base64,
+						content_type: 'image/png',
 					});
-					const json = await resp.json();
-					return { saved_to: path, size_bytes: buffer.byteLength, file_meta: json };
+					return { saved_to: path, size_bytes: buffer.byteLength, file_meta: meta };
 				}
 
 				return {
@@ -161,7 +154,7 @@ async function handleToolCall(env: Env, tool: string, args: Record<string, unkno
 					try {
 						const elementHandle = await page.$(selector);
 						if (elementHandle) {
-							const text = await elementHandle.evaluate((el: Element) => el.textContent?.trim() ?? '');
+							const text = await elementHandle.evaluate((el) => (el as unknown as { textContent: string | null }).textContent?.trim() ?? '');
 							result[field] = text;
 							await elementHandle.dispose();
 						} else {
@@ -194,7 +187,7 @@ async function handleRpc(env: Env, req: JsonRpcRequest): Promise<JsonRpcResult> 
 					result: {
 						protocolVersion: '2025-03-26',
 						capabilities: { tools: {} },
-						serverInfo: { name: 'office-town-mcp-browser', version: '0.2.0' },
+						serverInfo: { name: 'office-town-browser', version: '1.0.0' },
 					},
 				};
 			case 'tools/list':
@@ -222,7 +215,7 @@ async function handleRpc(env: Env, req: JsonRpcRequest): Promise<JsonRpcResult> 
 	}
 }
 
-app.post('/mcp', async (c) => {
+app.post('/', async (c) => {
 	const auth = c.req.header('authorization');
 	if (!auth || auth !== `Bearer ${c.env.MCP_BEARER_TOKEN}`) {
 		return c.json({ error: 'Unauthorised' }, 401);
@@ -232,6 +225,22 @@ app.post('/mcp', async (c) => {
 	return c.json(result);
 });
 
-app.get('/health', (c) => c.json({ status: 'ok', service: 'office-town-mcp-browser', version: '0.2.0' }));
+app.get('/sse', async (c) => {
+	const auth = c.req.header('authorization');
+	if (!auth || auth !== `Bearer ${c.env.MCP_BEARER_TOKEN}`) {
+		return c.json({ error: 'Unauthorised' }, 401);
+	}
+	const encoder = new TextEncoder();
+	const stream = new ReadableStream({
+		start(controller) {
+			controller.enqueue(encoder.encode('event: endpoint\ndata: /mcp/browser\n\n'));
+		},
+	});
+	return new Response(stream, {
+		headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' },
+	});
+});
 
-export default app;
+app.get('/health', (c) => c.json({ status: 'ok', service: 'office-town-browser-mcp' }));
+
+export const browserMcpRoutes = app;
