@@ -19,6 +19,8 @@ import { wikiMcpRoutes } from './mcp-server/wiki';
 import { browserMcpRoutes } from './mcp-server/browser';
 import { devopsMcpRoutes } from './mcp-server/devops';
 import { emailMcpRoutes } from './mcp-server/email';
+import { handleInboundEmail } from './email/inbound';
+import type { ForwardableEmailMessage } from '@cloudflare/workers-types';
 
 const app = new Hono<AppContext>();
 
@@ -107,6 +109,26 @@ export default {
 				);
 				msg.retry({ delaySeconds: Math.min(60, (msg.attempts ?? 1) * 10) });
 			}
+		}
+	},
+	// Inbound email — wired by Cloudflare Email Routing when the user adds a
+	// catch-all or per-address rule pointing at this worker. Writes the
+	// message to wiki/research/ with kind:inbound-email. No API token needed
+	// — the email() handler is a binding-based entry point.
+	async email(message: ForwardableEmailMessage, env: Env): Promise<void> {
+		try {
+			await handleInboundEmail(message, env);
+		} catch (err) {
+			console.error(
+				JSON.stringify({
+					event: 'inbound_email_error',
+					from: message.from,
+					to: message.to,
+					error: err instanceof Error ? err.message : String(err),
+				}),
+			);
+			// Don't reject — surface the error in logs so the user can find it,
+			// but accept the message so we don't bounce mail back to the sender.
 		}
 	},
 } satisfies ExportedHandler<Env, IndexMessage>;

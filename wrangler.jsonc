@@ -40,6 +40,14 @@
 
 	"browser": { "binding": "BROWSER" },
 
+	// Outbound email via Cloudflare Email Routing — no API key required.
+	// Requires Email Routing set up on the user's domain with destination
+	// addresses verified. Email Routing is free up to 100 sends/day.
+	// Falls back to SMTP2Go if SMTP2GO_API_KEY secret is set.
+	"send_email": [
+		{ "name": "SEND_EMAIL" }
+	],
+
 	"queues": {
 		"producers": [
 			{ "binding": "INDEX_QUEUE", "queue": "office-town-index" }

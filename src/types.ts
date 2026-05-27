@@ -8,6 +8,7 @@ import type {
 	Fetcher,
 	Queue,
 	R2Bucket,
+	SendEmail,
 	Vectorize,
 } from '@cloudflare/workers-types';
 
@@ -22,6 +23,10 @@ export interface Env {
 
 	// Browser Rendering (for the browser MCP)
 	BROWSER: Fetcher;
+
+	// Outbound email via Cloudflare Email Routing — no API key needed.
+	// Falls back to SMTP2Go (SMTP2GO_API_KEY) if Email Routing isn't set up.
+	SEND_EMAIL: SendEmail;
 
 	// Vars
 	ENVIRONMENT: 'development' | 'staging' | 'production';
