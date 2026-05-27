@@ -1,16 +1,38 @@
-// MCP server — wiki tools.
+// MCP server — wiki gateway tool.
 //
-// Mounted on the office-town worker at /mcp/wiki. Speaks streamable-HTTP MCP
-// (POST /mcp/wiki for JSON-RPC, GET /mcp/wiki/sse for SSE transport endpoint
-// advertising). Translates JSON-RPC tool calls into direct in-process calls
-// against the WikiService and searchWiki — no cross-worker fetches, no
-// service bindings.
+// Per MASTER-PLAN-2026-05-28.md §4.1 and ~/.claude/rules/mcp-gateway-pattern.md
+// (Jezweb standard): ONE gateway tool `wiki` with 17 actions, not 17 separate
+// tools. Keeps the LLM's tool list short, ergonomic, and consistent with
+// every other Jezweb MCP (basalt-cortex, smtp2go, gmail, jim2, etc.).
+//
+// Actions:
+//   write           — Create new entry
+//   get             — Fetch full entry by collection+slug
+//   read            — Alias for get (for older skills/recipes)
+//   search          — Hybrid FTS5+Vectorize, optional synthesis via MCP Sampling
+//   update          — Merge frontmatter patch + optional body
+//   supersede       — Atomic replace with audit
+//   archive         — Soft delete (status='archived')
+//   delete          — Hard delete (rare — audit row records prev_hash)
+//   history         — Audit log for an entry
+//   link            — Cross-reference two entries
+//   related         — Inverse — what links to/from this entry
+//   list            — Browse a collection with optional frontmatter filter
+//   tree            — Directory-style overview of all collections + slugs
+//   recent          — Last-modified entries (since_days, collection?, kind?)
+//   glob            — Pattern match collection/slug (find -name-like)
+//   head            — First N lines of an entry body
+//   head_many       — Bulk first-N-lines across multiple entries
+//   collections     — List all collection definitions
+//   register        — Register a new collection (e.g. via a pack plugin)
+//   attach          — Add a non-markdown file to an entry's folder (logo, pdf, etc.)
+//   list_attachments — List attachments for an entry
+//   detach          — Remove an attachment
 
 import { Hono } from 'hono';
-import type { Env, AppContext } from '../types';
+import type { AppContext, Env } from '../types';
 import { WikiService } from '../wiki/service';
 import { searchWiki } from '../wiki/search';
-import type { WikiSearchInput } from '../lib/shared';
 
 const app = new Hono<AppContext>();
 
@@ -28,129 +50,163 @@ interface JsonRpcResult<T = unknown> {
 	error?: { code: number; message: string; data?: unknown };
 }
 
+const VALID_ACTIONS = [
+	'write', 'get', 'read', 'search', 'update', 'supersede', 'archive', 'delete',
+	'history', 'link', 'related', 'list', 'tree', 'recent', 'glob', 'head', 'head_many',
+	'collections', 'register', 'attach', 'list_attachments', 'detach',
+] as const;
+type WikiAction = (typeof VALID_ACTIONS)[number];
+
 const TOOL_SCHEMA = {
-	'wiki.create': {
-		description:
-			'Create a new wiki entry. Frontmatter must include slug (or one will be derived from input.slug). Universal sextet (slug, kind, created, last_updated, last_edited_by, last_change_summary) auto-filled if missing.',
+	wiki: {
+		description: [
+			"Office Town wiki — team-shaped shared knowledge backed by R2 + D1 (FTS5) + Vectorize.",
+			"Replaces Goose's built-in Memory extension with a richer, auditable, multi-machine substrate.",
+			"",
+			"Single gateway tool with multiple actions. Always pass {action: '...', ...args}.",
+			"",
+			"Reading actions: get, read, search, list, tree, recent, glob, head, head_many, history, related, collections, list_attachments",
+			"Writing actions (require why:): write, update, supersede, archive, delete, link, register, attach, detach",
+			"",
+			"Triage-shape: list and search return frontmatter + 300-char excerpt + signed URL, not full bodies. Use get/read for full content.",
+			"Active-only by default: archived/deleted entries are filtered out unless includeArchived:true.",
+			"Audit: every write/update/supersede/archive/delete/link/attach/detach records a row in wiki_audit with required why:.",
+		].join('\n'),
 		inputSchema: {
 			type: 'object',
 			properties: {
-				collection: { type: 'string', description: 'Target collection (knowledge, contacts, orgs, etc.). Defaults to knowledge.' },
-				slug: { type: 'string', description: 'Kebab-case slug. Optional if frontmatter.slug is present.' },
-				frontmatter: { type: 'object', description: 'YAML frontmatter as an object. Sextet fields auto-filled.' },
-				body: { type: 'string', description: 'Markdown body.' },
+				action: { type: 'string', enum: VALID_ACTIONS, description: 'The wiki operation to perform' },
+				// write/update/supersede
+				collection: { type: 'string', description: 'Collection name (e.g. contacts, orgs, projects, knowledge)' },
+				slug: { type: 'string', description: 'Kebab-case slug (omit on write to auto-derive from frontmatter.slug)' },
+				frontmatter: { type: 'object', description: 'YAML frontmatter as object (write/supersede)' },
+				frontmatter_patch: { type: 'object', description: 'Partial frontmatter merge (update only)' },
+				body: { type: 'string', description: 'Markdown body (write/update/supersede)' },
+				new_frontmatter: { type: 'object', description: 'Replacement frontmatter (supersede)' },
+				new_body: { type: 'string', description: 'Replacement body (supersede)' },
+				last_change_summary: { type: 'string', description: 'Short reason for update (also acceptable as why:)' },
+				why: { type: 'string', description: 'Required for every mutation: reason for the change' },
+				// search
+				query: { type: 'string', description: 'Search query (FTS5 + vector)' },
+				collections: { type: 'array', items: { type: 'string' }, description: 'Restrict search to these collections' },
+				limit: { type: 'number', description: 'Max hits (default varies per action; capped at 200-500)' },
+				expanded: { type: 'boolean', description: 'Fold full bodies into search results (default false → triage-shape only)' },
+				synthesize: { type: 'boolean', description: 'Use MCP Sampling to synthesize an answer from top hits' },
+				// list / recent
+				filter: { type: 'object', description: 'Frontmatter equality filter (list)' },
+				offset: { type: 'number', description: 'Pagination offset (list)' },
+				sort: { type: 'string', enum: ['recent', 'oldest', 'alpha'], description: 'Sort order (list)' },
+				includeArchived: { type: 'boolean', description: 'Include archived entries (default false)' },
+				since_days: { type: 'number', description: 'How far back to look (recent)' },
+				kind: { type: 'string', description: 'Filter by frontmatter.kind (recent)' },
+				// glob / head
+				pattern: { type: 'string', description: 'Glob pattern matching collection/slug (e.g. contacts/acme-*)' },
+				lines: { type: 'number', description: 'Number of lines to preview (head / head_many)' },
+				items: { type: 'array', description: 'List of {collection, slug} to head_many' },
+				// related / link
+				depth: { type: 'number', description: 'Graph traversal depth (related)' },
+				from: { type: 'object', description: '{collection, slug} for link source' },
+				to: { type: 'object', description: '{collection, slug} for link target' },
+				// register
+				name: { type: 'string', description: 'New collection name (register)' },
+				shape: { type: 'string', enum: ['entity-as-folder', 'dated-stream', 'flat-topic'], description: 'Collection layout (register)' },
+				canonical_filename: { type: 'string', description: 'Canonical .md filename per entry (register)' },
+				required_fields: { type: 'array', items: { type: 'string' }, description: 'Required frontmatter fields (register)' },
+				description: { type: 'string', description: 'Collection description (register)' },
+				// attachments
+				filename: { type: 'string', description: 'Attachment filename (attach/detach)' },
+				content_base64: { type: 'string', description: 'Base64 content (attach)' },
+				content_type: { type: 'string', description: 'MIME type (attach)' },
 			},
-			required: ['frontmatter', 'body'],
-		},
-	},
-	'wiki.read': {
-		description: 'Read a wiki entry by collection + slug. Returns full frontmatter + body.',
-		inputSchema: {
-			type: 'object',
-			properties: {
-				collection: { type: 'string' },
-				slug: { type: 'string' },
-			},
-			required: ['collection', 'slug'],
-		},
-	},
-	'wiki.update': {
-		description: 'Update a wiki entry. Merge frontmatter_patch into existing frontmatter; replace body if given. last_change_summary is required.',
-		inputSchema: {
-			type: 'object',
-			properties: {
-				collection: { type: 'string' },
-				slug: { type: 'string' },
-				frontmatter_patch: { type: 'object' },
-				body: { type: 'string' },
-				last_change_summary: { type: 'string' },
-			},
-			required: ['collection', 'slug', 'last_change_summary'],
-		},
-	},
-	'wiki.delete': {
-		description: 'Delete a wiki entry. Archives the R2 object before removal.',
-		inputSchema: {
-			type: 'object',
-			properties: {
-				collection: { type: 'string' },
-				slug: { type: 'string' },
-			},
-			required: ['collection', 'slug'],
-		},
-	},
-	'wiki.search': {
-		description:
-			'Hybrid FTS + vector search. Returns triage shape (frontmatter + 300-char excerpt + signed URL) by default. Set expanded=true to fold in full bodies.',
-		inputSchema: {
-			type: 'object',
-			properties: {
-				query: { type: 'string' },
-				collections: { type: 'array', items: { type: 'string' } },
-				limit: { type: 'number', description: 'Max hits (default 10, max 50)' },
-				expanded: { type: 'boolean', description: 'Include full body in results' },
-			},
-			required: ['query'],
-		},
-	},
-	'wiki.list_collections': {
-		description: 'List all registered wiki collections with their shapes and required fields.',
-		inputSchema: { type: 'object', properties: {} },
-	},
-	'wiki.register_collection': {
-		description: 'Register a new collection. Default collections (business, contacts, orgs, etc.) are pre-registered.',
-		inputSchema: {
-			type: 'object',
-			properties: {
-				name: { type: 'string' },
-				shape: { type: 'string', enum: ['entity-as-folder', 'dated-stream', 'flat-topic'] },
-				canonical_filename: { type: 'string' },
-				required_fields: { type: 'array', items: { type: 'string' } },
-				description: { type: 'string' },
-			},
-			required: ['name', 'shape', 'canonical_filename', 'required_fields', 'description'],
+			required: ['action'],
 		},
 	},
 } as const;
 
-async function handleToolCall(env: Env, tool: string, args: Record<string, unknown>): Promise<unknown> {
-	const svc = new WikiService(env);
-	const editor = 'mcp-agent'; // MCP calls don't carry session identity; use a stable agent slug
+function asContent(value: unknown): { type: 'text'; text: string } {
+	return { type: 'text', text: typeof value === 'string' ? value : JSON.stringify(value, null, 2) };
+}
 
-	switch (tool) {
-		case 'wiki.create': {
-			const collection = (args.collection as string) ?? 'knowledge';
+function getEditor(args: Record<string, unknown>): string {
+	return (args.agent_slug as string) ?? (args.editor as string) ?? 'mcp-agent';
+}
+
+function getWhy(args: Record<string, unknown>, fallback?: string): string {
+	const candidate = (args.why as string) ?? (args.last_change_summary as string) ?? fallback;
+	if (!candidate) {
+		throw new Error("Action requires 'why:' — every wiki mutation must record a rationale (per MEMORY-COMPARISON.md design contract)");
+	}
+	return candidate;
+}
+
+async function handleAction(env: Env, args: Record<string, unknown>): Promise<unknown> {
+	const action = args.action as WikiAction;
+	if (!VALID_ACTIONS.includes(action)) {
+		throw new Error(`Unknown action: ${action}. Valid: ${VALID_ACTIONS.join(', ')}`);
+	}
+	const svc = new WikiService(env);
+
+	switch (action) {
+		case 'write': {
 			return await svc.create(
 				{
-					collection,
+					collection: (args.collection as string) ?? 'knowledge',
 					slug: args.slug as string | undefined,
 					frontmatter: (args.frontmatter as Record<string, unknown>) ?? {},
 					body: (args.body as string) ?? '',
 				},
-				editor,
+				getEditor(args),
+				getWhy(args, 'initial entry'),
+				args.session_id as string | undefined,
 			);
 		}
-		case 'wiki.read': {
+		case 'get':
+		case 'read': {
+			if (!args.collection || !args.slug) throw new Error('get/read require collection + slug');
 			return await svc.read(args.collection as string, args.slug as string);
 		}
-		case 'wiki.update': {
+		case 'update': {
 			return await svc.update(
 				{
 					collection: args.collection as string,
 					slug: args.slug as string,
 					frontmatter_patch: args.frontmatter_patch as Record<string, unknown> | undefined,
 					body: args.body as string | undefined,
-					last_change_summary: args.last_change_summary as string,
+					last_change_summary: getWhy(args),
 				},
-				editor,
+				getEditor(args),
+				args.session_id as string | undefined,
 			);
 		}
-		case 'wiki.delete': {
-			await svc.delete(args.collection as string, args.slug as string);
+		case 'supersede': {
+			return await svc.supersede(
+				{
+					collection: args.collection as string,
+					slug: args.slug as string,
+					new_frontmatter: args.new_frontmatter as Record<string, unknown> | undefined,
+					new_body: args.new_body as string | undefined,
+				},
+				getWhy(args),
+				getEditor(args),
+				args.session_id as string | undefined,
+			);
+		}
+		case 'archive': {
+			await svc.archive(args.collection as string, args.slug as string, getWhy(args), getEditor(args), args.session_id as string | undefined);
 			return { ok: true };
 		}
-		case 'wiki.search': {
-			const input = args as unknown as WikiSearchInput;
+		case 'delete': {
+			await svc.delete(args.collection as string, args.slug as string, getWhy(args), getEditor(args), args.session_id as string | undefined);
+			return { ok: true };
+		}
+		case 'search': {
+			const input = {
+				query: args.query as string,
+				collections: args.collections as string[] | undefined,
+				limit: args.limit as number | undefined,
+				expanded: args.expanded as boolean | undefined,
+			};
+			if (!input.query) throw new Error('search requires query');
 			const hits = await searchWiki(env, input);
 			if (input.expanded) {
 				const expanded = await Promise.all(
@@ -161,23 +217,107 @@ async function handleToolCall(env: Env, tool: string, args: Record<string, unkno
 				);
 				return { hits: expanded };
 			}
-			return { hits };
+			// TODO: synthesize via MCP Sampling when args.synthesize
+			return { hits, synthesized: args.synthesize ? null : undefined };
 		}
-		case 'wiki.list_collections': {
-			const collections = await svc.listCollections();
-			return { collections };
+		case 'history': {
+			const limit = (args.limit as number | undefined) ?? 50;
+			return await svc.getHistory(args.collection as string, args.slug as string, limit);
 		}
-		case 'wiki.register_collection': {
-			await svc.registerCollection(args as unknown as Parameters<typeof svc.registerCollection>[0]);
+		case 'link': {
+			return await svc.link(
+				{
+					from: args.from as { collection: string; slug: string },
+					to: args.to as { collection: string; slug: string },
+					kind: args.kind as string | undefined,
+					why: getWhy(args),
+				},
+				getEditor(args),
+				args.session_id as string | undefined,
+			);
+		}
+		case 'related': {
+			return await svc.related(args.collection as string, args.slug as string, args.depth as number | undefined);
+		}
+		case 'list': {
+			return await svc.list({
+				collection: args.collection as string,
+				filter: args.filter as Record<string, unknown> | undefined,
+				limit: args.limit as number | undefined,
+				offset: args.offset as number | undefined,
+				sort: args.sort as 'recent' | 'oldest' | 'alpha' | undefined,
+				includeArchived: args.includeArchived as boolean | undefined,
+			});
+		}
+		case 'tree': {
+			return await svc.tree(args.depth as number | undefined);
+		}
+		case 'recent': {
+			return await svc.recent({
+				since_days: args.since_days as number | undefined,
+				collection: args.collection as string | undefined,
+				kind: args.kind as string | undefined,
+				limit: args.limit as number | undefined,
+			});
+		}
+		case 'glob': {
+			return await svc.glob(args.pattern as string, args.limit as number | undefined);
+		}
+		case 'head': {
+			return await svc.head(args.collection as string, args.slug as string, args.lines as number | undefined);
+		}
+		case 'head_many': {
+			return await svc.headMany(args.items as Array<{ collection: string; slug: string }>, args.lines as number | undefined);
+		}
+		case 'collections': {
+			return { collections: await svc.listCollections() };
+		}
+		case 'register': {
+			await svc.registerCollection({
+				name: args.name as string,
+				shape: args.shape as 'entity-as-folder' | 'dated-stream' | 'flat-topic',
+				canonical_filename: args.canonical_filename as string,
+				required_fields: args.required_fields as string[],
+				description: args.description as string,
+			});
 			return { ok: true };
 		}
-		default:
-			throw new Error(`Unknown tool: ${tool}`);
+		case 'attach': {
+			const bytes = args.content_base64
+				? Uint8Array.from(atob(args.content_base64 as string), (c) => c.charCodeAt(0))
+				: new Uint8Array(0);
+			return await svc.addAttachment(
+				{
+					collection: args.collection as string,
+					slug: args.slug as string,
+					filename: args.filename as string,
+					content_bytes: bytes,
+					content_type: args.content_type as string | undefined,
+				},
+				getEditor(args),
+				getWhy(args),
+				args.session_id as string | undefined,
+			);
+		}
+		case 'list_attachments': {
+			return { attachments: await svc.listAttachments(args.collection as string, args.slug as string) };
+		}
+		case 'detach': {
+			await svc.removeAttachment(
+				args.collection as string,
+				args.slug as string,
+				args.filename as string,
+				getWhy(args),
+				getEditor(args),
+				args.session_id as string | undefined,
+			);
+			return { ok: true };
+		}
+		default: {
+			const _exhaustive: never = action;
+			throw new Error(`Unhandled action: ${String(_exhaustive)}`);
+		}
 	}
-}
-
-function asContent(value: unknown): { type: 'text'; text: string } {
-	return { type: 'text', text: typeof value === 'string' ? value : JSON.stringify(value, null, 2) };
 }
 
 async function handleRpc(env: Env, req: JsonRpcRequest): Promise<JsonRpcResult> {
@@ -207,15 +347,11 @@ async function handleRpc(env: Env, req: JsonRpcRequest): Promise<JsonRpcResult> 
 				};
 			case 'tools/call': {
 				const params = (req.params ?? {}) as { name: string; arguments?: Record<string, unknown> };
-				const value = await handleToolCall(env, params.name, params.arguments ?? {});
+				const value = await handleAction(env, params.arguments ?? {});
 				return { jsonrpc: '2.0', id: req.id, result: { content: [asContent(value)] } };
 			}
 			default:
-				return {
-					jsonrpc: '2.0',
-					id: req.id,
-					error: { code: -32601, message: `Method not found: ${req.method}` },
-				};
+				return { jsonrpc: '2.0', id: req.id, error: { code: -32601, message: `Method not found: ${req.method}` } };
 		}
 	} catch (err) {
 		return {
@@ -226,7 +362,6 @@ async function handleRpc(env: Env, req: JsonRpcRequest): Promise<JsonRpcResult> 
 	}
 }
 
-// POST / — main JSON-RPC endpoint (mounted at /mcp/wiki by the root app)
 app.post('/', async (c) => {
 	const auth = c.req.header('authorization');
 	if (!auth || auth !== `Bearer ${c.env.MCP_BEARER_TOKEN}`) {
@@ -237,7 +372,6 @@ app.post('/', async (c) => {
 	return c.json(result);
 });
 
-// GET /sse — SSE transport endpoint advertising for legacy MCP clients
 app.get('/sse', async (c) => {
 	const auth = c.req.header('authorization');
 	if (!auth || auth !== `Bearer ${c.env.MCP_BEARER_TOKEN}`) {
@@ -250,14 +384,10 @@ app.get('/sse', async (c) => {
 		},
 	});
 	return new Response(stream, {
-		headers: {
-			'Content-Type': 'text/event-stream',
-			'Cache-Control': 'no-cache',
-			Connection: 'keep-alive',
-		},
+		headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' },
 	});
 });
 
-app.get('/health', (c) => c.json({ status: 'ok', service: 'office-town-wiki-mcp' }));
+app.get('/health', (c) => c.json({ status: 'ok', service: 'office-town-wiki-mcp', actions: VALID_ACTIONS.length }));
 
 export const wikiMcpRoutes = app;

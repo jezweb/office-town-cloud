@@ -2,7 +2,7 @@
   "name": "office-town",
   "version": "1.0.0",
   "private": true,
-  "description": "Office Town — Cloudflare backend (wiki + files + publish + cron + dashboard + 4 MCP servers) hosted in one Worker",
+  "description": "Office Town \u2014 Cloudflare backend (wiki + files + publish + cron + dashboard + 4 MCP servers) hosted in one Worker",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -21,7 +21,6 @@
     "format": "biome format --write ."
   },
   "dependencies": {
-    "@cloudflare/puppeteer": "^0.0.13",
     "better-auth": "^1.6.0",
     "drizzle-orm": "^0.45.2",
     "hono": "^4.6.0",

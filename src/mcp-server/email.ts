@@ -30,37 +30,33 @@ interface JsonRpcRequest {
 }
 
 const TOOLS = {
-	'email.send': {
-		description:
-			'Send an outbound email via Cloudflare Email Routing. Recipients must be verified destinations on your Email Routing setup. Logs the send to wiki/research/ with kind:outbound-email.',
+	email: {
+		description: [
+			'Office Town email — send + draft via Cloudflare Email Routing (binding-based, no API key).',
+			'',
+			'Single gateway tool with two actions:',
+			'  send  — Outbound to verified destinations. Logs to wiki/research/ with kind:outbound-email.',
+			'  draft — Save a draft to the substrate bucket for human review before sending.',
+			'',
+			'Outbound requires Email Routing set up on the user\'s domain + destination verification.',
+			'Inbound mail is auto-filed by the worker\'s email() handler at /email/inbound — not an MCP action.',
+		].join('\n'),
 		inputSchema: {
 			type: 'object',
 			properties: {
-				to: { type: 'array', items: { type: 'string' }, description: 'Recipient email(s). Each must be a verified Email Routing destination.' },
+				action: { type: 'string', enum: ['send', 'draft'] },
+				to: { type: 'array', items: { type: 'string' }, description: 'Recipient email(s). Verified destinations only for send.' },
 				cc: { type: 'array', items: { type: 'string' } },
 				bcc: { type: 'array', items: { type: 'string' } },
 				subject: { type: 'string' },
-				html: { type: 'string', description: 'HTML body (preferred for rich content)' },
+				html: { type: 'string', description: 'HTML body (preferred)' },
 				text: { type: 'string', description: 'Plain text body (fallback when no html)' },
-				reply_to: { type: 'string', description: 'Reply-To address' },
+				reply_to: { type: 'string' },
 				from_email: { type: 'string', description: 'Override default sender. Must be on a verified domain.' },
 				from_name: { type: 'string' },
+				slug: { type: 'string', description: 'Draft slug (draft only; auto-derived if absent)' },
 			},
-			required: ['to', 'subject'],
-		},
-	},
-	'email.draft': {
-		description: 'Draft an email and save to FILES bucket for review without sending. Returns the draft path.',
-		inputSchema: {
-			type: 'object',
-			properties: {
-				to: { type: 'array', items: { type: 'string' } },
-				subject: { type: 'string' },
-				html: { type: 'string' },
-				text: { type: 'string' },
-				slug: { type: 'string', description: 'Optional draft slug; auto-derived if absent' },
-			},
-			required: ['to', 'subject'],
+			required: ['action', 'to', 'subject'],
 		},
 	},
 } as const;
@@ -181,9 +177,10 @@ async function logSend(env: Env, args: Record<string, unknown>, providerResult: 
 	}
 }
 
-async function handleToolCall(env: Env, tool: string, args: Record<string, unknown>): Promise<unknown> {
-	switch (tool) {
-		case 'email.send': {
+async function handleToolCall(env: Env, _tool: string, args: Record<string, unknown>): Promise<unknown> {
+	const action = (args.action as string) ?? '';
+	switch (action) {
+		case 'send': {
 			if (!env.SEND_EMAIL || typeof env.SEND_EMAIL.send !== 'function') {
 				throw new Error(
 					'Email send binding unavailable. The Worker needs the send_email binding (declared in wrangler.jsonc). Setup: enable Email Routing on your sender domain in the Cloudflare dashboard and add destination addresses to verify recipients.',
@@ -193,7 +190,7 @@ async function handleToolCall(env: Env, tool: string, args: Record<string, unkno
 			await logSend(env, args, result);
 			return { sent: true, provider: 'cloudflare-email', provider_result: result };
 		}
-		case 'email.draft': {
+		case 'draft': {
 			const slug =
 				(args.slug as string) ??
 				`${new Date().toISOString().slice(0, 10)}-${(args.subject as string)
@@ -210,7 +207,7 @@ async function handleToolCall(env: Env, tool: string, args: Record<string, unkno
 			return { draft_saved_to: meta.path, file_meta: meta };
 		}
 		default:
-			throw new Error(`Unknown tool: ${tool}`);
+			throw new Error(`Unknown email action: '${action}'. Valid: send, draft.`);
 	}
 }
 

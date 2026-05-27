@@ -8,6 +8,9 @@ import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 /**
  * Wiki entries — the index over R2. R2 holds the canonical markdown body;
  * D1 holds frontmatter, search metadata, and the FTS index.
+ *
+ * Per MEMORY-COMPARISON.md design: every entry has a stable UUID and a
+ * lifecycle status (active | archived | deleted) for soft-delete via archive.
  */
 export const wikiEntries = sqliteTable('wiki_entries', {
 	id: text('id').primaryKey(), // `${collection}:${slug}`
@@ -22,6 +25,58 @@ export const wikiEntries = sqliteTable('wiki_entries', {
 	last_edited_by: text('last_edited_by'),
 	created_at: text('created_at').notNull(),
 	updated_at: text('updated_at').notNull(),
+	status: text('status').notNull().default('active'), // active | archived | deleted
+	uuid: text('uuid'), // stable cross-rename id, set on create, immutable after
+});
+
+/**
+ * Audit log — append-only record of every wiki mutation.
+ * Required `why:` on every write/supersede/archive/delete per
+ * MEMORY-COMPARISON.md design contract.
+ */
+export const wikiAudit = sqliteTable('wiki_audit', {
+	audit_id: text('audit_id').primaryKey(),
+	ts: integer('ts').notNull(), // unix ms
+	action: text('action').notNull(), // write|update|supersede|archive|delete|restore|link|attach|detach
+	collection: text('collection').notNull(),
+	slug: text('slug').notNull(),
+	entry_uuid: text('entry_uuid'),
+	agent_slug: text('agent_slug'),
+	session_id: text('session_id'),
+	prev_hash: text('prev_hash'),
+	new_hash: text('new_hash'),
+	why: text('why').notNull(),
+});
+
+/**
+ * Cross-references between wiki entries.
+ * Used by wiki(action: link) and wiki(action: related).
+ */
+export const wikiLinks = sqliteTable('wiki_links', {
+	link_id: text('link_id').primaryKey(),
+	from_collection: text('from_collection').notNull(),
+	from_slug: text('from_slug').notNull(),
+	to_collection: text('to_collection').notNull(),
+	to_slug: text('to_slug').notNull(),
+	kind: text('kind'),
+	why: text('why'),
+	created_at: integer('created_at').notNull(),
+});
+
+/**
+ * Non-markdown attachments — files associated with an entry (entity-as-folder shape).
+ * The file itself lives in R2 alongside entity.md at wiki/<col>/<slug>/<filename>;
+ * this table is the index of what attachments each entry has.
+ */
+export const wikiAttachments = sqliteTable('wiki_attachments', {
+	attachment_id: text('attachment_id').primaryKey(),
+	collection: text('collection').notNull(),
+	slug: text('slug').notNull(),
+	filename: text('filename').notNull(),
+	r2_key: text('r2_key').notNull(),
+	content_type: text('content_type'),
+	size_bytes: integer('size_bytes'),
+	uploaded_at: integer('uploaded_at').notNull(),
 });
 
 /**

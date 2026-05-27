@@ -129,6 +129,7 @@ export type WikiErrorCode =
 	| 'invalid_collection'
 	| 'invalid_frontmatter'
 	| 'invalid_slug'
+	| 'invalid_input'
 	| 'unauthorised'
 	| 'internal';
 
