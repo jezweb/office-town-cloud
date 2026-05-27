@@ -1,6 +1,6 @@
 # Office Town Cloud
 
-The Cloudflare Workers backend for [Office Town](https://github.com/jezweb/office-town) — capabilities you add to your [Goose](https://block.github.io/goose/) installation. A single Worker hosts the substrate (wiki + files + publish + dashboard + cron + inbound email) alongside **3 MCP gateway tools** (wiki, files, email) that give agents every kind of file/input/output a knowledge worker needs.
+The Cloudflare Workers backend for [Office Town](https://github.com/jezweb/office-town) — capabilities you add to your [Goose](https://block.github.io/goose/) installation. A single Worker hosts the substrate (wiki + files + publish + dashboard + cron + inbound email) alongside **6 MCP gateway tools** (wiki, files, email, cron, voice, sandbox) that give agents every kind of file/input/output a knowledge worker needs.
 
 ## Deploy
 
@@ -26,7 +26,7 @@ You need Goose installed: https://block.github.io/goose/.
 
 👉 **[Open INSTALL.md](./INSTALL.md)** — paste one prompt into any capable AI agent. It installs the plugin + knowledge pack, runs `goose mcp add` for the 3 MCP servers, disables Goose's Memory extension (the wiki replaces it), clones the town template, runs a smoke test. ~5 min after the button.
 
-## The MCP gateway tools
+## The MCP gateway tools — 57 actions across 6 servers
 
 Each MCP server exposes ONE gateway tool with multiple actions (per `~/.claude/rules/mcp-gateway-pattern.md`):
 
@@ -98,6 +98,26 @@ Master plan + reference knowledge live in `.jez/artifacts/`:
 | `single-worker-collapse-{plan,build-spec}-2026-05-27.md` | Refactor that got us here |
 
 Older docs (`ARCHITECTURE.md`, `EXTENSIONS-CATALOGUE.md`, `BUILD-SPEC.md`, `SHIP-PLAN.md`) are superseded — kept for history.
+
+
+
+## v1.1 plan + new MCPs
+
+See `.jez/artifacts/V1.1-PLAN-2026-05-28.md` for the full v1.1 build plan.
+
+Already shipped in v1.1 (Phase 1 + 3):
+- Browser rendering restored (as `files(action:fetch_with_js)` + `files(action:screenshot)`)
+- MCP Sampling synthesis on `wiki(action:search, synthesize:true)` (via Workers AI direct call; pure-MCP-Sampling in v1.2)
+- Cron MCP gateway at `/mcp/cron` (7 actions)
+- Voice MCP gateway at `/mcp/voice` (transcribe + synthesize + 40 Aura-2 voices, Realtime placeholder)
+- Sandbox MCP gateway at `/mcp/sandbox` (Containers placeholder)
+- `office-town-pack-cloudflare` plugin scaffold (bundles Cloudflare's official MCPs)
+
+Pending implementation (scaffolds in place):
+- `jezweb/officetowd` Go daemon for local⇄R2 bisync (~1-2 weeks)
+- Cloudflare Realtime SFU wiring for voice MCP `call_*` actions
+- Cloudflare Containers wiring for sandbox MCP `run` action
+- AI Search benchmark spike
 
 ## Repos in this family
 
