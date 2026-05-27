@@ -2,7 +2,7 @@
 //   • HTTP API   at /api/{wiki,files,publish,cron}
 //   • Dashboard  at /, /dashboard/*
 //   • Publish    at /p/<slug>, /s/<token>
-//   • 3 MCP servers at /mcp/{wiki,files,email}
+//   • 4 MCP servers at /mcp/{wiki,files,email,cron}
 // All capabilities share one binding surface (see wrangler.jsonc + types.ts).
 
 import { Hono } from 'hono';
@@ -18,6 +18,7 @@ import { wikiRoutes } from './wiki/routes';
 import { wikiMcpRoutes } from './mcp-server/wiki';
 import { filesMcpRoutes } from './mcp-server/files';
 import { emailMcpRoutes } from './mcp-server/email';
+import { cronMcpRoutes } from './mcp-server/cron';
 import { handleInboundEmail } from './email/inbound';
 import type { ForwardableEmailMessage } from '@cloudflare/workers-types';
 
@@ -69,6 +70,7 @@ app.route('/api/cron', cronRoutes);
 app.route('/mcp/wiki', wikiMcpRoutes);
 app.route('/mcp/files', filesMcpRoutes);
 app.route('/mcp/email', emailMcpRoutes);
+app.route('/mcp/cron', cronMcpRoutes);
 
 // Public reader for /p/<slug> — must come BEFORE dashboard's '/' route since
 // Hono picks the first matching route.

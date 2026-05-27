@@ -25,7 +25,8 @@
     "drizzle-orm": "^0.45.2",
     "hono": "^4.6.0",
     "js-yaml": "^4.1.0",
-    "nanoid": "^5.0.0"
+    "nanoid": "^5.0.0",
+    "@cloudflare/puppeteer": "^0.0.13"
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",

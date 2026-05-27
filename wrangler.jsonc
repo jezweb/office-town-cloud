@@ -38,6 +38,9 @@
 
 	"ai": { "binding": "AI" },
 
+	// Browser Rendering (puppeteer-compatible) — for JS-rendered page scraping
+	// via files(action:fetch_with_js) + files(action:screenshot).
+	"browser": { "binding": "BROWSER" },
 
 	// Cloudflare Images — for resize/format-convert/strip-EXIF on uploads.
 	// Free transformations up to 100k/month per zone. No API key needed.

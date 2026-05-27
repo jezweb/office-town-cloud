@@ -18,6 +18,7 @@
 //   unpublish       — Remove a public page (sugar over revoke)
 
 import { Hono } from 'hono';
+import puppeteer from '@cloudflare/puppeteer';
 import type { AppContext, Env } from '../types';
 import { FilesService } from '../files/service';
 import { PublishService } from '../publish/service';
@@ -40,7 +41,9 @@ interface JsonRpcResult<T = unknown> {
 
 const VALID_ACTIONS = [
 	'upload', 'download', 'list', 'delete', 'share', 'revoke',
-	'convert', 'transform_image', 'publish', 'unpublish',
+	'convert', 'transform_image', 'generate_image', 'speak',
+	'fetch_with_js', 'screenshot',
+	'publish', 'unpublish',
 ] as const;
 type FilesAction = (typeof VALID_ACTIONS)[number];
 
@@ -265,6 +268,178 @@ async function handleAction(env: Env, args: Record<string, unknown>): Promise<un
 				tokens: result.tokens,
 				...(savedAt ? { saved_to: savedAt } : {}),
 			};
+		}
+
+		case 'generate_image': {
+			// Workers AI FLUX 2 / FLUX 1 image generation.
+			// FLUX 2 takes multipart; FLUX 1 takes JSON.
+			const prompt = args.prompt as string;
+			if (!prompt) throw new Error('generate_image requires prompt');
+			const model = (args.model as string | undefined) ?? '@cf/black-forest-labs/flux-2-klein-9b';
+
+			let imageBytes: Uint8Array;
+			if (model.includes('flux-2')) {
+				const form = new FormData();
+				form.append('prompt', prompt);
+				if (args.width) form.append('width', String(args.width));
+				if (args.height) form.append('height', String(args.height));
+				if (args.guidance) form.append('guidance', String(args.guidance));
+				const formResponse = new Response(form);
+				const result = await env.AI.run(model as never, {
+					multipart: { body: formResponse.body!, contentType: formResponse.headers.get('content-type')! },
+				} as never);
+				const img = (result as unknown as Record<string, unknown>).image as string;
+				imageBytes = new Uint8Array(atob(img).split('').map((c) => c.charCodeAt(0)));
+			} else {
+				const result = await env.AI.run(model as never, {
+					prompt,
+					width: (args.width as number) ?? 1024,
+					height: (args.height as number) ?? 1024,
+				} as never);
+				const img = (result as unknown as Record<string, unknown>).image as string;
+				imageBytes = new Uint8Array(atob(img).split('').map((c) => c.charCodeAt(0)));
+			}
+
+			let savedAt: string | undefined;
+			let base64: string | undefined = arrayBufferToBase64(imageBytes.buffer as ArrayBuffer);
+			if (args.save_to_files) {
+				const meta = await files.upload({
+					path: args.save_to_files as string,
+					content_base64: base64,
+					content_type: 'image/png',
+				});
+				savedAt = meta.path;
+				base64 = undefined;
+			}
+			return {
+				model,
+				prompt,
+				size_bytes: imageBytes.byteLength,
+				...(savedAt ? { saved_to: savedAt } : { image_base64: base64 }),
+			};
+		}
+
+		case 'speak': {
+			// Workers AI Aura-2 TTS — text → audio.
+			const text = args.text as string;
+			if (!text) throw new Error('speak requires text');
+			const voice = ((args.voice as string | undefined) ?? 'orion').replace(/-en$/i, '');
+			const result = await env.AI.run('@cf/deepgram/aura-2-en' as never, {
+				text,
+				speaker: voice,
+				encoding: 'mp3',
+				container: 'none',
+			} as never);
+			// Aura-2 returns a stream of audio bytes
+			const audioBytes = await new Response(result as unknown as ReadableStream).arrayBuffer();
+			let savedAt: string | undefined;
+			let base64: string | undefined = arrayBufferToBase64(audioBytes);
+			if (args.save_to_files) {
+				const meta = await files.upload({
+					path: args.save_to_files as string,
+					content_base64: base64,
+					content_type: 'audio/mpeg',
+				});
+				savedAt = meta.path;
+				base64 = undefined;
+			}
+			return {
+				voice,
+				text_chars: text.length,
+				size_bytes: audioBytes.byteLength,
+				...(savedAt ? { saved_to: savedAt } : { audio_base64: base64 }),
+			};
+		}
+
+		case 'fetch_with_js': {
+			// URL → puppeteer render → toMarkdown via Workers AI.
+			const url = args.url as string;
+			if (!url) throw new Error('fetch_with_js requires url');
+			const browser = await puppeteer.launch(env.BROWSER as never);
+			try {
+				const page = await browser.newPage();
+				if (args.viewport_width || args.viewport_height) {
+					await page.setViewport({
+						width: (args.viewport_width as number) ?? 1280,
+						height: (args.viewport_height as number) ?? 800,
+					});
+				}
+				await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30_000 });
+				if (args.wait_for_selector) {
+					await page.waitForSelector(args.wait_for_selector as string, { timeout: 8_000 });
+				}
+				if (args.wait_ms) {
+					await new Promise((r) => setTimeout(r, args.wait_ms as number));
+				}
+				const html = await page.content();
+				const title = await page.title();
+				const finalUrl = page.url();
+
+				// Optionally convert to markdown via Workers AI toMarkdown
+				let markdown: string | null = null;
+				if (args.as_markdown !== false) {
+					const blob = new Blob([html], { type: 'text/html' });
+					const conv = await env.AI.toMarkdown({ name: 'page.html', blob });
+					if (conv.format === 'markdown') markdown = conv.data;
+				}
+
+				let savedAt: string | undefined;
+				if (args.save_to_files && markdown) {
+					const meta = await files.upload({
+						path: args.save_to_files as string,
+						content_text: markdown,
+						content_type: 'text/markdown',
+					});
+					savedAt = meta.path;
+				}
+
+				return {
+					url: finalUrl,
+					title,
+					html_length: html.length,
+					markdown,
+					...(savedAt ? { saved_to: savedAt } : {}),
+				};
+			} finally {
+				await browser.close();
+			}
+		}
+
+		case 'screenshot': {
+			const url = args.url as string;
+			if (!url) throw new Error('screenshot requires url');
+			const browser = await puppeteer.launch(env.BROWSER as never);
+			try {
+				const page = await browser.newPage();
+				await page.setViewport({
+					width: (args.viewport_width as number) ?? 1280,
+					height: (args.viewport_height as number) ?? 800,
+				});
+				await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30_000 });
+				const buffer = (await page.screenshot({
+					fullPage: (args.full_page as boolean) ?? false,
+					type: 'png',
+				})) as Uint8Array;
+
+				let savedAt: string | undefined;
+				let base64: string | undefined = arrayBufferToBase64(buffer.buffer as ArrayBuffer);
+				if (args.save_to_files) {
+					const meta = await files.upload({
+						path: args.save_to_files as string,
+						content_base64: base64,
+						content_type: 'image/png',
+					});
+					savedAt = meta.path;
+					base64 = undefined;
+				}
+				return {
+					url,
+					size_bytes: buffer.byteLength,
+					...(savedAt ? { saved_to: savedAt } : { screenshot_base64: base64 }),
+				};
+			} finally {
+				await browser.close();
+			}
 		}
 
 		case 'transform_image': {

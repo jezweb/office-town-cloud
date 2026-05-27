@@ -5,6 +5,7 @@
 import type {
 	Ai,
 	D1Database,
+	Fetcher,
 	ImagesBinding,
 	Queue,
 	R2Bucket,
@@ -20,6 +21,9 @@ export interface Env {
 	VECTOR_INDEX: Vectorize;
 	AI: Ai;
 	INDEX_QUEUE: Queue<IndexMessage>;
+
+	// Browser Rendering (for files MCP fetch_with_js + screenshot actions)
+	BROWSER: Fetcher;
 
 	// Cloudflare Images (for files MCP transform_image tool)
 	IMAGES: ImagesBinding;

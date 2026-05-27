@@ -208,17 +208,49 @@ async function handleAction(env: Env, args: Record<string, unknown>): Promise<un
 			};
 			if (!input.query) throw new Error('search requires query');
 			const hits = await searchWiki(env, input);
-			if (input.expanded) {
-				const expanded = await Promise.all(
-					hits.map(async (h) => {
-						const read = await svc.read(h.collection, h.slug).catch(() => null);
-						return { ...h, body: read?.body ?? '' };
-					}),
-				);
-				return { hits: expanded };
+			const expandedHits = input.expanded
+				? await Promise.all(
+						hits.map(async (h) => {
+							const read = await svc.read(h.collection, h.slug).catch(() => null);
+							return { ...h, body: read?.body ?? '' };
+						}),
+					)
+				: hits;
+
+			// Optional synthesis — uses Workers AI directly (user pays via their CF
+			// account for the gpt-oss-20b call). When MCP Sampling support lands in
+			// our streamable-HTTP transport (v1.2), this could be switched to use
+			// the host LLM via sampling/createMessage at zero cost.
+			let synthesized: string | null = null;
+			if (args.synthesize && hits.length > 0) {
+				const context = hits.slice(0, 5).map((h, i) => {
+					const fm = (h as { frontmatter?: Record<string, unknown> }).frontmatter ?? {};
+					const excerpt = (h as { excerpt?: string }).excerpt ?? '';
+					const title = fm.title ?? fm.name ?? (h as { slug?: string }).slug ?? '?';
+					return `[${i + 1}] ${title} (${h.collection}/${(h as { slug?: string }).slug})\n${excerpt}`;
+				}).join('\n\n');
+				const prompt = `Given these top search results from the wiki, provide a concise synthesised answer to the query "${input.query}". Cite sources by [N] number. If the results don't actually answer the question, say so honestly.\n\nResults:\n${context}\n\nSynthesised answer:`;
+				try {
+					const result = await env.AI.run('@cf/openai/gpt-oss-20b' as never, {
+						messages: [
+							{ role: 'system', content: 'You are a concise synthesis assistant. Cite sources by [N]. Be brief.' },
+							{ role: 'user', content: prompt },
+						],
+						max_tokens: 600,
+						temperature: 0.3,
+					} as never);
+					const r = result as { response?: string; choices?: Array<{ message?: { content?: string } }> };
+					synthesized = r.response ?? r.choices?.[0]?.message?.content ?? null;
+				} catch (err) {
+					synthesized = null;
+					console.error(JSON.stringify({ event: 'wiki_search_synthesize_failed', error: String(err) }));
+				}
 			}
-			// TODO: synthesize via MCP Sampling when args.synthesize
-			return { hits, synthesized: args.synthesize ? null : undefined };
+
+			return {
+				hits: expandedHits,
+				...(args.synthesize ? { synthesized } : {}),
+			};
 		}
 		case 'history': {
 			const limit = (args.limit as number | undefined) ?? 50;
