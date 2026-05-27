@@ -1,3 +1,9 @@
+> **SUPERSEDED 2026-05-28.** This document is preserved for history but is no longer authoritative.
+> Read `.jez/artifacts/MASTER-PLAN-2026-05-28.md` first for current truth.
+> Decisions in this doc that conflict with the master plan are wrong; this doc may still be useful for context on the substrate-as-R2 architecture, the universal sextet, the wiki schema, and the decision rationale.
+
+---
+
 # Architecture
 
 This document describes the system architecture, the primitive decisions, and the data flow. It's the contract that subsequent build phases execute against. Office Town is positioned as **capabilities for Goose** — see [README](./README.md) for the user-facing framing.

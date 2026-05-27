@@ -1,3 +1,9 @@
+> **SUPERSEDED 2026-05-28.** This document is preserved for history but is no longer authoritative.
+> Read `.jez/artifacts/MASTER-PLAN-2026-05-28.md` first for current truth.
+> Decisions in this doc that conflict with the master plan are wrong; this doc may still be useful for context on the substrate-as-R2 architecture, the universal sextet, the wiki schema, and the decision rationale.
+
+---
+
 # Build Spec — Office Town Cloud
 
 Phased build plan. Each phase ships value independently and is bounded by realistic time estimates. Total v1: ~6-8 focused days of work; v1.1 adds another ~5-7 days for the killer Cloudflare extensions.

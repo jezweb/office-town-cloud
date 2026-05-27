@@ -1,3 +1,9 @@
+> **SUPERSEDED 2026-05-28.** This document is preserved for history but is no longer authoritative.
+> Read `.jez/artifacts/MASTER-PLAN-2026-05-28.md` first for current truth.
+> Decisions in this doc that conflict with the master plan are wrong; this doc may still be useful for context on the substrate-as-R2 architecture, the universal sextet, the wiki schema, and the decision rationale.
+
+---
+
 # Ship Plan — Office Town
 
 The master plan to ship everything from architecture spec to publicly-released product. This document covers the template (`office-town`), the cloud backend (`office-town-cloud`), role packs, marketing, and sustained release.

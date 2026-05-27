@@ -1,76 +1,111 @@
 # Office Town Cloud
 
-The Cloudflare Workers backend for [Office Town](https://github.com/jezweb/office-town) — capabilities you add to your [Goose](https://block.github.io/goose/) installation. A single Worker hosts the wiki + files + publish + cron + dashboard alongside five MCP servers (wiki, files, browser, devops, email) plus an inbound email handler.
+The Cloudflare Workers backend for [Office Town](https://github.com/jezweb/office-town) — capabilities you add to your [Goose](https://block.github.io/goose/) installation. A single Worker hosts the substrate (wiki + files + publish + dashboard + cron + inbound email) alongside **3 MCP gateway tools** (wiki, files, email) that give agents every kind of file/input/output a knowledge worker needs.
 
 ## Deploy
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/jezweb/office-town-cloud)
 
-Click the button. Cloudflare provisions everything in your account from `wrangler.jsonc`:
+Cloudflare provisions everything from `wrangler.jsonc`:
 
-- **D1** (`office-town-d1`) — wiki index + FTS5 virtual table + cron jobs
-- **R2** (`office-town-wiki`, `office-town-files`) — markdown source-of-truth + uploads + share links + published pages
-- **Vectorize** (`office-town-vec`) — 768-dim cosine
-- **Queue** (`office-town-index`) — embedding pipeline
-- **Workers AI** (bge-base-en-v1.5 for embeddings + `toMarkdown` for PDF/DOCX/audio conversion)
-- **Browser Rendering** (for the browser MCP)
-- **Images** (resize / format-convert for the files MCP)
-- **Email Routing** (outbound `send_email` binding + inbound `email()` handler — no API key needed)
+- **D1** — wiki index, FTS5 search, audit log, cron jobs
+- **R2** (substrate bucket) — markdown entries + binary attachments + published pages + signed shares (Goanna-style entity-as-folder layout)
+- **Vectorize** — 768-dim semantic search (bge-base-en-v1.5)
+- **Queue** — embedding pipeline
+- **Workers AI** — bge embeddings + toMarkdown for PDF/DOCX/audio/images
+- **Images** — resize / format-convert / strip-EXIF
+- **Email Routing** — outbound `send_email` binding + inbound `email()` handler (writes inbound to wiki/research/)
 
-The deploy UI prompts you for `MCP_BEARER_TOKEN` (generate via `openssl rand -hex 32`) and a couple of optional provider keys (`SMTP2GO_API_KEY` for email send, `CF_API_TOKEN` for devops). ~2 minutes end-to-end. Cloudflare hands you a URL like `https://office-town-<you>.<account>.workers.dev`.
+The deploy form asks for **`MCP_BEARER_TOKEN`** (`openssl rand -hex 32`). Optional: `BETTER_AUTH_SECRET` + Google OAuth for the dashboard.
+
+~2 min, returns `https://office-town-<you>.<account>.workers.dev`.
 
 ## Wire it into Goose
 
 You need Goose installed: https://block.github.io/goose/.
 
-👉 **[Open INSTALL.md](./INSTALL.md)** — paste one prompt into any capable AI agent (Goose itself, Claude Code, Aider). It installs the Goose plugin + knowledge pack, edits your `~/.config/goose/config.yaml` to wire all five MCP servers to the URL you got from the button, clones the town template to your folder, runs a smoke test. ~5 minutes after the button finishes.
+👉 **[Open INSTALL.md](./INSTALL.md)** — paste one prompt into any capable AI agent. It installs the plugin + knowledge pack, runs `goose mcp add` for the 3 MCP servers, disables Goose's Memory extension (the wiki replaces it), clones the town template, runs a smoke test. ~5 min after the button.
 
-Goose sees five MCP servers, each at a different path on the same base URL:
+## The MCP gateway tools
 
-| Server | URL path | Tools |
-|---|---|---|
-| `office-town-wiki` | `/mcp/wiki` | wiki.create / read / update / delete / search / list_collections / register_collection |
-| `office-town-files` | `/mcp/files` | files.convert (any-doc → markdown via Workers AI), files.transform_image (resize/format via Cloudflare Images) |
-| `office-town-browser` | `/mcp/browser` | browser.fetch / screenshot / extract |
-| `office-town-devops` | `/mcp/devops` | devops.list_zones / list_workers / worker_logs / dns_records / account_summary |
-| `office-town-email` | `/mcp/email` | email.send (Cloudflare Email Routing → SMTP2Go fallback), email.draft |
+Each MCP server exposes ONE gateway tool with multiple actions (per `~/.claude/rules/mcp-gateway-pattern.md`):
 
-## What runs on the Worker
+### `wiki` — 22 actions (the team memory layer)
 
-| Surface | Routes |
+| Reading | Writing |
 |---|---|
-| HTTP API (bearer-gated) | `POST/GET/PATCH/DELETE /api/wiki/*`, `/api/files/*`, `/api/publish/*`, `/api/cron/*` |
-| MCP servers (streamable-HTTP JSON-RPC) | `POST /mcp/{wiki,browser,devops,email}` + `GET /mcp/*/sse` |
-| Dashboard (HTML) | `/`, `/dashboard/*` |
-| Public publish reader | `/p/<slug>`, `/s/<token>` |
-| Health | `/health` |
-| Cron + queue consumer | exported alongside `fetch` |
+| `get` / `read` — fetch by collection+slug | `write` — create entry |
+| `search` — FTS5 + vector hybrid + optional MCP-Sampling synthesis | `update` — merge frontmatter patch |
+| `list` — browse a collection with frontmatter filter | `supersede` — atomic replace with audit |
+| `tree` — directory shape of all collections | `archive` — soft delete (filterable out) |
+| `recent` — last-modified entries | `delete` — hard delete (audit-logged) |
+| `glob` — pattern match like `find -name` | `link` — cross-reference two entries |
+| `head` / `head_many` — first-N-lines preview | `register` — add a new collection |
+| `history` — audit log for an entry | `attach` / `detach` — non-markdown files on an entity |
+| `related` — what links to/from this entry | |
+| `collections` — list all collection definitions | |
+| `list_attachments` — files on an entity | |
 
-## Cost
+Every mutation requires `why:` per the audit design contract.
 
-Typical SMB volume: **~$2-5/month** on Cloudflare. Variables: Vectorize ($0.04 per 1M dimensions queried), Workers AI embeddings ($0.011 per 1M tokens), Queue ($0.40 per 1M messages). Workers + D1 + R2 usually inside the free tier at this scale.
+### `files` — 10 actions (everything-non-markdown for agents)
 
-## Local development
+| Action | Purpose |
+|---|---|
+| `upload` / `download` / `list` / `delete` | R2 file ops |
+| `share` (mode: temp\|public) / `revoke` | Signed-URL share + public publishing |
+| `publish` / `unpublish` | Render markdown → `/p/<slug>` |
+| `convert` | Any-doc → markdown via Workers AI `toMarkdown` (PDF, DOCX, XLSX, PPTX, HTML, image-OCR, audio-transcribe) |
+| `transform_image` | Resize / crop / format-convert via Cloudflare Images |
 
-```bash
-pnpm install
-cp .dev.vars.example .dev.vars   # fill in MCP_BEARER_TOKEN at minimum
-pnpm dev
-```
+### `email` — 2 actions
 
-`wrangler dev` against the deployed bindings. For type checking: `pnpm typecheck`. For tests: `pnpm test`.
+| Action | Purpose |
+|---|---|
+| `send` | Outbound via Cloudflare Email Routing (verified destinations) |
+| `draft` | Save draft to substrate bucket for human review |
+
+Inbound is auto-filed by the worker's `email()` handler at `wiki/research/`.
 
 ## Architecture
 
-- [ARCHITECTURE.md](./ARCHITECTURE.md) — substrate-as-R2 + index-in-D1 + vector-in-Vectorize, universal sextet frontmatter, triage-shape search results
-- [BUILD-SPEC.md](./BUILD-SPEC.md) — phased build plan
-- [WIKI-SCHEMA.md](./WIKI-SCHEMA.md) — the 11 default collections
+Single Worker. Single R2 substrate bucket. Designed filesystem-friendly so v1.1's `officetowd` daemon (Go-lang Goanna-style bisync) can mirror it locally.
+
+| Surface | Routes |
+|---|---|
+| HTTP API (bearer-gated) | `/api/wiki/*`, `/api/files/*`, `/api/publish/*`, `/api/cron/*` |
+| MCP gateways (JSON-RPC over streamable-HTTP) | `POST /mcp/{wiki,files,email}` + `GET /mcp/*/sse` |
+| Dashboard (HTML) | `/`, `/dashboard/*` |
+| Public reader | `/p/<slug>`, `/s/<token>` |
+| Health | `/health` |
+| Cron + queue consumer + inbound email | exported handlers alongside `fetch` |
+
+## Cost
+
+Typical SMB volume: **~$2-5/month**. Variables: Vectorize ($0.04 per 1M dims queried), Workers AI embeddings ($0.011 per 1M tokens), Queue ($0.40 per 1M messages), Cloudflare Images (free up to 100k transformations/month), Email Routing (free up to 100 outbound/day). Workers + D1 + R2 inside free tier at this scale.
+
+## Documentation
+
+Master plan + reference knowledge live in `.jez/artifacts/`:
+
+| File | Purpose |
+|---|---|
+| `MASTER-PLAN-2026-05-28.md` | Authoritative current plan — read this first |
+| `officetowd-spec-2026-05-28.md` | v1.1 sync daemon spec |
+| `goose-knowledge-{01..05}.md` | ~5000 lines of Goose primitives reference |
+| `cloudflare-knowledge-{01..03}.md` | ~5000 lines of Cloudflare primitives reference |
+| `conversation-audit-2026-05-28.md` | Full design decision history |
+| `single-worker-collapse-{plan,build-spec}-2026-05-27.md` | Refactor that got us here |
+
+Older docs (`ARCHITECTURE.md`, `EXTENSIONS-CATALOGUE.md`, `BUILD-SPEC.md`, `SHIP-PLAN.md`) are superseded — kept for history.
 
 ## Repos in this family
 
 - [office-town](https://github.com/jezweb/office-town) — methodology + template
-- [office-town-plugin](https://github.com/jezweb/office-town-plugin) — Goose plugin (roles + skills + recipes + hooks)
-- [office-town-pack-*](https://github.com/jezweb?tab=repositories&q=office-town-pack) — 8 role packs
+- [office-town-plugin](https://github.com/jezweb/office-town-plugin) — Goose plugin (4 role agents + skills + recipes + hooks)
+- [office-town-pack-knowledge](https://github.com/jezweb/office-town-pack-knowledge) — concepts pack to seed the wiki
+- [office-town-pack-*](https://github.com/jezweb?tab=repositories&q=office-town-pack) — other role packs
+- `officetowd` (v1.1, coming) — Go-lang sync daemon for local⇄R2
 
 ## Licence
 
