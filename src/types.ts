@@ -32,6 +32,12 @@ export interface Env {
 	// Recipients must be verified destinations on the user's Email Routing setup.
 	SEND_EMAIL: SendEmail;
 
+	// Sandbox MCP — @cloudflare/sandbox SDK over Containers. Each
+	// getSandbox(env.SANDBOX, id) call gets/creates a container instance.
+	// Typed against the SDK's exported Sandbox class so getSandbox accepts
+	// the namespace without a cast.
+	SANDBOX: DurableObjectNamespace<import('@cloudflare/sandbox').Sandbox>;
+
 	// Vars
 	ENVIRONMENT: 'development' | 'staging' | 'production';
 	ALLOWED_AUTH_DOMAINS: string;

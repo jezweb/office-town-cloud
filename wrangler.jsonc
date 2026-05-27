@@ -54,6 +54,29 @@
 		{ "name": "SEND_EMAIL" }
 	],
 
+	// Sandbox MCP — Cloudflare Containers + @cloudflare/sandbox SDK.
+	// Each call to getSandbox(env.SANDBOX, id) gets or creates a container
+	// instance backed by a Durable Object. Same id across calls = persistent
+	// session (auto-sleeps after sleepAfter idle). max_instances caps total
+	// concurrent containers.
+	"containers": [
+		{
+			"class_name": "Sandbox",
+			"image": "./Dockerfile",
+			"max_instances": 10
+		}
+	],
+
+	"durable_objects": {
+		"bindings": [
+			{ "class_name": "Sandbox", "name": "SANDBOX" }
+		]
+	},
+
+	"migrations": [
+		{ "tag": "v1", "new_sqlite_classes": ["Sandbox"] }
+	],
+
 	"queues": {
 		"producers": [
 			{ "binding": "INDEX_QUEUE", "queue": "office-town-index" }

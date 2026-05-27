@@ -24,6 +24,12 @@ import { sandboxMcpRoutes } from './mcp-server/sandbox';
 import { handleInboundEmail } from './email/inbound';
 import type { ForwardableEmailMessage } from '@cloudflare/workers-types';
 
+// Required export for the Cloudflare Containers binding declared in
+// wrangler.jsonc. @cloudflare/sandbox extends @cloudflare/containers'
+// Container class — it provides exec/runCode/createCodeContext/etc over
+// the HTTP runner inside the docker.io/cloudflare/sandbox image.
+export { Sandbox } from '@cloudflare/sandbox';
+
 const app = new Hono<AppContext>();
 
 // Normalise trailing slashes — Hono's mounted sub-apps are picky about
