@@ -1,8 +1,13 @@
-// Office Town Cloud — core Worker.
+// Office Town — single Worker hosting:
+//   • HTTP API   at /api/{wiki,files,publish,cron}
+//   • Dashboard  at /, /dashboard/*
+//   • Publish    at /p/<slug>, /s/<token>
+//   • 4 MCP servers at /mcp/{wiki,browser,devops,email}
+// All capabilities share one binding surface (see wrangler.jsonc + types.ts).
 
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import { authMiddleware, requireMcpAuth } from './auth/middleware';
+import { authMiddleware } from './auth/middleware';
 import { cronRoutes } from './cron/routes';
 import { dashboardRoutes } from './dashboard/routes';
 import { filesRoutes } from './files/routes';
@@ -10,6 +15,10 @@ import { handleIndexMessage } from './queue/index-consumer';
 import { publicReaderRoutes, publishRoutes } from './publish/routes';
 import type { AppContext, Env, IndexMessage } from './types';
 import { wikiRoutes } from './wiki/routes';
+import { wikiMcpRoutes } from './mcp-server/wiki';
+import { browserMcpRoutes } from './mcp-server/browser';
+import { devopsMcpRoutes } from './mcp-server/devops';
+import { emailMcpRoutes } from './mcp-server/email';
 
 const app = new Hono<AppContext>();
 
@@ -41,27 +50,25 @@ app.use('*', authMiddleware);
 app.get('/health', (c) =>
 	c.json({
 		status: 'ok',
-		service: 'office-town-core',
+		service: 'office-town',
 		environment: c.env.ENVIRONMENT,
 		timestamp: new Date().toISOString(),
 	})
 );
 
-// MCP-style API endpoints, gated by bearer token.
+// HTTP API — bearer-gated by the worker-level authMiddleware
 app.route('/api/wiki', wikiRoutes);
 app.route('/api/files', filesRoutes);
 app.route('/api/publish', publishRoutes);
 app.route('/api/cron', cronRoutes);
 
-// MCP-prefixed routes (same endpoints, explicit /mcp prefix for clarity)
-app.use('/mcp/wiki/*', requireMcpAuth);
-app.route('/mcp/wiki', wikiRoutes);
-app.use('/mcp/files/*', requireMcpAuth);
-app.route('/mcp/files', filesRoutes);
-app.use('/mcp/publish/*', requireMcpAuth);
-app.route('/mcp/publish', publishRoutes);
-app.use('/mcp/cron/*', requireMcpAuth);
-app.route('/mcp/cron', cronRoutes);
+// MCP servers (JSON-RPC over streamable-HTTP). Each enforces its own bearer
+// auth internally; mounted at /mcp/{name}. Goose connects to each path as a
+// separate MCP server.
+app.route('/mcp/wiki', wikiMcpRoutes);
+app.route('/mcp/browser', browserMcpRoutes);
+app.route('/mcp/devops', devopsMcpRoutes);
+app.route('/mcp/email', emailMcpRoutes);
 
 // Public reader for /p/<slug> — must come BEFORE dashboard's '/' route since
 // Hono picks the first matching route.

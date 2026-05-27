@@ -1,14 +1,15 @@
 {
 	"$schema": "https://json.schemastore.org/wrangler.json",
-	"name": "office-town-core",
+	"name": "office-town",
 	"main": "src/index.ts",
-	"compatibility_date": "2024-12-30",
+	"compatibility_date": "2025-01-15",
 	"compatibility_flags": ["nodejs_compat"],
 	"workers_dev": true,
 	"observability": {
 		"enabled": true,
 		"logs": { "invocation_logs": true, "head_sampling_rate": 1 }
 	},
+
 	"d1_databases": [
 		{
 			"binding": "DB",
@@ -17,6 +18,7 @@
 			"migrations_dir": "drizzle"
 		}
 	],
+
 	"r2_buckets": [
 		{
 			"binding": "WIKI",
@@ -29,20 +31,39 @@
 			"preview_bucket_name": "office-town-files-preview"
 		}
 	],
+
 	"vectorize": [
 		{ "binding": "VECTOR_INDEX", "index_name": "office-town-vec" }
 	],
+
 	"ai": { "binding": "AI" },
+
+	"browser": { "binding": "BROWSER" },
+
 	"queues": {
-		"producers": [{ "binding": "INDEX_QUEUE", "queue": "office-town-index" }],
-		"consumers": [{ "queue": "office-town-index", "max_batch_size": 10, "max_batch_timeout": 5 }]
+		"producers": [
+			{ "binding": "INDEX_QUEUE", "queue": "office-town-index" }
+		],
+		"consumers": [
+			{
+				"queue": "office-town-index",
+				"max_batch_size": 10,
+				"max_batch_timeout": 5,
+				"max_retries": 3
+			}
+		]
 	},
+
 	"vars": {
 		"ENVIRONMENT": "production",
-		"ALLOWED_AUTH_DOMAINS": "jezweb.net,jezweb.com.au"
+		"ALLOWED_AUTH_DOMAINS": "jezweb.net,jezweb.com.au",
+		"DEFAULT_FROM_EMAIL": "agent@example.com",
+		"DEFAULT_FROM_NAME": "Office Town Agent"
 	},
-	"routes": [
-		{ "pattern": "app.officetown.au", "custom_domain": true }
-	],
+
+	"triggers": {
+		"crons": ["0 */6 * * *"]
+	},
+
 	"placement": { "mode": "smart" }
 }

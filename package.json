@@ -1,24 +1,41 @@
 {
-  "name": "office-town-cloud",
-  "version": "0.1.0",
+  "name": "office-town",
+  "version": "1.0.0",
   "private": true,
-  "description": "Cloudflare-backed backend for Office Town AI agent fleet on Goose",
+  "description": "Office Town — Cloudflare backend (wiki + files + publish + cron + dashboard + 4 MCP servers) hosted in one Worker",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "https://github.com/jezweb/office-town-cloud.git"
   },
+  "main": "src/index.ts",
   "scripts": {
-    "build": "pnpm -r build",
-    "dev": "pnpm -r --parallel dev",
-    "deploy": "pnpm -r deploy",
-    "test": "pnpm -r test",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate:local": "wrangler d1 migrations apply office-town-d1 --local",
+    "db:migrate:remote": "wrangler d1 migrations apply office-town-d1 --remote",
     "lint": "biome check .",
     "format": "biome format --write ."
   },
+  "dependencies": {
+    "@cloudflare/puppeteer": "^0.0.13",
+    "better-auth": "^1.6.0",
+    "drizzle-orm": "^0.45.2",
+    "hono": "^4.6.0",
+    "js-yaml": "^4.1.0",
+    "nanoid": "^5.0.0"
+  },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
+    "@cloudflare/workers-types": "^4.20250101.0",
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^22.10.0",
+    "drizzle-kit": "^0.31.10",
     "typescript": "^5.6.0",
+    "vitest": "^2.1.0",
     "wrangler": "^3.85.0"
   },
   "engines": {

@@ -7,13 +7,13 @@
 // would steal /collections/business etc.
 
 import { Hono } from 'hono';
-import { WikiError } from '@office-town/shared';
+import { WikiError } from '../lib/shared';
 import type {
 	WikiCreateInput,
 	WikiSearchInput,
 	WikiUpdateInput,
 	WikiRegisterCollectionInput,
-} from '@office-town/shared';
+} from '../lib/shared';
 import { searchWiki } from './search';
 import { WikiService } from './service';
 import type { AppContext } from '../types';

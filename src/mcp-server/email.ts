@@ -1,24 +1,19 @@
-// office-town-mcp-email — outbound email MCP.
+// MCP server — email tools.
 //
-// Outbound via SMTP2Go (recommended; reply-to via custom_headers per the rule).
-// Cloudflare Email Sending API is also supported as a fallback when SMTP2GO_API_KEY
-// is absent.
+// Mounted on the office-town worker at /mcp/email. Outbound via SMTP2Go
+// (recommended; reply-to via custom_headers per the smtp2go rule). Logs sends
+// to wiki/research/ via in-process WikiService. Drafts saved to FILES bucket
+// via in-process FilesService.
 //
-// Inbound email landing is handled at the core worker level — Cloudflare Email
-// Routing forwards messages to a Worker fetch handler, which writes to wiki/research/
-// with kind:inbound-email. That's a separate route, not exposed via MCP.
+// Inbound email landing (Cloudflare Email Routing → Worker email handler) is
+// wired at the worker level, not exposed via MCP.
 
 import { Hono } from 'hono';
+import type { Env, AppContext } from '../types';
+import { WikiService } from '../wiki/service';
+import { FilesService } from '../files/service';
 
-interface Env {
-	MCP_BEARER_TOKEN: string;
-	CORE: Fetcher;
-	SMTP2GO_API_KEY?: string;
-	DEFAULT_FROM_EMAIL: string;
-	DEFAULT_FROM_NAME?: string;
-}
-
-const app = new Hono<{ Bindings: Env }>();
+const app = new Hono<AppContext>();
 
 interface JsonRpcRequest {
 	jsonrpc: '2.0';
@@ -29,7 +24,7 @@ interface JsonRpcRequest {
 
 const TOOLS = {
 	'email.send': {
-		description: 'Send an outbound email via SMTP2Go (default) or Cloudflare Email. Logs the send to wiki/research/ with kind:outbound-email.',
+		description: 'Send an outbound email via SMTP2Go. Logs the send to wiki/research/ with kind:outbound-email.',
 		inputSchema: {
 			type: 'object',
 			properties: {
@@ -39,7 +34,7 @@ const TOOLS = {
 				subject: { type: 'string' },
 				html: { type: 'string', description: 'HTML body (preferred for rich content)' },
 				text: { type: 'string', description: 'Plain text body (fallback when no html)' },
-				reply_to: { type: 'string', description: 'Reply-To address (set via custom_headers per smtp2go rule)' },
+				reply_to: { type: 'string', description: 'Reply-To address (set via custom_headers)' },
 				from_email: { type: 'string', description: 'Override default sender' },
 				from_name: { type: 'string' },
 			},
@@ -71,7 +66,7 @@ async function sendViaSmtp2go(env: Env, args: Record<string, unknown>): Promise<
 		api_key: env.SMTP2GO_API_KEY,
 		sender: args.from_email
 			? `${args.from_name ?? env.DEFAULT_FROM_NAME ?? ''} <${args.from_email}>`.trim()
-			: `${env.DEFAULT_FROM_NAME ?? ''} <${env.DEFAULT_FROM_EMAIL}>`.trim(),
+			: `${env.DEFAULT_FROM_NAME ?? ''} <${env.DEFAULT_FROM_EMAIL ?? ''}>`.trim(),
 		to: args.to,
 		subject: args.subject,
 		html_body: args.html,
@@ -94,26 +89,23 @@ async function sendViaSmtp2go(env: Env, args: Record<string, unknown>): Promise<
 }
 
 async function logSend(env: Env, args: Record<string, unknown>, providerResult: unknown): Promise<void> {
-	const slug = `${new Date().toISOString().slice(0, 10)}-${(args.subject as string).toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 60)}`;
+	const slug = `${new Date().toISOString().slice(0, 10)}-${(args.subject as string)
+		.toLowerCase()
+		.replace(/[^a-z0-9]+/g, '-')
+		.slice(0, 60)}`;
 	const frontmatter = {
 		kind: 'outbound-email',
 		subject: args.subject,
 		to: args.to,
 		from: args.from_email ?? env.DEFAULT_FROM_EMAIL,
 		sent_at: new Date().toISOString(),
-		provider: env.SMTP2GO_API_KEY ? 'smtp2go' : 'cloudflare-email',
+		provider: 'smtp2go',
 	};
 	const body = `## Subject\n${args.subject}\n\n## Body\n\n${args.html ?? args.text ?? ''}\n\n## Provider response\n\`\`\`\n${JSON.stringify(providerResult, null, 2)}\n\`\`\``;
 
 	try {
-		await env.CORE.fetch('https://core.internal/api/wiki/research', {
-			method: 'POST',
-			headers: {
-				Authorization: `Bearer ${env.MCP_BEARER_TOKEN}`,
-				'Content-Type': 'application/json',
-			},
-			body: JSON.stringify({ slug, frontmatter, body }),
-		});
+		const svc = new WikiService(env);
+		await svc.create({ collection: 'research', slug, frontmatter, body }, 'mcp-email');
 	} catch (err) {
 		console.error(JSON.stringify({ event: 'log_send_failed', error: String(err) }));
 	}
@@ -123,29 +115,27 @@ async function handleToolCall(env: Env, tool: string, args: Record<string, unkno
 	switch (tool) {
 		case 'email.send': {
 			if (!env.SMTP2GO_API_KEY) {
-				throw new Error('No email provider configured — set SMTP2GO_API_KEY secret');
+				throw new Error('Email send not configured — set SMTP2GO_API_KEY secret on this worker, then redeploy');
 			}
 			const result = await sendViaSmtp2go(env, args);
 			await logSend(env, args, result);
 			return { sent: true, provider: 'smtp2go', provider_result: result };
 		}
 		case 'email.draft': {
-			const slug = (args.slug as string) ?? `${new Date().toISOString().slice(0, 10)}-${(args.subject as string).toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 60)}`;
+			const slug =
+				(args.slug as string) ??
+				`${new Date().toISOString().slice(0, 10)}-${(args.subject as string)
+					.toLowerCase()
+					.replace(/[^a-z0-9]+/g, '-')
+					.slice(0, 60)}`;
 			const draftBody = `## Subject\n${args.subject}\n\n## To\n${(args.to as string[]).join(', ')}\n\n## Body\n\n${args.html ?? args.text ?? ''}`;
-			const resp = await env.CORE.fetch('https://core.internal/api/files/upload', {
-				method: 'POST',
-				headers: {
-					Authorization: `Bearer ${env.MCP_BEARER_TOKEN}`,
-					'Content-Type': 'application/json',
-				},
-				body: JSON.stringify({
-					path: `email-drafts/${slug}.md`,
-					content_text: draftBody,
-					content_type: 'text/markdown',
-				}),
+			const filesService = new FilesService(env);
+			const meta = await filesService.upload({
+				path: `email-drafts/${slug}.md`,
+				content_text: draftBody,
+				content_type: 'text/markdown',
 			});
-			const json = await resp.json();
-			return { draft_saved_to: `email-drafts/${slug}.md`, provider_response: json };
+			return { draft_saved_to: meta.path, file_meta: meta };
 		}
 		default:
 			throw new Error(`Unknown tool: ${tool}`);
@@ -160,9 +150,23 @@ async function handleRpc(env: Env, req: JsonRpcRequest): Promise<unknown> {
 	try {
 		switch (req.method) {
 			case 'initialize':
-				return { jsonrpc: '2.0', id: req.id, result: { protocolVersion: '2025-03-26', capabilities: { tools: {} }, serverInfo: { name: 'office-town-mcp-email', version: '0.1.0' } } };
+				return {
+					jsonrpc: '2.0',
+					id: req.id,
+					result: { protocolVersion: '2025-03-26', capabilities: { tools: {} }, serverInfo: { name: 'office-town-email', version: '1.0.0' } },
+				};
 			case 'tools/list':
-				return { jsonrpc: '2.0', id: req.id, result: { tools: Object.entries(TOOLS).map(([name, def]) => ({ name, description: def.description, inputSchema: def.inputSchema })) } };
+				return {
+					jsonrpc: '2.0',
+					id: req.id,
+					result: {
+						tools: Object.entries(TOOLS).map(([name, def]) => ({
+							name,
+							description: def.description,
+							inputSchema: def.inputSchema,
+						})),
+					},
+				};
 			case 'tools/call': {
 				const params = (req.params ?? {}) as { name: string; arguments?: Record<string, unknown> };
 				const value = await handleToolCall(env, params.name, params.arguments ?? {});
@@ -176,7 +180,7 @@ async function handleRpc(env: Env, req: JsonRpcRequest): Promise<unknown> {
 	}
 }
 
-app.post('/mcp', async (c) => {
+app.post('/', async (c) => {
 	const auth = c.req.header('authorization');
 	if (!auth || auth !== `Bearer ${c.env.MCP_BEARER_TOKEN}`) {
 		return c.json({ error: 'Unauthorised' }, 401);
@@ -186,6 +190,22 @@ app.post('/mcp', async (c) => {
 	return c.json(result);
 });
 
-app.get('/health', (c) => c.json({ status: 'ok', service: 'office-town-mcp-email' }));
+app.get('/sse', async (c) => {
+	const auth = c.req.header('authorization');
+	if (!auth || auth !== `Bearer ${c.env.MCP_BEARER_TOKEN}`) {
+		return c.json({ error: 'Unauthorised' }, 401);
+	}
+	const encoder = new TextEncoder();
+	const stream = new ReadableStream({
+		start(controller) {
+			controller.enqueue(encoder.encode('event: endpoint\ndata: /mcp/email\n\n'));
+		},
+	});
+	return new Response(stream, {
+		headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' },
+	});
+});
 
-export default app;
+app.get('/health', (c) => c.json({ status: 'ok', service: 'office-town-email-mcp' }));
+
+export const emailMcpRoutes = app;

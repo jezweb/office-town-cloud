@@ -1,6 +1,6 @@
 // Wiki search — FTS5 + Vectorize, fused via RRF.
 
-import type { WikiSearchInput, WikiTriageHit } from '@office-town/shared';
+import type { WikiSearchInput, WikiTriageHit } from '../lib/shared';
 import type { Env } from '../types';
 
 const RRF_K = 60; // reciprocal rank fusion constant
