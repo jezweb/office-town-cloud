@@ -52,7 +52,8 @@ Walk me through these in order, asking for input when needed:
 
 2. DEPLOY BACKEND to my Cloudflare account:
    - Clone office-town-cloud
-   - pnpm install at the ui/ workspace level
+   - pnpm install at the **repo root** (pnpm-workspace.yaml is at top
+     level; lists packages/* as members)
    - Generate a random 32-byte hex MCP bearer token, save to keychain
      OR a .env in the cloned repo (the README explains both)
    - Create D1 database office-town-d1 via wrangler
@@ -163,7 +164,8 @@ I'll provide:
 
 Steps:
 1. Clone office-town-cloud
-2. pnpm install (workspace root is ui/, not the package dir)
+2. pnpm install (workspace root is the **repo root**;
+   pnpm-workspace.yaml lists `packages/*` as members)
 3. Generate a random 32-byte hex bearer token
 4. Create D1 office-town-d1 + patch ID into core/wrangler.jsonc
 5. Create R2 buckets (wiki + files + -preview variants)
