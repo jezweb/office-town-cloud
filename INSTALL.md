@@ -19,6 +19,29 @@ methodology running on Cloudflare Workers. Source repos:
 
 Walk me through these in order, asking for input when needed:
 
+0. CLARIFY UPFRONT before doing anything else:
+
+   a. **Which agent host am I configuring?** Detect from what's installed:
+      - Goose CLI present (`goose --version` works) -> use Goose plugin path
+      - ~/.claude/ exists / you're running inside Claude Code -> use Claude Code path
+      - both / neither -> ask me
+      The end-game is: 4 MCP servers wired into my agent host pointing at
+      my deployed workers. The plugin contents (agents/, skills/, commands/)
+      translate to whichever host I use; don't force Goose if Claude Code is
+      what's here.
+
+   b. **Toolchain bootstrap if missing.** On a fresh Mac you'll often have only
+      git. Check for: node 20+, pnpm 10+, wrangler. If absent, install via
+      whatever's available (Homebrew, mise, fnm, nvm, n, or download
+      installers). Don't assume Homebrew exists — install it first if you
+      need it. Run version checks after each step. This can add 5-15 min
+      to the install on a clean machine; tell me before you start.
+
+   c. **Inspect both INSTALL.md (canonical) AND each repo's actual
+      wrangler.jsonc** before deploying — if they disagree on values
+      (region, dimensions, binding names), the wrangler.jsonc wins.
+      Flag mismatches; don't silently guess.
+
 1. CREDENTIALS GATHER. I'll provide:
    - my Cloudflare account ID (visible at dash.cloudflare.com)
    - my Cloudflare API token (create one with permissions for
@@ -52,16 +75,37 @@ Walk me through these in order, asking for input when needed:
    - Verify GET /api/wiki/collections returns 11 default collections
      using the bearer token
 
-3. INSTALL PLUGIN:
-   - For Goose: goose plugin install jezweb/office-town-plugin
-     and goose plugin install jezweb/office-town-pack-knowledge
-   - For Claude Code: clone the plugin repo + symlink agents/,
-     skills/, commands/ into ~/.claude/ or however Claude Code
-     discovers plugins. Check the plugin's .plugin/plugin.json for
-     the exact shape.
-   - Configure MCP servers in my agent host to point at my newly
-     deployed workers with the bearer token from step 1 (see
-     office-town-plugin/README for the streamable-HTTP shape).
+3. WIRE THE PLUGIN INTO MY AGENT HOST:
+
+   The plugin (jezweb/office-town-plugin) follows the Open Plugin Spec —
+   it's just markdown agents/, skills/, commands/ folders that any
+   conformant host can use. The "install" mechanism differs per host:
+
+   - **Goose**: `goose plugin install jezweb/office-town-plugin`
+     and `goose plugin install jezweb/office-town-pack-knowledge`.
+     Goose handles the rest.
+
+   - **Claude Code**: clone jezweb/office-town-plugin to a stable path
+     (e.g. ~/.claude/plugins/office-town/). Then either symlink
+     agents/ skills/ commands/ rules/ into ~/.claude/ subdirs, OR
+     copy them in. Check ~/.claude/agents/ for existing files first;
+     don't overwrite. Same for office-town-pack-knowledge — its
+     concepts/ go into wiki/knowledge/ in my town folder
+     (step 4), not the Claude config.
+
+   - **Other Open Plugin Spec hosts**: read the host's docs on plugin
+     discovery; the office-town-plugin's .plugin/plugin.json is spec-
+     compliant so any conformant host should pick it up.
+
+   AFTER the agents are in place, wire the 4 MCP servers into the host:
+   - office-town-wiki    -> {core_url}/mcp/wiki
+   - office-town-browser -> {mcp-browser worker url}/mcp
+   - office-town-devops  -> {mcp-devops worker url}/mcp
+   - office-town-email   -> {mcp-email worker url}/mcp
+   All four use Bearer auth with the token from step 1.
+
+   For Goose: edit ~/.config/goose/config.yaml or use `goose mcp add`.
+   For Claude Code: `claude mcp add <name> --transport http <url> --header "Authorization: Bearer <token>"`.
 
 4. SET UP TOWN FOLDER:
    - git clone github.com/jezweb/office-town to my chosen folder

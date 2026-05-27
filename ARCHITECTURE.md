@@ -71,7 +71,7 @@ This document describes the system architecture, the primitive decisions, and th
 | **Source of truth** | Markdown files in R2 with YAML frontmatter | Portable, transparent, tool-neutral; matches goanna premise |
 | **FTS engine** | D1 with FTS5 + BM25 | Mature; free tier covers typical deployment; cheap |
 | **Vector store** | Vectorize V2 with metadata namespaces | Cheap; built-in metadata filtering; 10M vectors/index ceiling |
-| **Embedding model** | `@cf/baai/bge-large-en-v1.5` (1024d) | $0.20/M tokens; price/quality sweet spot |
+| **Embedding model** | `@cf/baai/bge-base-en-v1.5` (768d) | $0.20/M tokens; price/quality sweet spot |
 | **Ingest LLM** | `@cf/openai/gpt-oss-20b` | Bake-off winner; tool-calling native; cheap; fast |
 | **Reindex trigger** | R2 events → Queue → Workflow | Durable, free retries, decoupled |
 | **Tenant isolation** | Single-tenant per deployment | No multi-tenancy in v1 |
@@ -92,7 +92,7 @@ This document describes the system architecture, the primitive decisions, and th
 1. Agent calls wiki.recall("how do we deploy?") via MCP
 2. MCP adapter forwards to Substrate Worker
 3. Worker fans out IN PARALLEL:
-   a. Embed query (Workers AI bge-large)
+   a. Embed query (Workers AI bge-base-en-v1.5)
    b. D1 FTS5 query (top 20 by BM25)
    c. Vectorize.query (top 20 by cosine, filtered by tenant namespace + metadata)
 4. Worker fuses results via Reciprocal Rank Fusion (k=60)
@@ -113,7 +113,7 @@ This document describes the system architecture, the primitive decisions, and th
    a. Read R2 object
    b. Parse frontmatter
    c. Chunk body (~400 tokens, 50 overlap)
-   d. Embed each chunk (bge-large)
+   d. Embed each chunk (bge-base-en-v1.5)
    e. Upsert vectors into Vectorize (metadata: tenant, category, slug, status, ts)
    f. Upsert FTS5 row in D1
 7. Activity log entry
@@ -197,10 +197,12 @@ CREATE TABLE activity_log (
 ### Vectorize (semantic search)
 
 ```
-Index: officetown
-Dimensions: 1024 (bge-large)
-Metadata indexes:
-  - tenant_id (string)
+Index: office-town-vec
+Dimensions: 768 (bge-base-en-v1.5, cosine metric)
+Metadata indexes (created BEFORE first vector insert):
+  - collection (string)
+  - slug (string)
+  - entry_id (string)
   - collection (string) | type (string)
   - status (string)
   - created_at (number)
