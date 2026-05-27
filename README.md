@@ -1,70 +1,67 @@
 # Office Town Cloud
 
-The Cloudflare Workers backend that powers [Office Town](https://github.com/jezweb/office-town) — capabilities you add to your [Goose](https://block.github.io/goose/) installation. Wiki + files + publish + cron + dashboard, plus MCP servers for browser, devops, and email.
+The Cloudflare Workers backend for [Office Town](https://github.com/jezweb/office-town) — capabilities you add to your [Goose](https://block.github.io/goose/) installation. A single Worker hosts the wiki + files + publish + cron + dashboard alongside four MCP servers (wiki, browser, devops, email).
 
-## Get started
+## Deploy
 
-You need Goose installed first — https://block.github.io/goose/.
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/jezweb/office-town-cloud)
 
-👉 [INSTALL.md](./INSTALL.md) — paste one prompt into any capable AI agent (Goose, Claude Code, Aider, etc.). It checks your toolchain, asks before installing anything missing, deploys this backend to your Cloudflare account, and wires it into Goose. ~20-30 minutes.
+Click the button. Cloudflare provisions everything in your account from `wrangler.jsonc`:
 
-Or [SETUP.md](https://github.com/jezweb/office-town/blob/main/SETUP.md) in the template repo for a manual step-by-step.
+- **D1** (`office-town-d1`) — wiki index + FTS5 virtual table + cron jobs
+- **R2** (`office-town-wiki`, `office-town-files`) — markdown source-of-truth + uploads + share links + published pages
+- **Vectorize** (`office-town-vec`) — 768-dim cosine
+- **Queue** (`office-town-index`) — embedding pipeline
+- **Workers AI** (bge-base-en-v1.5 for embeddings)
+- **Browser Rendering** (for the browser MCP)
 
-## What this is
+The deploy UI prompts you for `MCP_BEARER_TOKEN` (generate via `openssl rand -hex 32`) and a couple of optional provider keys (`SMTP2GO_API_KEY` for email send, `CF_API_TOKEN` for devops). ~2 minutes end-to-end. Cloudflare hands you a URL like `https://office-town-<you>.<account>.workers.dev`.
 
-5 Cloudflare Workers + the data plane they need:
+## Wire it into Goose
 
-| Worker | Purpose | URL pattern |
-|---|---|---|
-| `office-town-core` | Wiki CRUD + FTS5/Vectorize search + files + publish + cron + dashboard | `app.<yourdomain>` or `*.workers.dev` |
-| `office-town-mcp-wiki` | Streamable-HTTP MCP — wiki.create/read/update/search/etc. | `mcp-wiki.<yourdomain>` |
-| `office-town-mcp-browser` | Browser Rendering MCP (puppeteer-based fetch/screenshot/extract) | `mcp-browser.<yourdomain>` |
-| `office-town-mcp-devops` | Cloudflare API wrapper (zones/workers/DNS/logs — read-only by default) | `mcp-devops.<yourdomain>` |
-| `office-town-mcp-email` | Outbound email via SMTP2Go, drafts to FILES bucket | `mcp-email.<yourdomain>` |
+You need Goose installed: https://block.github.io/goose/.
 
-Data plane provisioned per deployment:
+👉 **[Open INSTALL.md](./INSTALL.md)** — paste one prompt into any capable AI agent (Goose itself, Claude Code, Aider). It installs the Goose plugin + knowledge pack, edits your `~/.config/goose/config.yaml` to wire all four MCP servers to the URL you got from the button, clones the town template to your folder, runs a smoke test. ~5 minutes after the button finishes.
 
-- **D1**: `office-town-d1` — wiki index, FTS5 virtual table, cron jobs
-- **R2**: `office-town-wiki` (markdown source-of-truth), `office-town-files` (uploads + share links + published pages)
-- **Vectorize**: `office-town-vec` — 768-dim cosine + metadata indexes on collection/slug/entry_id
-- **Queue**: `office-town-index` — embedding pipeline
-- **Workers AI**: bge-base-en-v1.5 for embeddings
+Goose sees four MCP servers, each at a different path on the same base URL:
 
-Live reference deployment (Jez's): https://app.officetown.au
+| Server | URL path |
+|---|---|
+| `office-town-wiki` | `/mcp/wiki` |
+| `office-town-browser` | `/mcp/browser` |
+| `office-town-devops` | `/mcp/devops` |
+| `office-town-email` | `/mcp/email` |
+
+## What runs on the Worker
+
+| Surface | Routes |
+|---|---|
+| HTTP API (bearer-gated) | `POST/GET/PATCH/DELETE /api/wiki/*`, `/api/files/*`, `/api/publish/*`, `/api/cron/*` |
+| MCP servers (streamable-HTTP JSON-RPC) | `POST /mcp/{wiki,browser,devops,email}` + `GET /mcp/*/sse` |
+| Dashboard (HTML) | `/`, `/dashboard/*` |
+| Public publish reader | `/p/<slug>`, `/s/<token>` |
+| Health | `/health` |
+| Cron + queue consumer | exported alongside `fetch` |
 
 ## Cost
 
-Typical SMB volume: ~$2-5/month on Cloudflare.
-
-Variables: Vectorize ($0.04 per 1M dimensions queried), Workers AI embeddings ($0.011 per 1M tokens), Queue ($0.40 per 1M messages). Other services (Workers, D1, R2) usually inside the free tier at this scale.
+Typical SMB volume: **~$2-5/month** on Cloudflare. Variables: Vectorize ($0.04 per 1M dimensions queried), Workers AI embeddings ($0.011 per 1M tokens), Queue ($0.40 per 1M messages). Workers + D1 + R2 usually inside the free tier at this scale.
 
 ## Local development
 
 ```bash
-# Hermit (Node 24 + pnpm 10.30) — required by goose ui workspace
-source bin/activate-hermit
-
-# Install
-cd ui/desktop-not-yet-a-workspace-here-just-our-packages
 pnpm install
-
-# Run wiki MCP locally
-pnpm -F @office-town/core dev
-
-# Typecheck everything
-pnpm -r typecheck
-
-# Run wiki service unit tests
-pnpm -F @office-town/core test
+cp .dev.vars.example .dev.vars   # fill in MCP_BEARER_TOKEN at minimum
+pnpm dev
 ```
+
+`wrangler dev` against the deployed bindings. For type checking: `pnpm typecheck`. For tests: `pnpm test`.
 
 ## Architecture
 
-See [ARCHITECTURE.md](./ARCHITECTURE.md) for the deep design — substrate-as-R2 + index-in-D1 + vector-in-Vectorize hybrid, the universal sextet frontmatter, triage-shape search results, etc.
-
-See [BUILD-SPEC.md](./BUILD-SPEC.md) for phased build plan.
-
-See [WIKI-SCHEMA.md](./WIKI-SCHEMA.md) for the 11 default collections.
+- [ARCHITECTURE.md](./ARCHITECTURE.md) — substrate-as-R2 + index-in-D1 + vector-in-Vectorize, universal sextet frontmatter, triage-shape search results
+- [BUILD-SPEC.md](./BUILD-SPEC.md) — phased build plan
+- [WIKI-SCHEMA.md](./WIKI-SCHEMA.md) — the 11 default collections
 
 ## Repos in this family
 
