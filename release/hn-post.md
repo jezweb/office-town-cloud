@@ -1,37 +1,47 @@
-> ⚠️ **PRE-PIVOT DRAFT (2026-05-27)** — written when Office Town was framed as a host-agnostic methodology with a Custom Distribution Mac app. After dogfood + reflection, Office Town was repositioned as "capabilities for Goose" and the .app was parked. This draft needs an editing pass before publishing: remove Office Town Desktop references, lead with the Goose-first install path.
-
-# HN post draft
+# HN post draft (post-pivot)
 
 ## Title (under 80 chars)
 
-Show HN: Office Town — markdown methodology for AI agent fleets on Cloudflare
+Show HN: Office Town — give your Goose AI agent a team, on a Cloudflare backend
 
 ## Body
 
-I've been building Office Town for the last few months. The bet: treat AI agents like a team — four buildings, four core roles, a wiki-backed substrate — and they act like a team. Open source today.
+I've been building Office Town on top of Goose for the last few months. The bet: treat AI agents like a team (4 buildings, 4 core roles, a wiki-backed substrate) and they act like a team. Open source today.
 
-The shape: every Office Town deployment has 4 buildings (office, library, workshop, lookout), each with an `AGENTS.md` that Goose auto-loads. The boss routes work; the librarian extracts + curates the wiki; the worker builds; the scout scans. They @-mention each other. Discipline beats throughput — the boss never builds, the worker never extracts.
+You install Office Town into an existing Goose install (block/goose, Apache 2.0). It adds:
 
-The substrate runs on Cloudflare Workers. R2 holds the canonical markdown. D1 + FTS5 + Vectorize give hybrid keyword + semantic search. One worker, one Vectorize index, ~$2/mo at typical usage.
+- **4 addressable roles** — `@boss` routes work + holds the thread, `@librarian` extracts + curates the wiki, `@worker` does deep building, `@scout` scans outward. Each is a markdown agent file Goose loads on session start.
+- **A Cloudflare-backed wiki** — 11 default collections (orgs, contacts, projects, decisions, knowledge, etc.) with FTS5 + Vectorize hybrid search. Triage-shape search results (frontmatter + 300-char excerpt + signed URL) keep the LLM context lean.
+- **8 role packs** — startup, design, hosting, wordpress, business, comms, cloudflare, knowledge. The startup pack's `extract-commitments` skill turns "I'll ship X by Friday" out of any meeting note into a structured commitment entry with deadline + party + source quote. Dashboard surfaces "due this week"; morning standup recipe walks through them.
+- **Browser / devops / email MCPs** — ship with the cloud backend. Browser uses @cloudflare/puppeteer; email goes via SMTP2Go; devops wraps the CF API.
 
-The killer feature came from dogfooding as a fictional pre-seed startup founder: structured commitment tracking. Every customer call generates promises like "I'll ship X by Friday". The `extract-commitments` skill scans meeting notes and writes commitments with deadlines, parties, and source quotes. The dashboard surfaces "due this week". The morning `/standup` walks through them.
+Install is two paste-able prompts at officetown.au. The agent doing the install can be Goose itself, or Claude Code, Aider, Cline — anything that can run wrangler and edit your Goose config. Office Town runs inside Goose afterward.
 
-8 role packs ship out of the box: startup, design, hosting, wordpress, business, cloudflare, comms, knowledge. Pack-knowledge bundles 17 portable agent concepts + 35 coding gotchas — your wiki starts with real wisdom, not empty folders.
+Cost: ~$2-5/month on Cloudflare at typical SMB volume.
 
-Deploy in 2 ways: (1) Office Town Desktop — download .app, sign in with Google, click "Deploy to Cloudflare", paste token, done. (2) Vanilla Goose — `goose plugin install jezweb/office-town-plugin`, configure 7 MCPs.
+Three repos plus 8 packs (all MIT):
 
-Three repos (all MIT):
 - github.com/jezweb/office-town (template + methodology)
-- github.com/jezweb/office-town-cloud (Cloudflare backend)
-- github.com/jezweb/office-town-plugin (Goose plugin)
+- github.com/jezweb/office-town-cloud (5 Workers + D1 + R2 + Vectorize + Queue)
+- github.com/jezweb/office-town-plugin (Goose plugin: agents/skills/commands/rules)
+- github.com/jezweb/office-town-pack-* × 8
 
 Landing: officetown.au
 
-Happy to discuss the architectural choices (why FTS5 + Vectorize over AI Search, why MCP Sampling for classification, why Custom Distribution over a fresh Electron app) and the methodology choices (why the wiki is the substrate, why agents stay disciplined to their building, why commitments are first-class).
+A few things I'd be interested in discussion on:
+
+1. The plugin follows Open Plugin Spec v1.0.0, so the agents/skills/commands files are technically portable to other conformant hosts (Claude Code, etc.). We built and tested for Goose. If anyone runs it elsewhere I'd love to hear how it goes.
+
+2. The wiki MCP exposes triage-shape search by default; full-body reads are gated behind an `expanded:true` flag or per-entry `wiki.read`. This was the single most-impactful design choice — keeps Goose's context window clean across long sessions.
+
+3. We initially built a Custom Distribution of Goose Desktop (signed + notarised .app, CI on tag push, the works) but parked it before launch. Realised it doesn't add value over a vanilla Goose install + the agent-install prompt — Goose itself is upstream-mature enough that custom branding just adds maintenance burden. Files are preserved in a private repo for v1.1 if pre-baked init-config or first-launch wizard would change the calculus.
 
 What's missing from v1.0 (lands in v1.1, ~4 weeks):
-- Voice — phone the librarian via WebRTC + Nova-3 + Aura-2
-- Sandbox — run untrusted code in Cloudflare Containers
-- The mixed-portability concepts from goanna (21 still to adapt)
 
-Would love feedback from anyone running multi-agent Goose / Claude Code setups — what role packs would actually help you?
+- Voice MCP (Cloudflare Realtime + Workers AI Nova-3 / Aura-2 — "phone the librarian")
+- Sandbox MCP (Cloudflare Containers — run untrusted code from agents)
+- Search wrapper (DIY + AI Search backends; bake-off pending)
+
+Happy to discuss the architectural calls — why FTS5 + Vectorize over Cloudflare AI Search (timing + control), why we standardised on Open Plugin Spec, why MCP service bindings between workers instead of public URLs, why the universal sextet frontmatter, etc.
+
+Anyone running multi-agent Goose / Claude Code setups who'd want to try Office Town — what's the first role pack you'd want? Or the first one missing from the eight we shipped?
