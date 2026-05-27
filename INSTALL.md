@@ -26,8 +26,9 @@ I want to add Office Town capabilities to my Goose installation.
 
 Office Town is a content bundle (one Cloudflare Worker + Goose plugin
 + town template) that installs INTO an existing Goose. NOT a Goose
-replacement. The Worker hosts 3 MCP servers (wiki, files, email) plus
-a dashboard. The plugin adds 4 agent roles + skills + recipes.
+replacement. The Worker hosts 6 MCP servers (wiki, files, email,
+cron, voice, sandbox) plus a dashboard. The plugin adds 4 agent
+roles + skills + recipes.
 
 I'll provide:
 - My Cloudflare deployment URL (from the Deploy button)
@@ -67,23 +68,30 @@ STEPS:
      goose mcp disable memory
    Or in the Desktop UI: Extensions → Memory → toggle off.
 
-5. Wire the 3 Office Town MCPs via `goose mcp add` (NOT raw YAML
-   editing — let Goose validate the config):
+5. Wire the 6 Office Town MCPs via `goose mcp add` (NOT raw YAML
+   editing — let Goose validate the config). Same bearer for all six:
 
-     goose mcp add office-town-wiki \\
-       --transport streamable_http \\
-       --url <URL>/mcp/wiki \\
-       --header "Authorization: Bearer <MCP_BEARER_TOKEN>"
+     for name in wiki files email cron voice sandbox; do
+       goose mcp add office-town-$name \\
+         --transport streamable_http \\
+         --url <URL>/mcp/$name \\
+         --header "Authorization: Bearer <MCP_BEARER_TOKEN>"
+     done
 
-     goose mcp add office-town-files \\
-       --transport streamable_http \\
-       --url <URL>/mcp/files \\
-       --header "Authorization: Bearer <MCP_BEARER_TOKEN>"
+   Or one at a time if you prefer:
 
-     goose mcp add office-town-email \\
-       --transport streamable_http \\
-       --url <URL>/mcp/email \\
-       --header "Authorization: Bearer <MCP_BEARER_TOKEN>"
+     goose mcp add office-town-wiki    --transport streamable_http --url <URL>/mcp/wiki    --header "Authorization: Bearer <MCP_BEARER_TOKEN>"
+     goose mcp add office-town-files   --transport streamable_http --url <URL>/mcp/files   --header "Authorization: Bearer <MCP_BEARER_TOKEN>"
+     goose mcp add office-town-email   --transport streamable_http --url <URL>/mcp/email   --header "Authorization: Bearer <MCP_BEARER_TOKEN>"
+     goose mcp add office-town-cron    --transport streamable_http --url <URL>/mcp/cron    --header "Authorization: Bearer <MCP_BEARER_TOKEN>"
+     goose mcp add office-town-voice   --transport streamable_http --url <URL>/mcp/voice   --header "Authorization: Bearer <MCP_BEARER_TOKEN>"
+     goose mcp add office-town-sandbox --transport streamable_http --url <URL>/mcp/sandbox --header "Authorization: Bearer <MCP_BEARER_TOKEN>"
+
+   Note: `office-town-voice` (the call_* actions) and
+   `office-town-sandbox` (the run action) are v1.1-alpha — they return
+   `status: not_yet_wired` placeholders until the Realtime + Containers
+   bindings land. Their other actions (transcribe, synthesize,
+   list_voices, list_languages) work today.
 
    If `goose mcp add` isn't available in your Goose version, fall back
    to editing ~/.config/goose/config.yaml under `extensions:`. Show me
@@ -118,9 +126,12 @@ STEPS:
      Office Town installed for Goose.
        Deployment URL:    <URL>
        Town folder:       <path>
-       MCP servers:       office-town-wiki / files / email (gateway shape)
+       MCP servers:       office-town-{wiki,files,email,cron,voice,sandbox}
+                          (6 gateway tools, 57 actions total)
        Plugins:           office-town-plugin + office-town-pack-knowledge
        Memory:            Goose built-in disabled — wiki MCP replaces it
+       Alpha:             voice.call_* + sandbox.run return placeholders
+                          pending Realtime + Containers wiring (v1.1)
 
      Try: @librarian "extract everything I know about my biggest client"
 
@@ -139,15 +150,18 @@ That's it. ~5 min agent work after the ~2 min button click. ~7 min end-to-end.
 
 ## What you get
 
-**3 MCP gateway tools** (one per server, each with multiple actions):
+**6 MCP gateway tools** (one per server, each with multiple actions — 57 actions total):
 
 | Tool | Actions | Purpose |
 |---|---|---|
-| `wiki` | write, get, read, search, update, supersede, archive, delete, history, link, related, list, tree, recent, glob, head, head_many, collections, register, attach, list_attachments, detach (22 actions) | Team wiki — replaces Goose Memory |
-| `files` | upload, download, list, delete, share, revoke, convert (any-doc → markdown), transform_image, publish, unpublish (10 actions) | Files + share + publish + AI conversion |
-| `email` | send, draft (2 actions) | Outbound via Cloudflare Email Routing |
+| `wiki` | write, get, read, search, update, supersede, archive, delete, history, link, related, list, tree, recent, glob, head, head_many, collections, register, attach, list_attachments, detach (22) | Team wiki — replaces Goose Memory |
+| `files` | upload, download, list, delete, share, revoke, convert (any-doc → markdown), transform_image, publish, unpublish, fetch_with_js (puppeteer + toMarkdown), screenshot, generate_image (FLUX 2), speak (Aura-2) (14) | Files + share + publish + AI conversion + browser + image-gen + TTS |
+| `email` | send, draft (2) | Outbound via Cloudflare Email Routing |
+| `cron` | schedule, list, get, due, history, run_now, delete (7) | Recurring agent work + one-off scheduled jobs |
+| `voice` | transcribe (Nova-3), synthesize (Aura-2 + 40 voices), list_voices, call_create, call_end, call_status (6) | STT/TTS today + Realtime SFU voice conversations (alpha) |
+| `sandbox` | run, list_languages, persist_create, persist_run, persist_end, persist_list (6) | Isolated code execution — Python/Node/TS/Bash (alpha, pending Containers) |
 
-**Plus**: inbound email handler (Email Routing → wiki/research/) and 7 dashboard pages (wiki browser, cron, files, published pages, kanban view).
+**Plus**: inbound email handler (Email Routing → `wiki/research/`) and dashboard pages (wiki browser, cron, files, published pages, kanban view).
 
 **Plus Goose's defaults you keep enabled**: Analyze, Apps, Developer, Extension Manager, Skills, Summon (delegation to @worker / @scout), Todo, Top Of Mind (standing orders).
 
@@ -197,8 +211,11 @@ Steps (the workers are already up):
 3. goose plugin install jezweb/office-town-plugin
 4. goose plugin install jezweb/office-town-pack-knowledge
 5. goose mcp disable memory
-6. goose mcp add office-town-wiki --transport streamable_http --url <URL>/mcp/wiki --header "Authorization: Bearer <token>"
-   (and same for office-town-files and office-town-email)
+6. Loop wire all six MCPs:
+     for name in wiki files email cron voice sandbox; do
+       goose mcp add office-town-$name --transport streamable_http \\
+         --url <URL>/mcp/$name --header "Authorization: Bearer <token>"
+     done
 7. git clone https://github.com/jezweb/office-town <town path>
 8. Smoke test: wiki(action: 'list', collection: 'contacts') in Goose
 ```
