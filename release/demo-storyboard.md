@@ -16,9 +16,9 @@ The single demo video for the v1.0 launch. Target: HN + Goose Discord + landing-
 
 ## Scene 3 — 0:20-0:35 — Install
 
-**Visual**: User pastes Prompt A into a Claude Code terminal (or Goose chat — either reads well). Speed up the agent's work: toolchain check, Cloudflare credentials, "READY FOR PROMPT B". Cut to pasting Prompt B. Speed through deploys: D1, R2, Vectorize, queues, 5 workers. Each deploy ticking off in a list.
+**Visual**: User pastes the single install prompt into a Claude Code terminal (or Goose chat — either reads well). Speed up the agent's work as it walks itself through the four phases: toolchain check + Cloudflare creds, then deploys ticking off (D1, R2, Vectorize, queues, 5 workers), then `goose plugin install` lines, then a green smoke-test result. Show the agent pause and ask "proceed?" after Phase 1 — that's the deliberate consent gate.
 
-**Voiceover**: "Two prompts. The agent you already use runs the install. Twenty-five minutes later you've got five Cloudflare workers, a Goose plugin, four MCPs wired up, and a town folder ready."
+**Voiceover**: "One prompt. The agent you already use runs the install. Twenty-five minutes later you've got five Cloudflare workers, a Goose plugin, four MCPs wired up, and a town folder ready."
 
 ## Scene 4 — 0:35-0:55 — Real work: customer call debrief
 

@@ -49,12 +49,18 @@ The substrate runs on Cloudflare Workers. R2 holds the canonical markdown. D1 ho
 
 You need Goose installed first. Grab it from [block.github.io/goose](https://block.github.io/goose/), either Desktop (GUI) or CLI.
 
-Then everything else is two prompts. Paste them into any capable AI agent (Goose itself, Claude Code, Aider, Cline, whatever you have). The agent does the work.
+Then everything else is one prompt. Paste it into any capable AI agent (Goose itself, Claude Code, Aider, Cline, whatever you have). The agent does the work.
 
-- **Prompt A** checks your machine has the toolchain (Node, pnpm, wrangler) and that your Cloudflare credentials work. About 5-15 minutes depending on what's already installed.
-- **Prompt B** deploys the five Cloudflare Workers to your account, installs the Goose plugin, wires the MCP servers, sets up your town folder, and runs a smoke test. About 10-15 minutes.
+The prompt has four phases the agent walks itself through:
 
-Both prompts live at [github.com/jezweb/office-town/blob/main/INSTALL.md](https://github.com/jezweb/office-town/blob/main/INSTALL.md). Or visit [officetown.au](https://officetown.au) for the same prompt in a copy-button-shaped form.
+1. **Detect + prereqs** — checks Goose, toolchain (Node, pnpm, wrangler), Cloudflare credentials. Asks before installing anything missing. Pauses with a summary so you can review before any chargeable resources get created.
+2. **Deploy backend** — five Cloudflare Workers to your account, plus D1 + R2 + Vectorize + queue.
+3. **Template + plugin** — clones the town template, runs `goose plugin install`, wires the four MCP servers into your Goose config.
+4. **Smoke test + report** — creates a wiki entry, searches for it, tells the boss to introduce the team, hands you the URLs.
+
+End to end: ~20-30 minutes, depending on how much of the toolchain you already have.
+
+Full prompt lives at [github.com/jezweb/office-town/blob/main/INSTALL.md](https://github.com/jezweb/office-town/blob/main/INSTALL.md). Or visit [officetown.au](https://officetown.au) for the same prompt in copy-friendly form.
 
 If you don't have an agent to run the install for you, there's a manual [SETUP.md](https://github.com/jezweb/office-town/blob/main/SETUP.md) that walks through the same steps with shell commands.
 
@@ -112,7 +118,7 @@ Beyond that: a humans-in-the-loop pattern where each human team member gets a pe
 
 ## Try it
 
-If you've got Goose and a Cloudflare account, you're 25 minutes away from a working town. Two prompts at [officetown.au](https://officetown.au). Tell me what's missing.
+If you've got Goose and a Cloudflare account, you're 25 minutes away from a working town. One prompt at [officetown.au](https://officetown.au). Tell me what's missing.
 
 — Jeremy
 [@jezweb](https://twitter.com/jezweb) · [jezweb.com.au](https://jezweb.com.au)

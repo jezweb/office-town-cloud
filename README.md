@@ -6,7 +6,7 @@ The Cloudflare Workers backend that powers [Office Town](https://github.com/jezw
 
 You need Goose installed first — https://block.github.io/goose/.
 
-👉 [INSTALL.md](./INSTALL.md) — paste two prompts into any capable AI agent (Goose, Claude Code, Aider, etc.) and it deploys this backend to your Cloudflare account + wires it into Goose.
+👉 [INSTALL.md](./INSTALL.md) — paste one prompt into any capable AI agent (Goose, Claude Code, Aider, etc.). It checks your toolchain, asks before installing anything missing, deploys this backend to your Cloudflare account, and wires it into Goose. ~20-30 minutes.
 
 Or [SETUP.md](https://github.com/jezweb/office-town/blob/main/SETUP.md) in the template repo for a manual step-by-step.
 

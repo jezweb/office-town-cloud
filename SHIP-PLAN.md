@@ -402,7 +402,7 @@ Decision: **Office Town is "capabilities for Goose"**, not a host-agnostic metho
 What changed in repos:
 - office-town-desktop → private (preserved, not deleted)
 - officetown-download → private (the redirect worker still runs but the source is now private)
-- INSTALL.md → rewritten Goose-first (Prompt A: prereqs; Prompt B: install)
+- INSTALL.md → rewritten Goose-first as a single unified prompt with 4 internal phases (detect+prereqs / deploy backend / template+plugin / smoke test). Two-prompt structure (Prompt A + Prompt B) was a brief intermediate; collapsed because modern agents narrate + ask before destructive ops, so the audit-between-stages benefit was minimal.
 - All primary repo READMEs → repositioned as "capabilities for Goose"
 - Landing page → hero "Goose capabilities that work like a team", removed Download-for-Mac CTA
 

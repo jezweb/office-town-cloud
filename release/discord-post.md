@@ -8,7 +8,7 @@ Hey Goose community 👋 Just shipped Office Town v1.0 — a content bundle you 
 
 **The substrate**: Wiki on R2 + D1/FTS5 + Vectorize. Hybrid keyword + semantic search. Triage-shape results (frontmatter + 300-char excerpt + signed URL) to keep your context window lean. Runs on Cloudflare Workers — about $2-5/month at typical usage.
 
-**Install**: Two prompts at officetown.au. Prompt A checks toolchain + Cloudflare. Prompt B deploys 5 workers + `goose plugin install` + edits your `~/.config/goose/config.yaml` to wire the 4 MCP servers. About 25 minutes end-to-end.
+**Install**: One prompt at officetown.au. Paste into any capable agent. It checks Goose + toolchain (asks before installing anything missing), gets your Cloudflare creds, deploys 5 workers + D1/R2/Vectorize/queue, runs `goose plugin install`, edits your `~/.config/goose/config.yaml` to wire the 4 MCP servers, and runs a smoke test. ~20-30 minutes end-to-end. Pauses with a summary after the prereq phase so you can review before any Cloudflare resources get created.
 
 The agent running the install doesn't have to be Goose — Claude Code, Aider, Cline, anything capable can do it. Office Town runs inside your Goose afterward regardless.
 
