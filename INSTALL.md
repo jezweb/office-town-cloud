@@ -189,13 +189,13 @@ If you're using a smaller model and want a deterministic path: there's also a `d
 
 ## Bonus — claim your `.town` domain
 
-`.town` is a real TLD operated by Identity Digital. **Cloudflare Registrar is cheapest long-term at $28.20 USD/yr flat** (~$42-45 AUD; Cloudflare passes registry wholesale with no markup, no surprise renewal hikes).
+`.town` is a real TLD. Cloudflare sells it for **about $30/yr** with no markup or renewal hikes — go to your Cloudflare dashboard → **Domains → Registration → Register Domains** and search.
 
-Some registrars (Synergy Wholesale, Hover, Porkbun) offer first-year promo pricing ~$12 USD but renew at $55+/yr — read the renewal price before clicking buy. Year-2 onwards, Cloudflare wins.
+Some other registrars do first-year promo pricing (~$12 USD) but renew at $55+/yr — always check renewal price before clicking buy. Cloudflare wins year-2 onwards.
 
 Bonus of Cloudflare Registrar: DNS is already on Cloudflare → no nameserver swap needed when wiring custom worker domains.
 
-Heads-up: short / brand-name `.town` domains (e.g. `office.town`, single-word company names) are mostly already taken — usually defensive registrations from 2014. Check availability before getting attached.
+Heads-up: short / brand-name `.town` domains (e.g. `office.town`, single-word company names) are mostly taken — usually defensive registrations from 2014. Check availability before getting attached.
 
 After registration, ask your agent:
 
