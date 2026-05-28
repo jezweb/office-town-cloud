@@ -190,7 +190,11 @@ ${connectCallout}<h1 style="margin-top: 0;">Town overview</h1>
   </div>
 </div>
 <p class="muted" style="margin-top: 2rem; font-size: 0.9em;">
-  Running on <code>${new URL(c.req.url).host}</code>. Want a custom domain like <code>yourbiz.town</code>? <a href="/dashboard/wire-domain">~60 seconds in the Cloudflare dashboard →</a>
+  Running on <code>${new URL(c.req.url).host}</code>.
+  <span style="display: inline-block; margin: 0 0.5rem;">·</span>
+  Want a custom domain like <code>yourbiz.town</code>? <a href="/dashboard/wire-domain">~60 sec in CF dashboard →</a>
+  <span style="display: inline-block; margin: 0 0.5rem;">·</span>
+  Team deployment? <a href="/dashboard/wire-google-signin">Wire Google sign-in (v1.2 prep) →</a>
 </p>`;
 	return c.html(LAYOUT('Office Town - Dashboard', content));
 });
@@ -763,4 +767,149 @@ dashboardRoutes.get('/dashboard/wire-domain', async (c) => {
 </div>`;
 
 	return c.html(LAYOUT('Wire a custom domain - Office Town', content));
+});
+
+// Google sign-in setup guide — pure docs, mirrors /dashboard/wire-domain.
+// The actual Google OAuth flow lands in v1.2 (needs better-auth provider
+// wiring + sign-in button). This page lets users prep credentials NOW so
+// they're ready when the feature ships. Bearer-claim auth keeps working
+// either way — Google sign-in is additive, not a replacement.
+dashboardRoutes.get('/dashboard/wire-google-signin', async (c) => {
+	const reqUrl = new URL(c.req.url);
+	const workerHost = reqUrl.host;
+	const redirectUri = `${reqUrl.protocol}//${workerHost}/api/auth/callback/google`;
+
+	const agentPrompt = [
+		"Help me set up Google sign-in for my Office Town dashboard. I want team members",
+		"on my domain to be able to sign in with their Google accounts, in addition to the",
+		"bearer-claim flow.",
+		"",
+		"Worker URL:    " + reqUrl.protocol + "//" + workerHost,
+		"Redirect URI:  " + redirectUri,
+		"",
+		"GROUND RULES:",
+		"- I'll get the Google credentials myself from console.cloud.google.com — don't",
+		"  try to do that for me.",
+		"- You'll help me set the 3 secrets via wrangler secret put once I have the values.",
+		"- Don't echo any secrets back to me anywhere they could be logged.",
+		"",
+		"STEPS YOU'LL WALK ME THROUGH:",
+		"",
+		"1. I create an OAuth 2.0 Client ID at console.cloud.google.com/apis/credentials:",
+		"     - Application type: Web application",
+		"     - Name: anything (e.g. \"Office Town - " + workerHost + "\")",
+		"     - Authorized redirect URI: " + redirectUri,
+		"   Google gives me a Client ID + Client Secret.",
+		"",
+		"2. I decide which email domains can sign in. Comma-separated, e.g.",
+		"   \"jezweb.net,jezweb.com.au\". Empty = only the explicit allowlist applies",
+		"   (which I haven't set yet so empty = nobody can sign in until I fix this).",
+		"",
+		"3. You walk me through running these three commands locally (I have wrangler):",
+		"     wrangler secret put GOOGLE_CLIENT_ID       # paste the ID from step 1",
+		"     wrangler secret put GOOGLE_CLIENT_SECRET   # paste the secret from step 1",
+		"     wrangler secret put BETTER_AUTH_SECRET     # generate with: openssl rand -hex 32",
+		"   And help me set ALLOWED_AUTH_DOMAINS — either by editing wrangler.jsonc",
+		"   vars or via secret put (whichever the worker reads).",
+		"",
+		"4. Confirm the worker re-deploys to pick up the new secrets.",
+		"",
+		"5. Open https://" + workerHost + "/dashboard/connect from an incognito browser",
+		"   to test the sign-in flow once v1.2 ships the actual Google button. Until then",
+		"   credentials are stored but the bearer-claim flow is still the active path.",
+		"",
+		"CONSTRAINTS:",
+		"- Don't touch the existing bearer / claim flow — Google sign-in is additive.",
+		"- If something fails, stop and tell me — don't paper over credential errors.",
+	].join('\n');
+
+	const content = `
+<h1 style="margin-top: 0;">Wire Google sign-in (team mode)</h1>
+<p class="muted">Optional. By default the dashboard uses bearer-as-password (claim-on-first-visit). This adds Google OAuth so team members on your email domain can sign in with their Google accounts — without sharing the bearer.</p>
+
+<div class="card" style="max-width: 760px; margin-top: 1.5rem; background: linear-gradient(180deg, #fef3c7 0%, white 100%); border-color: var(--amber);">
+  <h2 style="margin-top: 0; color: var(--amber);">v1.2 prep — credentials only</h2>
+  <p style="margin: 0.5rem 0;">The actual Google sign-in button on the dashboard lands in v1.2. This guide lets you <strong>get your credentials ready now</strong> via <code>wrangler secret put</code>. Once you set them, the worker is configured — the feature flips on automatically when v1.2 deploys.</p>
+  <p style="margin: 0.5rem 0;">Bearer-claim flow keeps working either way. Google sign-in is additive.</p>
+</div>
+
+<div class="card" style="max-width: 760px; margin-top: 1.5rem;">
+  <h2 style="margin-top: 0;">~3 minutes, three steps</h2>
+  <ol style="line-height: 1.7; padding-left: 1.2rem;">
+    <li>
+      <strong>Create an OAuth 2.0 Client ID in Google Cloud Console.</strong><br>
+      <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener">Console → APIs &amp; Services → Credentials → Create Credentials → OAuth client ID</a>
+      <ul style="margin-top: 0.5rem; font-size: 0.95em;">
+        <li>Application type: <strong>Web application</strong></li>
+        <li>Name: anything memorable (e.g. <code>Office Town - ${workerHost}</code>)</li>
+        <li>Authorized redirect URI:<br>
+          <code style="background: var(--code); padding: 2px 6px; border-radius: 4px; user-select: all;">${redirectUri}</code>
+          <button onclick="navigator.clipboard.writeText('${redirectUri}'); this.textContent='✓'; setTimeout(()=>this.textContent='Copy',1500);" style="margin-left: 0.5rem; padding: 2px 8px; font-size: 0.85em; border: 1px solid var(--border); background: white; border-radius: 4px; cursor: pointer;">Copy</button>
+        </li>
+      </ul>
+      Google gives you a <strong>Client ID</strong> and a <strong>Client Secret</strong> on the next screen. Keep them handy.
+    </li>
+
+    <li style="margin-top: 0.75rem;">
+      <strong>Decide your email-domain allow-list.</strong><br>
+      Comma-separated email domains whose users can sign in. Example: <code>acme.com,acme.co.uk</code>. Anyone NOT on these domains gets rejected even if they have valid Google credentials.<br>
+      <span class="muted" style="font-size: 0.9em;">Leave empty to disable Google sign-in entirely (the worker falls back to bearer-claim).</span>
+    </li>
+
+    <li style="margin-top: 0.75rem;">
+      <strong>Set the three secrets via <code>wrangler secret put</code></strong> (from your local checkout of the repo):
+
+      <pre style="background: var(--code); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; font-size: 0.85em; line-height: 1.4; overflow-x: auto; margin-top: 0.5rem;">wrangler secret put GOOGLE_CLIENT_ID       <span class="muted">${'#'} paste the ID from step 1</span>
+wrangler secret put GOOGLE_CLIENT_SECRET   <span class="muted">${'#'} paste the Secret from step 1</span>
+wrangler secret put BETTER_AUTH_SECRET     <span class="muted">${'#'} generate with: openssl rand -hex 32</span></pre>
+
+      And set <code>ALLOWED_AUTH_DOMAINS</code> — for now this is a <code>vars</code> entry in <code>wrangler.jsonc</code>, so edit that file and redeploy. v1.2 will move it to a dashboard-editable setting.
+    </li>
+  </ol>
+</div>
+
+<div class="card" style="max-width: 760px; margin-top: 1.5rem;">
+  <h2 style="margin-top: 0;">Or have your agent do it</h2>
+  <p class="muted" style="margin: 0.25rem 0 0.75rem;">Paste this prompt into Claude Code / Goose / Aider / Cline — your agent will walk you through the Google Console steps and run the <code>wrangler secret put</code> commands once you've got the credentials.</p>
+
+  <div style="display: flex; gap: 0.75rem; align-items: center; margin: 0.75rem 0;">
+    <button id="copy-oauth-prompt-btn" type="button" onclick="copyOAuthPrompt()" style="padding: 0.5rem 1rem; border: 0; border-radius: 6px; background: var(--accent); color: white; font-size: 0.95em; font-weight: 500; cursor: pointer;">Copy agent prompt</button>
+    <span id="copy-oauth-prompt-status" class="muted" style="font-size: 0.85em;"></span>
+  </div>
+
+  <pre id="oauth-prompt" style="background: var(--code); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; font-size: 0.85em; overflow-x: auto; line-height: 1.45; max-height: 500px; white-space: pre-wrap; word-break: break-word;"></pre>
+</div>
+
+<div class="card" style="max-width: 760px; margin-top: 1.5rem; background: #f8fafc;">
+  <h2 style="margin-top: 0;">Why bother?</h2>
+  <ul style="line-height: 1.65; margin-top: 0.5rem;">
+    <li><strong>Team sign-in</strong> — no shared password. Each team member uses their own Google account. Rotating one person's access doesn't break everyone else.</li>
+    <li><strong>Domain-scoped</strong> — only emails on your <code>ALLOWED_AUTH_DOMAINS</code> can sign in. Random Gmail users are rejected automatically.</li>
+    <li><strong>Audit trail</strong> — sessions are logged with the user's email rather than just a bearer cookie. Useful for shared deployments.</li>
+  </ul>
+  <p class="muted" style="margin-top: 0.75rem; font-size: 0.9em;">
+    Solo deployment? Stick with bearer-claim — it's fine, simpler, no Google Console trip needed.
+  </p>
+</div>
+
+<script>
+const OAUTH_PROMPT = ${JSON.stringify(agentPrompt)};
+document.getElementById('oauth-prompt').textContent = OAUTH_PROMPT;
+
+function copyOAuthPrompt() {
+  const status = document.getElementById('copy-oauth-prompt-status');
+  const btn = document.getElementById('copy-oauth-prompt-btn');
+  navigator.clipboard.writeText(OAUTH_PROMPT).then(() => {
+    status.textContent = '✓ Copied — paste into your AI agent';
+    status.style.color = 'var(--green)';
+    btn.style.background = 'var(--green)';
+    setTimeout(() => { status.textContent = ''; btn.style.background = 'var(--accent)'; }, 2500);
+  }).catch((err) => {
+    status.textContent = 'Copy failed: ' + err.message;
+    status.style.color = 'var(--red)';
+  });
+}
+</script>`;
+
+	return c.html(LAYOUT('Wire Google sign-in - Office Town', content));
 });
