@@ -9,6 +9,7 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { authMiddleware } from './auth/middleware';
 import { dashboardGate } from './auth/dashboard-gate';
+import { ensureSchema } from './bootstrap';
 import { cronRoutes } from './cron/routes';
 import { dashboardRoutes } from './dashboard/routes';
 import { filesRoutes } from './files/routes';
@@ -56,6 +57,16 @@ app.use(
 		maxAge: 86400,
 	})
 );
+// First-request schema bootstrap. The "Deploy to Cloudflare" button
+// doesn't run wrangler d1 migrations apply, so fresh deploys have an
+// empty database. ensureSchema is memoised per isolate — only the very
+// first request after a cold start does any real work; everything else
+// is a no-op early return.
+app.use('*', async (c, next) => {
+	await ensureSchema(c.env);
+	return next();
+});
+
 app.use('*', authMiddleware);
 // Gate dashboard + home behind first-visitor-claim flow. MCP + API routes
 // are bearer-protected by authMiddleware above and remain accessible.
