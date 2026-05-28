@@ -622,29 +622,78 @@ async function runSetup(dryRun) {
 
 dashboardRoutes.get('/dashboard/wiki', async (c) => {
 	const collection = c.req.query('c');
-	const rows = collection
-		? await c.env.DB.prepare(
-				'SELECT collection, slug, title, updated_at, last_change_summary FROM wiki_entries WHERE collection = ? ORDER BY updated_at DESC LIMIT 200'
-			).bind(collection).all<{ collection: string; slug: string; title: string | null; updated_at: string; last_change_summary: string | null }>()
-		: await c.env.DB.prepare(
-				'SELECT collection, slug, title, updated_at, last_change_summary FROM wiki_entries ORDER BY updated_at DESC LIMIT 200'
-			).all<{ collection: string; slug: string; title: string | null; updated_at: string; last_change_summary: string | null }>();
+	const query = c.req.query('q')?.trim() ?? '';
 
-	const heading = collection ? `Wiki - ${collection}` : 'Wiki - all entries';
+	type Row = { collection: string; slug: string; title: string | null; updated_at: string; last_change_summary: string | null };
+	let rows: { results?: Row[] };
+	let heading: string;
+	let extraNote = '';
+
+	if (query) {
+		// FTS5 search across title + body, optionally scoped to a collection.
+		// Use a permissive query — wrap the user input so FTS5 treats it as a
+		// phrase or prefix-friendly bag of words.
+		const ftsQuery = query
+			.replace(/[^\w\s-]/g, ' ')
+			.split(/\s+/)
+			.filter(Boolean)
+			.map((w) => `${w}*`)
+			.join(' ');
+		const baseSql = `
+			SELECT e.collection, e.slug, e.title, e.updated_at, e.last_change_summary
+			FROM wiki_fts f
+			JOIN wiki_entries e ON e.id = f.id
+			WHERE wiki_fts MATCH ?
+			${collection ? 'AND e.collection = ?' : ''}
+			ORDER BY rank
+			LIMIT 200`;
+		rows = collection
+			? await c.env.DB.prepare(baseSql).bind(ftsQuery, collection).all<Row>()
+			: await c.env.DB.prepare(baseSql).bind(ftsQuery).all<Row>();
+		heading = collection ? `Wiki search — "${escapeHtml(query)}" in ${collection}` : `Wiki search — "${escapeHtml(query)}"`;
+		extraNote = (rows.results?.length ?? 0) === 0
+			? '<p class="muted">No matches. Try a single word + check the spelling. Search is full-text across titles + body.</p>'
+			: `<p class="muted">${rows.results?.length} match${rows.results?.length === 1 ? '' : 'es'}</p>`;
+	} else if (collection) {
+		rows = await c.env.DB.prepare(
+			'SELECT collection, slug, title, updated_at, last_change_summary FROM wiki_entries WHERE collection = ? AND status != ? ORDER BY updated_at DESC LIMIT 200',
+		).bind(collection, 'deleted').all<Row>();
+		heading = `Wiki — ${collection}`;
+	} else {
+		rows = await c.env.DB.prepare(
+			'SELECT collection, slug, title, updated_at, last_change_summary FROM wiki_entries WHERE status != ? ORDER BY updated_at DESC LIMIT 200',
+		).bind('deleted').all<Row>();
+		heading = 'Wiki — all entries';
+	}
+
 	const entries = (rows.results ?? [])
 		.map(
 			(r) =>
 				`<tr>
-<td><a href="/dashboard/wiki/${r.collection}/${r.slug}">${r.title ?? r.slug}</a></td>
+<td><a href="/dashboard/wiki/${r.collection}/${r.slug}">${escapeHtml(r.title ?? r.slug)}</a></td>
 <td><span class="tag">${r.collection}</span></td>
 <td class="muted">${new Date(r.updated_at).toLocaleString()}</td>
 <td class="muted">${(r.last_change_summary ?? '').replace(/</g, '&lt;')}</td>
-</tr>`
+</tr>`,
 		)
 		.join('');
 
+	const searchBar = `
+<form method="get" action="/dashboard/wiki" style="margin-bottom: 1rem; display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+  <input type="search" name="q" value="${escapeHtml(query)}" placeholder="Search wiki…" style="flex: 1; min-width: 240px; padding: 0.45rem 0.75rem;">
+  ${collection ? `<input type="hidden" name="c" value="${escapeHtml(collection)}">` : ''}
+  <button type="submit" style="font-size: 0.9em; padding: 0.45rem 1rem;">Search</button>
+  ${query || collection ? '<a href="/dashboard/wiki" class="muted" style="font-size: 0.9em;">Clear</a>' : ''}
+  <span style="margin-left: auto; font-size: 0.85em;">
+    <a href="/dashboard/wiki/tree" class="muted">Tree view</a> ·
+    <a href="/dashboard/wiki/review" class="muted">Review queue</a>
+  </span>
+</form>`;
+
 	const content = `
 <h1 style="margin-top: 0;">${heading}</h1>
+${searchBar}
+${extraNote}
 <div class="card">
   <table>
     <thead><tr><th>Title</th><th>Collection</th><th>Updated</th><th>Last change</th></tr></thead>
@@ -654,14 +703,146 @@ dashboardRoutes.get('/dashboard/wiki', async (c) => {
 	return c.html(LAYOUT('Wiki', content));
 });
 
+// Review queue: entries the agent flagged for human eyes (stub + pending).
+dashboardRoutes.get('/dashboard/wiki/review', async (c) => {
+	type Row = {
+		collection: string;
+		slug: string;
+		title: string | null;
+		status: string;
+		updated_at: string;
+		last_change_summary: string | null;
+	};
+
+	const rows = await c.env.DB.prepare(
+		`SELECT collection, slug, title, status, updated_at, last_change_summary
+		 FROM wiki_entries
+		 WHERE status = 'stub' OR status = 'stale'
+		 ORDER BY updated_at DESC LIMIT 200`,
+	).all<Row>();
+
+	const stubs = (rows.results ?? []).filter((r) => r.status === 'stub');
+	const stales = (rows.results ?? []).filter((r) => r.status === 'stale');
+
+	const renderTable = (list: Row[]) =>
+		list
+			.map(
+				(r) =>
+					`<tr>
+<td><a href="/dashboard/wiki/${r.collection}/${r.slug}">${escapeHtml(r.title ?? r.slug)}</a></td>
+<td><span class="tag">${r.collection}</span></td>
+<td class="muted">${new Date(r.updated_at).toLocaleString()}</td>
+<td class="muted">${(r.last_change_summary ?? '').replace(/</g, '&lt;')}</td>
+</tr>`,
+			)
+			.join('');
+
+	const stubsTable = stubs.length
+		? `<div class="card" style="margin-bottom: 1.5rem;">
+			<h2 style="margin-top: 0;">Stubs (${stubs.length}) — entries needing completion</h2>
+			<p class="muted">These were written with missing required fields or below the confidence threshold. Review + flesh out OR archive if they don't earn their place.</p>
+			<table>
+				<thead><tr><th>Title</th><th>Collection</th><th>Updated</th><th>Why stubbed</th></tr></thead>
+				<tbody>${renderTable(stubs)}</tbody>
+			</table>
+		</div>`
+		: '';
+
+	const stalesTable = stales.length
+		? `<div class="card">
+			<h2 style="margin-top: 0;">Stale (${stales.length}) — entries not touched in 90+ days</h2>
+			<p class="muted">Refresh, archive, or supersede each one based on whether the record still reflects reality.</p>
+			<table>
+				<thead><tr><th>Title</th><th>Collection</th><th>Updated</th><th>Last change</th></tr></thead>
+				<tbody>${renderTable(stales)}</tbody>
+			</table>
+		</div>`
+		: '';
+
+	const empty = (stubs.length === 0 && stales.length === 0)
+		? '<div class="card"><p>Nothing in the review queue. Your cortex is in clean shape — no stubs awaiting completion, no stale entries needing refresh.</p></div>'
+		: '';
+
+	const content = `
+<h1 style="margin-top: 0;">Review queue</h1>
+<p class="muted">Entries the cortex has flagged for your attention. The autonomy default has the agent act with whatever confidence it has — anything genuinely unclear lands here.</p>
+${stubsTable}${stalesTable}${empty}`;
+
+	return c.html(LAYOUT('Review queue - Wiki', content));
+});
+
+// Tree view: R2 path hierarchy as a navigable indented list.
+dashboardRoutes.get('/dashboard/wiki/tree', async (c) => {
+	// Listing R2 — paginated, fetch up to 1000 keys per page. For typical
+	// cortexes (50-500 entries) this is one or two pages.
+	const allKeys: string[] = [];
+	let cursor: string | undefined;
+	for (let i = 0; i < 5; i++) {
+		const result = await c.env.WIKI.list({ prefix: 'wiki/', limit: 1000, cursor });
+		for (const obj of result.objects) allKeys.push(obj.key);
+		if (!result.truncated) break;
+		cursor = result.cursor;
+	}
+
+	// Sort lexicographically — folders sort together
+	allKeys.sort();
+
+	// Build indented HTML. Each key like "wiki/orgs/acme-corp/entity.md" becomes
+	// a nested entry; depth comes from path segment count.
+	const escapedRows: string[] = [];
+	let lastSegments: string[] = [];
+
+	for (const key of allKeys) {
+		const segments = key.split('/').filter(Boolean);
+		// Render folder rows for any new prefix vs lastSegments
+		for (let depth = 0; depth < segments.length - 1; depth++) {
+			if (lastSegments[depth] !== segments[depth]) {
+				// New folder at this depth
+				const indent = depth * 24;
+				escapedRows.push(
+					`<div style="padding: 0.15rem 0 0.15rem ${indent}px;" class="muted">📁 ${escapeHtml(segments[depth])}/</div>`,
+				);
+			}
+		}
+		// Render the file row
+		const fileDepth = segments.length - 1;
+		const filename = segments[fileDepth];
+		const indent = fileDepth * 24;
+		const isCanonical = /^(entity|contact|project|decision|concept|profile|task|investigation)\.md$/.test(filename);
+		// Build a click-through to the entry detail page when filename is a canonical
+		const linkPath = isCanonical && segments.length >= 3
+			? `/dashboard/wiki/${segments[1]}/${segments[2]}`
+			: null;
+		const fileLabel = linkPath
+			? `<a href="${linkPath}">${escapeHtml(filename)}</a>`
+			: escapeHtml(filename);
+		escapedRows.push(
+			`<div style="padding: 0.15rem 0 0.15rem ${indent}px; font-family: ui-monospace, monospace; font-size: 0.85em;">📄 ${fileLabel}</div>`,
+		);
+		lastSegments = segments;
+	}
+
+	const treeHtml = escapedRows.join('');
+
+	const content = `
+<h1 style="margin-top: 0;">Wiki tree</h1>
+<p class="muted">Full R2 path hierarchy. Click any canonical file (entity.md, contact.md, project.md, decision.md, concept.md) to open its detail view. Non-canonical files (notes/, sessions/, attachments/) are listed here but don't yet have detail pages.</p>
+<div class="card" style="max-height: 80vh; overflow-y: auto;">
+  ${treeHtml || '<p class="muted">No wiki content yet. Run <a href="/dashboard/setup">setup</a> or wire your Goose to start populating.</p>'}
+</div>
+<p class="muted" style="margin-top: 1rem; font-size: 0.85em;">${allKeys.length} files total.</p>`;
+
+	return c.html(LAYOUT('Wiki tree - Office Town', content));
+});
+
 dashboardRoutes.get('/dashboard/wiki/:collection/:slug', async (c) => {
 	const collection = c.req.param('collection');
 	const slug = c.req.param('slug');
 	const row = await c.env.DB.prepare(
-		'SELECT collection, slug, title, body, frontmatter_json, updated_at FROM wiki_entries WHERE id = ?'
+		'SELECT collection, slug, title, body, frontmatter_json, updated_at, r2_key FROM wiki_entries WHERE id = ?'
 	)
 		.bind(`${collection}:${slug}`)
-		.first<{ collection: string; slug: string; title: string | null; body: string; frontmatter_json: string; updated_at: string }>();
+		.first<{ collection: string; slug: string; title: string | null; body: string; frontmatter_json: string; updated_at: string; r2_key: string }>();
 	if (!row) return c.html(LAYOUT('Not found', '<h1>Not found</h1>'), 404);
 
 	const frontmatter = JSON.parse(row.frontmatter_json) as Record<string, unknown>;
@@ -670,8 +851,31 @@ dashboardRoutes.get('/dashboard/wiki/:collection/:slug', async (c) => {
 		.map(([k, v]) => `<tr><th>${escapeHtml(k)}</th><td>${linkifyValue(k, v)}</td></tr>`)
 		.join('');
 
-	const bodyMatch = MAIN_REGEX.exec(renderedBody);
+	const bodyMatch = renderedBody.match(MAIN_REGEX);
 	const innerBody = bodyMatch ? bodyMatch[1] : `<pre>${row.body.replace(/</g, '&lt;')}</pre>`;
+
+	// Companion files: list R2 objects under wiki/<collection>/<slug>/
+	// and surface any that aren't the canonical entry (notes/, sessions/,
+	// research/, attachments — the entity-as-folder companion shape).
+	const folderPrefix = `wiki/${collection}/${slug}/`;
+	const companionList = await c.env.WIKI.list({ prefix: folderPrefix, limit: 100 });
+	const companions = companionList.objects
+		.filter((obj) => obj.key !== row.r2_key)
+		.sort((a, b) => a.key.localeCompare(b.key));
+
+	const companionsHtml = companions.length
+		? `<details class="card" style="margin-bottom: 1.5rem;" open>
+  <summary style="cursor: pointer; font-family: 'Trajan Pro', 'Optima', 'Palatino', Georgia, serif; font-weight: 600; font-size: 1.05rem; letter-spacing: 0.02em; color: var(--ink);">Companion files (${companions.length})</summary>
+  <p class="muted" style="margin-top: 0.5rem; font-size: 0.9em;">Notes, sessions, research, attachments — anything else under <code>${escapeHtml(folderPrefix)}</code>.</p>
+  <ul style="margin: 0.75rem 0 0; padding-left: 1.25rem; font-family: ui-monospace, monospace; font-size: 0.88em;">
+    ${companions.map((obj) => {
+			const relPath = obj.key.slice(folderPrefix.length);
+			const sizeKb = (obj.size / 1024).toFixed(1);
+			return `<li><code>${escapeHtml(relPath)}</code> <span class="muted">— ${sizeKb} KB</span></li>`;
+		}).join('')}
+  </ul>
+</details>`
+		: '';
 
 	const content = `
 <nav class="muted" style="margin-bottom: 1rem; font-size: 0.9em;">
@@ -684,6 +888,7 @@ dashboardRoutes.get('/dashboard/wiki/:collection/:slug', async (c) => {
 <div class="card" style="margin-bottom: 1.5rem;">
   <div>${innerBody}</div>
 </div>
+${companionsHtml}
 <details class="card" style="margin-bottom: 1.5rem;">
   <summary style="cursor: pointer; font-family: 'Trajan Pro', 'Optima', 'Palatino', Georgia, serif; font-weight: 600; font-size: 1.05rem; letter-spacing: 0.02em; color: var(--ink);">Frontmatter</summary>
   <table style="margin-top: 0.75rem;">${fmRows}</table>
