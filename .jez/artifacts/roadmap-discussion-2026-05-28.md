@@ -45,13 +45,19 @@ Per `structure-shaped-ingestion-2026-05-28.md`. Phase A: `POST /api/ingest` endp
 ### OT — Inbox collection + `derived_from` provenance
 New `wiki/inbox/<sha>/<id>.md` collection for raw ingested content. `wiki_links` extended with `derived_from` / `derived_to` kinds. Every auto-generated entry carries its provenance. **Effort**: ~half session. **Value**: full citation trail; agents can answer "where does this fact come from".
 
-### Goose — Skills bundled into office-town-plugin
-Pre-package skills that wrap common patterns:
-- `office-town:write-decision` — guides agent through structured decision recording
-- `office-town:weekly-digest` — generates the global weekly summary
-- `office-town:onboard-contact` — captures a new contact with all fields
-- `office-town:resolve-conflict` — handles `.conflict-<ts>` files
-**Effort**: ~1 session for the first 3-4 skills. **Value**: huge — users invoke `/write-decision` and the right structure happens.
+### Goose — Curator role + skills bundled into office-town-plugin
+
+**Promoted to Tier 1** following 2026-05-28 architecture decision (see `curator-pattern-2026-05-28.md` and `cortex-pattern-2026-05-28.md`). The curator is a Goose subagent that holds user-side connector credentials (gmail/slack/github/xero/jim2/etc. — whatever MCPs the user has installed in Goose) and bridges them to Office Town's structured write path. Connectors stay on the user's laptop; structure stays on the worker; curator is the seam.
+
+Pre-package the role definition plus skills that wrap common patterns:
+- `office-town:curate-inbox` — pull recent items from connected sources into the inbox collection
+- `office-town:extract-decision` — convert a thread/doc into a structured decision entry with `wiki_links` to people + projects + orgs
+- `office-town:reconcile-org` — merge duplicates across sources (Xero contact + Jim2 cardfile + Google Contact → one org)
+- `office-town:promote-from-inbox` — graduate an Inbox chunk into a typed entry when it earns the compute
+- `office-town:weekly-digest` — generate the global weekly summary
+- `office-town:cite-source` — adds `derived_from:` provenance to any auto-generated entry
+
+**Effort**: ~1 session for the role definition + first 4 skills. ~2 sessions to cover the full set. **Value**: this is the lever that turns Office Town from "wiki with MCPs" into "agent cortex with structured ingestion."
 
 ### Goose — Hooks for `why:` enforcement
 `PreToolUse` hook on the wiki MCP that blocks any `wiki(action:write|update|...)` call missing a `why:` field. Surfaces the requirement to the LLM before the worker rejects it. **Effort**: ~30 min. **Value**: better LLM behaviour around audit hygiene.
@@ -87,13 +93,15 @@ Expose Office Town MCPs to non-Goose ACP clients (Claude Code, Cursor, etc.) —
 
 ## Tier 4 — Big-picture explorations (designed-but-not-built territory)
 
-### External integrations — but self-hosted (anti-Composio)
-Per the OpenHuman anti-pattern, we don't want Composio. But we DO want Gmail / Slack / GitHub / Calendar input. Build first-party connectors as MCP servers in the `office-town-pack-*` series:
-- `office-town-pack-gmail` — uses user's own OAuth credentials, pulls + sends
-- `office-town-pack-slack` — Slack API
-- `office-town-pack-github` — issues, PRs, commits
-- `office-town-pack-calendar` — gcal, outlook
-Each adds MCP tools for Goose to use, AND a worker-side webhook receiver for push events. **Effort**: ~1 session per connector. **Value**: closes the connector-breadth gap with OpenHuman while staying Cloudflare-native.
+### ~~External integrations as worker-side packs~~ — superseded 2026-05-28
+**Status**: Architectural decision moved connector ownership to Goose. The user's Goose holds OAuth state for gmail/slack/github/calendar/xero/jim2/etc.; the curator subagent uses those connectors and writes structured entries back to Office Town. The worker stays free of external-service credentials.
+
+What's left on the worker side:
+- **Push-event receivers** — `/api/webhook/<source>` endpoints accepting Gmail push, Slack events, GitHub webhooks. They don't pull data themselves; they queue an "agent task" in D1 that the user's curator picks up next time it runs. Optional — only matters if "real-time without my laptop on" matters.
+
+See `curator-pattern-2026-05-28.md` for the agent-side architecture and `cortex-pattern-2026-05-28.md` for why this fits a 20-year-business ingest.
+
+**Effort saved**: ~4 sessions (one per connector pack). **Replaced by**: ~1-2 sessions for the curator role + skills, now promoted to Tier 1.
 
 ### Dashboard as PWA + offline-capable
 Service worker, IndexedDB for the wiki cache, conflict-aware UI. Lets dashboard work in-flight or with no internet. **Effort**: ~2 sessions. **Value**: nice but niche.
@@ -129,7 +137,7 @@ If you forced me to pick the next 5 things to ship in order:
 2. **Skills bundled into office-town-plugin** (Tier 2) — biggest UX leverage per session of effort
 3. **Structure-shaped ingestion Phase A** (Tier 2) — foundation for the OpenHuman-pattern stuff; useful even alone
 4. **Kanban + frontmatter form editor** (Tier 1) — dashboard stops being read-only
-5. **`office-town-pack-gmail`** (Tier 4) — the first real "ingest external knowledge" connector
+5. **Curator role + 4 skills in office-town-plugin** (Tier 1, promoted 2026-05-28) — turns Office Town into an agent cortex; bridges user's Goose-side connectors to the worker's structured write path. See `curator-pattern-2026-05-28.md` + `cortex-pattern-2026-05-28.md`.
 
 These together would shift Office Town from "Goose with a smart wiki backend" to "a real knowledge-work platform with structured ingestion + scheduled automation + editable surfaces".
 
@@ -137,7 +145,7 @@ These together would shift Office Town from "Goose with a smart wiki backend" to
 
 1. **Search-shaped vs structure-shaped balance** — happy with the bet on structure-shaped (typed entries + graph) as the canonical store, with FTS/Vectorize as the search layer? Or do you want more chunks/RAG too?
 
-2. **Connector breadth** — first-party Cloudflare-native (slow but reliable) vs reuse something like Composio (fast but with their issues)? My read: first-party.
+2. ~~**Connector breadth** — first-party Cloudflare-native (slow but reliable) vs reuse something like Composio (fast but with their issues)?~~ **Resolved 2026-05-28**: Connectors live in the user's Goose (whichever MCPs they install — gmail, slack, github, composio, custom). Office Town's curator subagent uses those connectors and writes structured entries via the worker. Worker holds NO external credentials. See `curator-pattern-2026-05-28.md`.
 
 3. **Multi-tenant timing** — is the multi-town-per-worker feature on the near horizon (you want to host client wikis) or a v2 thing?
 
