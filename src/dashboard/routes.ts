@@ -23,37 +23,118 @@ const LAYOUT = (title: string, content: string) => `<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${title}</title>
 <style>
-:root { --bg: #fafafa; --fg: #1a1a1a; --muted: #6b6b6b; --accent: #2563eb; --code: #f4f4f5; --border: #e5e7eb; --green: #16a34a; --red: #dc2626; --amber: #d97706; }
+/* Warm earth palette — same tokens used by the town view so the
+ * dashboard feels like one continuous place. */
+:root {
+  --bg: #f7f3e8;
+  --bg-warmer: #efe9d8;
+  --fg: #2a2520;
+  --ink-soft: #5a4f44;
+  --muted: #8a7e6f;
+  --accent: #c25e4f;
+  --accent-deep: #8c4035;
+  --code: #efe9d8;
+  --border: #d8cdb4;
+  --green: #4a7a3d;
+  --red: #a83a2c;
+  --amber: #b87333;
+  --card-bg: #fffdf5;
+}
 * { box-sizing: border-box; }
-body { font: 15px/1.55 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: var(--fg); background: var(--bg); margin: 0; }
-header { background: white; border-bottom: 1px solid var(--border); padding: 1rem 1.5rem; }
-header h1 { margin: 0; font-size: 1.4rem; font-weight: 600; }
-nav { display: flex; gap: 1rem; margin-top: 0.5rem; align-items: center; }
-nav a { color: var(--accent); text-decoration: none; font-size: 0.9em; }
-nav a:hover { text-decoration: underline; }
+html, body { margin: 0; padding: 0; min-height: 100vh; }
+body {
+  font: 15px/1.55 'Iowan Old Style', 'Hoefler Text', Constantia, 'Lucida Bright', Georgia, serif;
+  color: var(--fg);
+  background: var(--bg);
+}
+/* Subtle parchment-grain texture — same as the town view */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    radial-gradient(rgba(60,40,20,0.025) 1px, transparent 1px),
+    radial-gradient(rgba(60,40,20,0.018) 1px, transparent 1px);
+  background-size: 17px 17px, 31px 31px;
+  background-position: 0 0, 13px 7px;
+  z-index: 0;
+}
+header, main { position: relative; z-index: 1; }
+header { background: transparent; border-bottom: 1px solid var(--border); padding: 1rem 1.5rem; }
+header h1 {
+  margin: 0;
+  font-family: 'Trajan Pro', 'Optima', 'Palatino', Georgia, serif;
+  font-size: 1.4rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--fg);
+}
+nav { display: flex; gap: 1rem; margin-top: 0.5rem; align-items: center; flex-wrap: wrap; }
+nav a { color: var(--accent-deep); text-decoration: none; font-size: 0.9em; }
+nav a:hover { color: var(--accent); text-decoration: underline; }
 main { max-width: 1280px; margin: 0 auto; padding: 2rem 1.5rem; }
+h1, h2, h3, h4 {
+  font-family: 'Trajan Pro', 'Optima', 'Palatino', Georgia, serif;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--fg);
+}
+a { color: var(--accent-deep); }
+a:hover { color: var(--accent); }
+code, pre, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+code {
+  background: rgba(60,40,20,0.05);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 0.95em;
+}
 .grid { display: grid; gap: 1.5rem; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
-.card { background: white; border: 1px solid var(--border); border-radius: 10px; padding: 1.25rem; }
+.card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px; padding: 1.25rem; }
 .card h2 { margin: 0 0 0.75rem; font-size: 1.05rem; font-weight: 600; }
 .muted { color: var(--muted); }
 .kpi { display: flex; gap: 1.5rem; flex-wrap: wrap; }
-.kpi > div { background: white; border: 1px solid var(--border); border-radius: 10px; padding: 1rem 1.25rem; min-width: 140px; }
+.kpi > div { background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px; padding: 1rem 1.25rem; min-width: 140px; }
 .kpi .label { color: var(--muted); font-size: 0.85em; margin-bottom: 0.25rem; }
-.kpi .value { font-size: 1.5rem; font-weight: 600; }
+.kpi .value { font-size: 1.5rem; font-weight: 600; font-family: 'Trajan Pro', 'Optima', 'Palatino', Georgia, serif; }
 .status-success { color: var(--green); }
 .status-error { color: var(--red); }
 .status-running { color: var(--amber); }
-table { width: 100%; border-collapse: collapse; font-size: 0.9em; }
-th, td { text-align: left; padding: 0.5rem 0.6rem; border-bottom: 1px solid var(--border); }
-th { color: var(--muted); font-weight: 500; }
-.tag { display: inline-block; padding: 1px 8px; border-radius: 999px; background: #f3f4f6; color: var(--muted); font-size: 0.8em; }
+table { width: 100%; border-collapse: collapse; font-size: 0.9em; background: var(--card-bg); border-radius: 8px; overflow: hidden; }
+th, td { text-align: left; padding: 0.6rem 0.75rem; border-bottom: 1px solid var(--border); }
+th { color: var(--muted); font-weight: 500; background: var(--bg-warmer); font-family: 'Trajan Pro', 'Optima', 'Palatino', Georgia, serif; font-size: 0.85em; letter-spacing: 0.04em; }
+tr:last-child td { border-bottom: 0; }
+.tag { display: inline-block; padding: 1px 8px; border-radius: 999px; background: var(--bg-warmer); color: var(--ink-soft); font-size: 0.8em; border: 1px solid var(--border); }
+button, input[type="submit"], .cta-btn {
+  font-family: inherit;
+  background: var(--accent);
+  color: white;
+  border: 0;
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  font-size: 0.95em;
+  font-weight: 500;
+  cursor: pointer;
+}
+button:hover, input[type="submit"]:hover, .cta-btn:hover { background: var(--accent-deep); }
+input[type="text"], input[type="password"], input[type="url"], input[type="email"], textarea {
+  font-family: inherit;
+  background: var(--card-bg);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  padding: 0.5rem 0.6rem;
+  border-radius: 6px;
+  font-size: 0.95em;
+}
+input:focus, textarea:focus { outline: none; border-color: var(--accent); }
+hr { border: 0; border-top: 1px solid var(--border); margin: 1.5rem 0; }
 </style>
 </head>
 <body>
 <header>
   <h1>Office Town</h1>
   <nav>
-    <a href="/">Home</a>
+    <a href="/">Town</a>
     <a href="/dashboard/wiki">Wiki</a>
     <a href="/dashboard/kanban">Kanban</a>
     <a href="/dashboard/cron">Routines</a>
@@ -410,7 +491,7 @@ dashboardRoutes.get('/dashboard/connect', async (c) => {
 
 	const claimBanner = !claimed
 		? `
-<div class="card" style="max-width: 800px; margin-bottom: 1.5rem; background: linear-gradient(180deg, #fef3c7 0%, white 100%); border-color: var(--amber);">
+<div class="card" style="max-width: 800px; margin-bottom: 1.5rem; background: linear-gradient(180deg, #fbf3e9 0%, var(--card-bg) 100%); border-color: var(--amber);">
   <h2 style="margin-top: 0; color: var(--amber);">Claim this install</h2>
   <p style="margin: 0.5rem 0;">This deployment isn't claimed yet — anyone with the URL can see the bearer above. Click below to lock it down so future visits require sign-in.</p>
   <form method="POST" action="/dashboard/claim" style="margin-top: 0.75rem;">
@@ -770,7 +851,7 @@ dashboardRoutes.get('/dashboard/wire-google-signin', async (c) => {
 <h1 style="margin-top: 0;">Wire Google sign-in (team mode)</h1>
 <p class="muted">Optional. By default the dashboard uses bearer-as-password (claim-on-first-visit). This adds Google OAuth so team members on your email domain can sign in with their Google accounts — without sharing the bearer.</p>
 
-<div class="card" style="max-width: 760px; margin-top: 1.5rem; background: linear-gradient(180deg, #fef3c7 0%, white 100%); border-color: var(--amber);">
+<div class="card" style="max-width: 760px; margin-top: 1.5rem; background: linear-gradient(180deg, #fbf3e9 0%, var(--card-bg) 100%); border-color: var(--amber);">
   <h2 style="margin-top: 0; color: var(--amber);">v1.2 prep — credentials only</h2>
   <p style="margin: 0.5rem 0;">The actual Google sign-in button on the dashboard lands in v1.2. This guide lets you <strong>get your credentials ready now</strong> via <code>wrangler secret put</code>. Once you set them, the worker is configured — the feature flips on automatically when v1.2 deploys.</p>
   <p style="margin: 0.5rem 0;">Bearer-claim flow keeps working either way. Google sign-in is additive.</p>
@@ -787,7 +868,7 @@ dashboardRoutes.get('/dashboard/wire-google-signin', async (c) => {
         <li>Name: anything memorable (e.g. <code>Office Town - ${workerHost}</code>)</li>
         <li>Authorized redirect URI:<br>
           <code style="background: var(--code); padding: 2px 6px; border-radius: 4px; user-select: all;">${redirectUri}</code>
-          <button onclick="navigator.clipboard.writeText('${redirectUri}'); this.textContent='✓'; setTimeout(()=>this.textContent='Copy',1500);" style="margin-left: 0.5rem; padding: 2px 8px; font-size: 0.85em; border: 1px solid var(--border); background: white; border-radius: 4px; cursor: pointer;">Copy</button>
+          <button onclick="navigator.clipboard.writeText('${redirectUri}'); this.textContent='✓'; setTimeout(()=>this.textContent='Copy',1500);" style="margin-left: 0.5rem; padding: 2px 8px; font-size: 0.85em; border: 1px solid var(--border); background: var(--card-bg); color: var(--fg); border-radius: 4px; cursor: pointer;">Copy</button>
         </li>
       </ul>
       Google gives you a <strong>Client ID</strong> and a <strong>Client Secret</strong> on the next screen. Keep them handy.
