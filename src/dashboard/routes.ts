@@ -475,7 +475,7 @@ dashboardRoutes.get('/dashboard/connect', async (c) => {
 
 	const content = `${claimBanner}
 <h1 style="margin-top: 0;">Connect your Goose</h1>
-<p class="muted">Wire all 6 Office Town MCPs into your local Goose installation with one paste.</p>
+<p class="muted">Wire all 6 Office Town MCPs into your local Goose installation. Pick the path that suits you — both copyable, both auditable.</p>
 
 <div class="card" style="max-width: 800px; margin-top: 1.5rem;">
   <label style="display: block; margin-bottom: 1rem;">
@@ -485,25 +485,44 @@ dashboardRoutes.get('/dashboard/connect', async (c) => {
   </label>
 
   <label style="display: block; margin-bottom: 1rem;">
-    <div style="font-weight: 600; margin-bottom: 0.25rem;">MCP bearer token</div>
-    <div class="muted" style="font-size: 0.85em; margin-bottom: 0.4rem;">Prefilled with the auto-generated token for this deployment. To rotate, run <code>wrangler secret put MCP_BEARER_TOKEN</code> with a value of your choice — the new value will override this one.</div>
+    <div style="font-weight: 600; margin-bottom: 0.25rem;">MCP bearer token <span class="muted" style="font-weight: normal;">— save this somewhere</span></div>
+    <div class="muted" style="font-size: 0.85em; margin-bottom: 0.4rem;">
+      This token doubles as your <strong>dashboard sign-in password</strong>. If you visit from a new browser or your session expires, you'll need to paste this into the sign-in form. Save it to your password manager now.
+      <br>To rotate later: <code>wrangler secret put MCP_BEARER_TOKEN</code> with a value of your choice.
+    </div>
     <input id="bearer" type="text" value="${effectiveBearer}" autocomplete="off" spellcheck="false" style="width: 100%; padding: 0.5rem 0.6rem; border: 1px solid var(--border); border-radius: 6px; font-size: 0.95em; font-family: ui-monospace, SFMono-Regular, monospace;">
   </label>
+</div>
 
-  <div style="display: flex; gap: 0.75rem; align-items: center; margin-bottom: 0.75rem;">
-    <button id="copy-btn" type="button" onclick="copyScript()" style="padding: 0.5rem 1rem; border: 0; border-radius: 6px; background: var(--accent); color: white; font-size: 0.95em; font-weight: 500; cursor: pointer;">Copy install script</button>
+<!-- OPTION A — shell script for the goose CLI -->
+<div class="card" style="max-width: 800px; margin-top: 1.5rem;">
+  <h2 style="margin-top: 0;">Option A — paste a shell script into your terminal</h2>
+  <p style="margin: 0.5rem 0;" class="muted">Recommended if you have <code>goose</code> on your <code>PATH</code>. The script checks Goose is installed, then runs <code>goose mcp disable memory</code> + <code>goose mcp add</code> × 6. Idempotent — safe to re-run.</p>
+
+  <div style="display: flex; gap: 0.75rem; align-items: center; margin: 0.75rem 0;">
+    <button id="copy-btn" type="button" onclick="copyScript()" style="padding: 0.5rem 1rem; border: 0; border-radius: 6px; background: var(--accent); color: white; font-size: 0.95em; font-weight: 500; cursor: pointer;">Copy shell script</button>
     <span id="copy-status" class="muted" style="font-size: 0.85em;"></span>
   </div>
 
   <pre id="script" style="background: var(--code); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; font-size: 0.85em; overflow-x: auto; line-height: 1.45; max-height: 360px;"></pre>
+</div>
 
-  <p class="muted" style="margin-top: 1rem; font-size: 0.9em;">
-    Paste the script into a terminal. It checks Goose is installed, then runs <code>goose mcp add</code> 6 times + <code>goose mcp disable memory</code>. Idempotent — safe to re-run.
-  </p>
+<!-- OPTION B — natural-language agent prompt for Claude Code / Goose itself / Aider / Cline -->
+<div class="card" style="max-width: 800px; margin-top: 1.5rem;">
+  <h2 style="margin-top: 0;">Option B — paste this prompt into a capable AI agent</h2>
+  <p style="margin: 0.5rem 0;" class="muted">Use this if you'd rather have your existing agent (Claude Code, Goose itself, Aider, Cline) wire things up. The agent reads the prompt, runs the same <code>goose mcp add</code> commands, smoke-tests, and reports back. Full prompt below — read before pasting.</p>
+
+  <div style="display: flex; gap: 0.75rem; align-items: center; margin: 0.75rem 0;">
+    <button id="copy-prompt-btn" type="button" onclick="copyPrompt()" style="padding: 0.5rem 1rem; border: 0; border-radius: 6px; background: var(--accent); color: white; font-size: 0.95em; font-weight: 500; cursor: pointer;">Copy agent prompt</button>
+    <span id="copy-prompt-status" class="muted" style="font-size: 0.85em;"></span>
+  </div>
+
+  <pre id="agent-prompt" style="background: var(--code); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; font-size: 0.85em; overflow-x: auto; line-height: 1.45; max-height: 500px; white-space: pre-wrap; word-break: break-word;"></pre>
 </div>
 
 <div class="card" style="max-width: 800px; margin-top: 1.5rem;">
   <h2>What gets installed</h2>
+  <p class="muted" style="font-size: 0.9em; margin: 0.25rem 0 0.75rem;">Both options above do the same thing — these are the 6 MCP servers that get wired into your Goose. Each one points at this worker; auth uses the bearer above.</p>
   <table style="margin-top: 0.5rem;">
     <thead><tr><th>MCP</th><th>Endpoint</th><th>What it does</th></tr></thead>
     <tbody>
@@ -568,24 +587,95 @@ function generateScript() {
   return lines.join("\\n");
 }
 
-function refreshScript() {
-  document.getElementById('script').textContent = generateScript();
+function generateAgentPrompt() {
+  const url = document.getElementById('worker-url').value.replace(/\\/+$/, '');
+  const bearer = document.getElementById('bearer').value.trim();
+  const urlSafe = url || 'https://YOUR-WORKER-URL.workers.dev';
+  const bearerSafe = bearer || 'YOUR_MCP_BEARER_TOKEN';
+
+  return [
+    "I want to add Office Town capabilities to my Goose installation.",
+    "",
+    "Office Town is a Cloudflare-hosted backend that gives Goose 6 MCP servers",
+    "(wiki, files, email, cron, voice, sandbox) plus a team wiki that replaces",
+    "Goose's built-in Memory extension.",
+    "",
+    "Worker URL:  " + urlSafe,
+    "MCP bearer:  " + bearerSafe,
+    "",
+    "GROUND RULES:",
+    "- Be transparent. Tell me what you're about to do before running anything.",
+    "- Ask before destructive ops or installing software.",
+    "- If goose CLI is not installed: stop and point me at https://block.github.io/goose/",
+    "- Don't echo the bearer back to me anywhere it could be logged.",
+    "- This wiring touches only my local Goose config — no Cloudflare changes needed.",
+    "",
+    "STEPS:",
+    "",
+    "1. Verify Goose is installed:",
+    "     goose --version",
+    "   If missing, stop and direct me to https://block.github.io/goose/",
+    "",
+    "2. Verify the deployment URL is reachable:",
+    "     curl -s " + urlSafe + "/health",
+    "   Should return {\"status\":\"ok\",\"service\":\"office-town\",...}",
+    "",
+    "3. Disable Goose's built-in Memory extension (wiki MCP replaces it):",
+    "     goose mcp disable memory",
+    "",
+    "4. Wire all 6 Office Town MCPs. Same bearer for all six:",
+    "",
+    "     for name in wiki files email cron voice sandbox; do",
+    "       goose mcp add office-town-$name \\\\",
+    "         --transport streamable_http \\\\",
+    "         --url " + urlSafe + "/mcp/$name \\\\",
+    "         --header \"Authorization: Bearer " + bearerSafe + "\"",
+    "     done",
+    "",
+    "5. Verify all 6 MCPs registered:",
+    "     goose mcp list",
+    "   Should show office-town-{wiki,files,email,cron,voice,sandbox}",
+    "",
+    "6. Smoke test — in a fresh Goose chat:",
+    "     wiki(action: 'list', collection: 'contacts')",
+    "   Should return cleanly (empty list is fine for a new install).",
+    "",
+    "7. Report back with:",
+    "     - Whether all 6 MCPs registered cleanly",
+    "     - The smoke-test result",
+    "     - Anything that went sideways",
+    "",
+    "CONSTRAINTS:",
+    "- Don't install a different agent host. Goose is the host.",
+    "- Don't run wrangler / touch Cloudflare from this prompt — the deploy is done.",
+    "- All 6 MCPs use streamable_http transport with the same Authorization header.",
+  ].join("\\n");
 }
 
-function copyScript() {
-  const text = generateScript();
-  const status = document.getElementById('copy-status');
-  const btn = document.getElementById('copy-btn');
-  navigator.clipboard.writeText(text).then(() => {
-    status.textContent = '✓ Copied — paste into terminal';
-    status.style.color = 'var(--green)';
-    btn.style.background = 'var(--green)';
-    setTimeout(() => { status.textContent = ''; btn.style.background = 'var(--accent)'; }, 2500);
-  }).catch((err) => {
-    status.textContent = 'Copy failed: ' + err.message;
-    status.style.color = 'var(--red)';
-  });
+function refreshScript() {
+  document.getElementById('script').textContent = generateScript();
+  document.getElementById('agent-prompt').textContent = generateAgentPrompt();
 }
+
+function makeCopier(buttonId, statusId, generator, successMsg) {
+  return function() {
+    const text = generator();
+    const status = document.getElementById(statusId);
+    const btn = document.getElementById(buttonId);
+    navigator.clipboard.writeText(text).then(() => {
+      status.textContent = successMsg;
+      status.style.color = 'var(--green)';
+      btn.style.background = 'var(--green)';
+      setTimeout(() => { status.textContent = ''; btn.style.background = 'var(--accent)'; }, 2500);
+    }).catch((err) => {
+      status.textContent = 'Copy failed: ' + err.message;
+      status.style.color = 'var(--red)';
+    });
+  };
+}
+
+const copyScript = makeCopier('copy-btn', 'copy-status', generateScript, '✓ Copied — paste into terminal');
+const copyPrompt = makeCopier('copy-prompt-btn', 'copy-prompt-status', generateAgentPrompt, '✓ Copied — paste into your AI agent');
 
 document.getElementById('worker-url').addEventListener('input', refreshScript);
 document.getElementById('bearer').addEventListener('input', refreshScript);
