@@ -205,6 +205,7 @@ interface TownStats {
 	activities: ActivityRow[];
 	cron_runs: CronRunRow[];
 	bearer_set: boolean;
+	cortex_state: string; // fresh | onboarding | live
 }
 
 // Pull all stats in one batched query pass.
@@ -212,7 +213,7 @@ export async function loadTownStats(env: Env): Promise<TownStats> {
 	const tenMinAgo = Date.now() - 10 * 60 * 1000;
 	const oneDayAgo = Math.floor((Date.now() - 24 * 60 * 60 * 1000) / 1000);
 
-	const [countsRes, activeRes, newRes, activityRes, cronRunsRes] = await Promise.all([
+	const [countsRes, activeRes, newRes, activityRes, cronRunsRes, cortexStateRow] = await Promise.all([
 		env.DB.prepare(
 			`SELECT collection, COUNT(*) AS n FROM wiki_entries
        WHERE status != 'deleted' GROUP BY collection`,
@@ -238,6 +239,9 @@ export async function loadTownStats(env: Env): Promise<TownStats> {
        FROM cron_runs r JOIN cron_jobs j ON r.job_id = j.id
        ORDER BY r.started_at DESC LIMIT 5`,
 		).all<CronRunRow>(),
+		env.DB.prepare(`SELECT value FROM worker_config WHERE key = ?`)
+			.bind('cortex_state')
+			.first<{ value: string }>(),
 	]);
 
 	const counts = new Map<string, number>();
@@ -267,6 +271,7 @@ export async function loadTownStats(env: Env): Promise<TownStats> {
 		activities: activityRes.results ?? [],
 		cron_runs: cronRunsRes.results ?? [],
 		bearer_set: true, // refined at call-site if needed
+		cortex_state: cortexStateRow?.value ?? 'fresh',
 	};
 }
 
@@ -697,13 +702,23 @@ export function renderTownView(stats: TownStats, workerHost: string): string {
 	}).format(new Date());
 
 	const noEntriesYet = stats.total_entries === 0;
-	const callout = noEntriesYet
-		? `<div class="callout-warm">
+	const isFresh = stats.cortex_state === 'fresh';
+
+	let callout = '';
+	if (noEntriesYet) {
+		callout = `<div class="callout-warm">
 			<h2>First time here? Wire your Goose.</h2>
 			<p style="margin: 0.4rem 0;">Your town is empty. Connect your local Goose to this worker — one paste in a terminal wires all 6 MCPs and your buildings start filling up.</p>
 			<a class="cta-btn" href="/dashboard/connect">Get the install script →</a>
-		</div>`
-		: '';
+		</div>`;
+	} else if (isFresh) {
+		callout = `<div class="callout-warm">
+			<h2>Populate your town from an existing AI dossier.</h2>
+			<p style="margin: 0.4rem 0;">Your town has seed entries but hasn't been personalised yet. Paste a dossier from your existing Claude / Gemini / ChatGPT chat — your town's buildings fill with your own context in seconds.</p>
+			<a class="cta-btn" href="/dashboard/setup">Run setup →</a>
+			<span style="margin-left: 1rem; font-size: 0.85em; color: var(--ink-soft);">or <a href="/dashboard/connect">just wire your Goose</a></span>
+		</div>`;
+	}
 
 	return `<!DOCTYPE html>
 <html lang="en">

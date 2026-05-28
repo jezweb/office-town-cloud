@@ -223,6 +223,182 @@ dashboardRoutes.get('/', async (c) => {
 	return c.html(renderTownView(stats, workerHost));
 });
 
+// Dossier-paste setup surface — pastes one big multi-file blob with file
+// boundaries detected by H1 headings matching <filename>.md. Submits to
+// /api/setup/dossier; renders the result summary inline.
+dashboardRoutes.get('/dashboard/setup', async (c) => {
+	const effectiveBearer = await getEffectiveBearer(c.env);
+
+	const content = `
+<h1 style="margin-top: 0;">Set up your town</h1>
+<p class="muted" style="max-width: 720px;">
+  Paste the output from a dossier-extraction prompt run against your existing AI
+  (Claude / Gemini / ChatGPT). The setup routes each file to the right cortex collection:
+  <code>bio.md</code> + <code>voice.md</code> + similar go to your <a href="/dashboard/wiki?c=owner">owner</a> cascade;
+  <code>people.md</code> splits into <a href="/dashboard/wiki?c=contacts">contacts</a> + <a href="/dashboard/wiki?c=team">team</a> + <a href="/dashboard/wiki?c=orgs">orgs</a>;
+  <code>projects.md</code> splits into <a href="/dashboard/wiki?c=projects">projects</a>; and unknown files land in <code>wiki/raw/</code> for review.
+</p>
+
+<div class="card" style="max-width: 920px; margin-top: 1rem;">
+  <h2 style="margin-top: 0;">Don't have a dossier yet?</h2>
+  <p class="muted" style="margin: 0.4rem 0;">
+    Run one of the dossier prompts against your existing AI first. The three variants live in the
+    <a href="https://docs.google.com/document/d/1Kvl7aTrF1WdrSgVrL5UU2M7nj2QAkzCdsdnCpqYV6pA/edit" target="_blank">Office Town dossier prompts doc</a>
+    (sharable Google Doc). Variant 2 is the recommended default — it produces ~11 separate files as artifacts.
+    Once you have the output, paste it below.
+  </p>
+</div>
+
+<div class="card" style="max-width: 920px; margin-top: 1.5rem;">
+  <h2 style="margin-top: 0;">Paste your dossier</h2>
+  <p class="muted" style="margin: 0.4rem 0;">
+    Paste the multi-file output. Files are detected automatically by H1 headings (e.g. <code># voice.md</code>, <code># people.md</code>).
+    Each H1 starts a new file. Content before the first H1 is ignored.
+  </p>
+
+  <div style="margin: 0.75rem 0;">
+    <label style="display: block; font-size: 0.85em; color: var(--muted); margin-bottom: 0.25rem;">Source AI (for audit attribution)</label>
+    <select id="setup-source" style="font-size: 0.9em; padding: 0.4rem 0.5rem;">
+      <option value="claude">Claude</option>
+      <option value="gemini">Gemini</option>
+      <option value="chatgpt">ChatGPT</option>
+      <option value="other">Other</option>
+    </select>
+  </div>
+
+  <textarea id="dossier-textarea" placeholder="# bio.md\n\n## Name and what to call them\n...\n\n# voice.md\n\n## Overall register\n..." rows="20" style="width: 100%; font-family: ui-monospace, SFMono-Regular, monospace; font-size: 0.85em; padding: 0.75rem; line-height: 1.5;"></textarea>
+
+  <div style="display: flex; gap: 0.75rem; align-items: center; margin: 1rem 0 0.5rem;">
+    <button type="button" id="setup-preview-btn" onclick="runSetup(true)" style="background: transparent; color: var(--accent-deep); border: 1px solid var(--accent-deep);">Preview (dry-run)</button>
+    <button type="button" id="setup-apply-btn" onclick="runSetup(false)">Apply to cortex</button>
+    <span id="setup-status" class="muted" style="font-size: 0.9em;"></span>
+  </div>
+</div>
+
+<div class="card" id="setup-result" style="max-width: 920px; margin-top: 1.5rem; display: none;">
+  <h2 style="margin-top: 0;">Result</h2>
+  <p id="setup-summary"></p>
+  <div id="setup-planned" style="font-family: ui-monospace, monospace; font-size: 0.82em; line-height: 1.65;"></div>
+  <div id="setup-cta" style="margin-top: 1rem;"></div>
+</div>
+
+<script>
+const BEARER = ${JSON.stringify(effectiveBearer)};
+
+function splitDossier(text) {
+  // Find H1 headings like "# foo.md" — those mark file boundaries.
+  const lines = text.split('\\n');
+  const files = [];
+  let current = null;
+  const fileHeading = /^#\\s+([a-z][a-z0-9_-]*\\.md)\\s*$/i;
+
+  for (const line of lines) {
+    const m = line.match(fileHeading);
+    if (m) {
+      if (current) files.push(current);
+      current = { filename: m[1], content: line + '\\n' };
+    } else if (current) {
+      current.content += line + '\\n';
+    }
+  }
+  if (current) files.push(current);
+  return files;
+}
+
+function renderPlannedList(planned) {
+  const container = document.getElementById('setup-planned');
+  container.textContent = '';
+  for (const p of planned) {
+    const row = document.createElement('div');
+    const label = document.createTextNode(p.classification + ' → ');
+    const strong = document.createElement('strong');
+    strong.textContent = p.collection + '/' + p.slug;
+    const suffix = document.createTextNode(' (' + p.source_filename + ')');
+    row.appendChild(label);
+    row.appendChild(strong);
+    row.appendChild(suffix);
+    container.appendChild(row);
+  }
+}
+
+function renderApplyCta() {
+  const cta = document.getElementById('setup-cta');
+  cta.textContent = '';
+  const link = document.createElement('a');
+  link.href = '/';
+  link.className = 'cta-btn';
+  link.style.display = 'inline-block';
+  link.textContent = 'View your populated town →';
+  cta.appendChild(link);
+}
+
+async function runSetup(dryRun) {
+  const text = document.getElementById('dossier-textarea').value.trim();
+  const source = document.getElementById('setup-source').value;
+  const status = document.getElementById('setup-status');
+  const resultDiv = document.getElementById('setup-result');
+  const summaryEl = document.getElementById('setup-summary');
+  const ctaEl = document.getElementById('setup-cta');
+
+  if (!text) {
+    status.textContent = 'Paste your dossier first.';
+    status.style.color = 'var(--red)';
+    return;
+  }
+
+  const files = splitDossier(text);
+  if (files.length === 0) {
+    status.textContent = 'No file boundaries detected. Make sure each file starts with "# <filename>.md".';
+    status.style.color = 'var(--red)';
+    return;
+  }
+
+  status.textContent = 'Sending ' + files.length + ' file' + (files.length === 1 ? '' : 's') + ' to setup endpoint…';
+  status.style.color = 'var(--ink-soft)';
+  resultDiv.style.display = 'none';
+  ctaEl.textContent = '';
+
+  try {
+    const response = await fetch('/api/setup/dossier', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + BEARER,
+      },
+      body: JSON.stringify({ files, source, dry_run: dryRun }),
+    });
+
+    const data = await response.json();
+
+    if (!data.ok && !data.planned) {
+      status.textContent = 'Setup failed: ' + (data.error || 'unknown error');
+      status.style.color = 'var(--red)';
+      console.error(data);
+      return;
+    }
+
+    status.textContent = dryRun ? '✓ Preview generated' : '✓ Applied to cortex';
+    status.style.color = 'var(--green)';
+
+    resultDiv.style.display = 'block';
+    summaryEl.textContent = data.summary;
+    renderPlannedList(data.planned || []);
+
+    if (!dryRun && (data.applied || 0) > 0) {
+      renderApplyCta();
+    }
+  } catch (err) {
+    status.textContent = 'Network error: ' + err.message;
+    status.style.color = 'var(--red)';
+    console.error(err);
+  }
+}
+</script>
+`;
+
+	return c.html(LAYOUT('Set up your town - Office Town', content));
+});
+
 dashboardRoutes.get('/dashboard/wiki', async (c) => {
 	const collection = c.req.query('c');
 	const rows = collection
