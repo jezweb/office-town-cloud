@@ -8,6 +8,7 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { authMiddleware } from './auth/middleware';
+import { dashboardGate } from './auth/dashboard-gate';
 import { cronRoutes } from './cron/routes';
 import { dashboardRoutes } from './dashboard/routes';
 import { filesRoutes } from './files/routes';
@@ -56,6 +57,9 @@ app.use(
 	})
 );
 app.use('*', authMiddleware);
+// Gate dashboard + home behind first-visitor-claim flow. MCP + API routes
+// are bearer-protected by authMiddleware above and remain accessible.
+app.use('*', dashboardGate);
 
 app.get('/health', (c) =>
 	c.json({

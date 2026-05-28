@@ -18,7 +18,11 @@ Click the button. Cloudflare's flow signs you in (no API token required), provis
 
 ### 2. Open `<your-worker-url>/dashboard/connect`
 
-That page already knows the bearer token (auto-generated on first request, prefilled in the form). Click **Copy install script**, paste into a terminal. The script wires all 6 MCPs into your local Goose installation (`goose mcp add` × 6 + `goose mcp disable memory`).
+First visit shows a yellow **"Claim this install"** banner — click the button. That locks the dashboard so future visitors need to sign in with the bearer (without that click, anyone with the URL could see the same page).
+
+After claiming you land on the dashboard. Open `/dashboard/connect` again, click **Copy install script**, paste into a terminal. The script wires all 6 MCPs into your local Goose installation (`goose mcp add` × 6 + `goose mcp disable memory`).
+
+> **Lost your cookie / want to access from another browser?** Open `/dashboard/connect` and paste your bearer token into the sign-in form. The bearer doubles as the dashboard password. Rotate any time via `wrangler secret put MCP_BEARER_TOKEN`.
 
 ### 3. Clone the town template
 

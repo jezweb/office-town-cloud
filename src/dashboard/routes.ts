@@ -2,6 +2,12 @@
 
 import { Hono } from 'hono';
 import { getEffectiveBearer } from '../auth/bearer';
+import {
+	buildSessionCookie,
+	clearSessionCookie,
+	isClaimed,
+	markClaimed,
+} from '../auth/dashboard-gate';
 import { renderMarkdownToHtml } from '../publish/service';
 import type { AppContext } from '../types';
 
@@ -53,6 +59,7 @@ th { color: var(--muted); font-weight: 500; }
     <a href="/dashboard/files">Files</a>
     <a href="/dashboard/published">Published</a>
     <a href="/dashboard/connect" style="margin-left: auto;">Connect Goose →</a>
+    <a href="/dashboard/sign-out" style="color: var(--muted);">Sign out</a>
   </nav>
 </header>
 <main>${content}</main>
@@ -398,20 +405,72 @@ dashboardRoutes.get('/dashboard/kanban', async (c) => {
 // doesn't accept a headers/Authorization parameter (verified against
 // goose-docs.ai 2026-05-28), so deeplinks would only register the URL and
 // leave the user to manually add the bearer.
+// Helper — does the request carry a valid session cookie?
+function hasValidSession(cookieHeader: string | null, expected: string): boolean {
+	if (!cookieHeader) return false;
+	for (const part of cookieHeader.split(';')) {
+		const [k, ...rest] = part.trim().split('=');
+		if (k === 'ot_session') {
+			return decodeURIComponent(rest.join('=').trim()) === expected;
+		}
+	}
+	return false;
+}
+
 dashboardRoutes.get('/dashboard/connect', async (c) => {
 	const reqUrl = new URL(c.req.url);
 	const defaultWorkerUrl = `${reqUrl.protocol}//${reqUrl.host}`;
 
-	// Prefill the bearer with whatever the worker actually considers
-	// authoritative right now (explicit secret → D1-cached → freshly
-	// generated). Means a brand-new deploy serves a working install
-	// script with one less manual step.
 	const effectiveBearer = await getEffectiveBearer(c.env);
+	const claimed = await isClaimed(c.env);
+	const signedIn = hasValidSession(c.req.header('cookie') ?? null, effectiveBearer);
 
-	// Server-side rendered with placeholders the JS replaces on the fly.
-	// The bearer is included server-side (the page is privileged), but
-	// the install-script generation is purely browser-side once rendered.
-	const content = `
+	// THREE STATES:
+	//
+	//   1. claimed + signed-in       → full page (bearer prefilled, install script)
+	//   2. claimed + NOT signed-in   → sign-in form ("paste bearer to continue")
+	//   3. NOT claimed (fresh deploy) → first-claim flow (shows bearer + "Claim" button)
+
+	if (claimed && !signedIn) {
+		// State 2 — sign-in form. Don't reveal the stored bearer.
+		const flash = reqUrl.searchParams.get('error') === '1'
+			? `<p style="color: var(--red); margin: 0.5rem 0;">That bearer didn't match. Try again, or run <code>wrangler secret put MCP_BEARER_TOKEN</code> to rotate.</p>`
+			: '';
+		const signinContent = `
+<h1 style="margin-top: 0;">Sign in to your Office Town</h1>
+<p class="muted">This install is claimed. Paste your MCP bearer token to continue.</p>
+
+<div class="card" style="max-width: 520px; margin-top: 1.5rem;">
+  <form method="POST" action="/dashboard/claim">
+    <label style="display: block; margin-bottom: 1rem;">
+      <div style="font-weight: 600; margin-bottom: 0.25rem;">MCP bearer token</div>
+      <div class="muted" style="font-size: 0.85em; margin-bottom: 0.4rem;">The token you saved when you first deployed. Lost it? Run <code>wrangler secret put MCP_BEARER_TOKEN</code> to set a new one of your choice.</div>
+      <input name="bearer" type="password" autocomplete="off" spellcheck="false" required autofocus style="width: 100%; padding: 0.5rem 0.6rem; border: 1px solid var(--border); border-radius: 6px; font-size: 0.95em; font-family: ui-monospace, SFMono-Regular, monospace;">
+    </label>
+    ${flash}
+    <button type="submit" style="padding: 0.5rem 1rem; border: 0; border-radius: 6px; background: var(--accent); color: white; font-size: 0.95em; font-weight: 500; cursor: pointer;">Sign in</button>
+  </form>
+</div>`;
+		return c.html(LAYOUT('Sign in - Office Town', signinContent));
+	}
+
+	// State 1 or 3 — show the install page. In state 3 (fresh deploy)
+	// the page also renders a "Claim this install" banner at the top
+	// so the user knows future visits will require sign-in.
+
+	const claimBanner = !claimed
+		? `
+<div class="card" style="max-width: 800px; margin-bottom: 1.5rem; background: linear-gradient(180deg, #fef3c7 0%, white 100%); border-color: var(--amber);">
+  <h2 style="margin-top: 0; color: var(--amber);">Claim this install</h2>
+  <p style="margin: 0.5rem 0;">This deployment isn't claimed yet — anyone with the URL can see the bearer above. Click below to lock it down so future visits require sign-in.</p>
+  <form method="POST" action="/dashboard/claim" style="margin-top: 0.75rem;">
+    <input type="hidden" name="bearer" value="${effectiveBearer}">
+    <button type="submit" style="padding: 0.5rem 1rem; border: 0; border-radius: 6px; background: var(--amber); color: white; font-size: 0.95em; font-weight: 500; cursor: pointer;">Claim &amp; secure the dashboard →</button>
+  </form>
+</div>`
+		: '';
+
+	const content = `${claimBanner}
 <h1 style="margin-top: 0;">Connect your Goose</h1>
 <p class="muted">Wire all 6 Office Town MCPs into your local Goose installation with one paste.</p>
 
@@ -530,4 +589,25 @@ document.getElementById('bearer').addEventListener('input', refreshScript);
 refreshScript();
 </script>`;
 	return c.html(LAYOUT('Connect your Goose - Office Town', content));
+});
+
+// Claim/sign-in POST. Accepts the bearer in a form field, validates against
+// the effective bearer, sets the httpOnly cookie + marks the install
+// claimed (idempotent), then redirects to the dashboard home.
+dashboardRoutes.post('/dashboard/claim', async (c) => {
+	const formData = await c.req.formData();
+	const submitted = (formData.get('bearer') ?? '').toString().trim();
+	const effective = await getEffectiveBearer(c.env);
+	if (!submitted || submitted !== effective) {
+		return c.redirect('/dashboard/connect?error=1', 302);
+	}
+	await markClaimed(c.env);
+	c.header('Set-Cookie', buildSessionCookie(effective));
+	return c.redirect('/', 302);
+});
+
+// Sign-out — clear the cookie + send back to sign-in.
+dashboardRoutes.get('/dashboard/sign-out', async (c) => {
+	c.header('Set-Cookie', clearSessionCookie());
+	return c.redirect('/dashboard/connect', 302);
 });
