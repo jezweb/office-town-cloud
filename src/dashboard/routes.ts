@@ -1160,21 +1160,104 @@ echo "→ Goose: $(goose --version 2>/dev/null || echo 'version unknown')"
 echo ""
 
 # ---- Stage 2: Wire the 6 MCPs ---------------------------------------------
-# Office Town's wiki MCP replaces Goose's built-in Memory extension with
-# persistent R2-backed storage + semantic search.
-echo "→ Disabling Goose built-in Memory extension (wiki MCP replaces it)..."
-goose mcp disable memory 2>/dev/null || true
+# Goose CLI has no non-interactive 'add extension' command (as of 1.36),
+# so we edit ~/.config/goose/config.yaml directly using Python + PyYAML.
+# Idempotent: re-running replaces existing office-town-* entries.
 
-AUTH_HEADER="Authorization: Bearer $MCP_BEARER"
-for name in wiki files email cron voice sandbox; do
-  echo "→ Adding office-town-$name..."
-  goose mcp add "office-town-$name" \\
-    --transport streamable_http \\
-    --url "$WORKER_URL/mcp/$name" \\
-    --header "$AUTH_HEADER"
-done
+if command -v python3 >/dev/null 2>&1; then
+  PY=python3
+elif command -v python >/dev/null 2>&1; then
+  PY=python
+else
+  echo "Error: Python 3 is required for editing the Goose config." >&2
+  echo "  macOS: ships with Python 3 by default — check 'xcode-select --install'" >&2
+  echo "  Linux: 'sudo apt install python3' or your distro's equivalent" >&2
+  exit 1
+fi
+
+if ! $PY -c "import yaml" 2>/dev/null; then
+  echo "→ Installing PyYAML (one-time, --user scope)..."
+  if ! $PY -m pip install --user --quiet pyyaml 2>/dev/null; then
+    if ! $PY -m pip install --user --quiet --break-system-packages pyyaml 2>/dev/null; then
+      echo "" >&2
+      echo "Couldn't install PyYAML automatically. Run this once, then re-run the installer:" >&2
+      echo "  $PY -m pip install --user --break-system-packages pyyaml" >&2
+      exit 1
+    fi
+  fi
+fi
+
+echo "→ Editing ~/.config/goose/config.yaml — wiring 6 MCPs, disabling built-in Memory..."
+WORKER_URL="$WORKER_URL" MCP_BEARER="$MCP_BEARER" $PY <<'PYEOF'
+import os
+import pathlib
+import yaml
+
+config_path = pathlib.Path.home() / '.config' / 'goose' / 'config.yaml'
+worker_url = os.environ['WORKER_URL'].rstrip('/')
+bearer = os.environ['MCP_BEARER']
+
+config_path.parent.mkdir(parents=True, exist_ok=True)
+if config_path.exists():
+    config = yaml.safe_load(config_path.read_text()) or {}
+else:
+    config = {}
+
+# Goose stores extensions either as a top-level list or a dict keyed by name.
+# Inspect the existing shape and preserve it.
+existing = config.get('extensions')
+is_dict_shape = isinstance(existing, dict)
+
+if is_dict_shape:
+    # Remove old office-town-* entries; disable built-in memory if present.
+    for k in list(existing.keys()):
+        if k.startswith('office-town-'):
+            del existing[k]
+    if 'memory' in existing and isinstance(existing['memory'], dict):
+        existing['memory']['enabled'] = False
+    for name in ['wiki', 'files', 'email', 'cron', 'voice', 'sandbox']:
+        existing[f'office-town-{name}'] = {
+            'name': f'office-town-{name}',
+            'type': 'streamable_http',
+            'uri': f'{worker_url}/mcp/{name}',
+            'headers': {'Authorization': f'Bearer {bearer}'},
+            'timeout': 300,
+            'enabled': True,
+            'bundled': None,
+            'description': '',
+            'env_keys': [],
+            'envs': {},
+        }
+    config['extensions'] = existing
+else:
+    extensions = existing or []
+    extensions = [
+        e for e in extensions
+        if not (isinstance(e, dict) and str(e.get('name', '')).startswith('office-town-'))
+    ]
+    for e in extensions:
+        if isinstance(e, dict) and e.get('name') == 'memory':
+            e['enabled'] = False
+    for name in ['wiki', 'files', 'email', 'cron', 'voice', 'sandbox']:
+        extensions.append({
+            'name': f'office-town-{name}',
+            'type': 'streamable_http',
+            'uri': f'{worker_url}/mcp/{name}',
+            'headers': {'Authorization': f'Bearer {bearer}'},
+            'timeout': 300,
+            'enabled': True,
+            'bundled': None,
+            'description': '',
+            'env_keys': [],
+            'envs': {},
+        })
+    config['extensions'] = extensions
+
+config_path.write_text(yaml.safe_dump(config, default_flow_style=False, sort_keys=False))
+print(f'  ✓ Wrote 6 office-town-* extensions to {config_path}')
+PYEOF
 echo ""
-echo "✓ All 6 Office Town MCPs wired into Goose."
+echo "✓ Goose config updated."
 echo ""
 
 # ---- Stage 3: officetowd sync daemon (opt-in) -----------------------------
@@ -1264,6 +1347,101 @@ fi
 			'content-type': 'text/x-shellscript; charset=utf-8',
 			'cache-control': 'no-store',
 			'content-disposition': 'inline; filename="connect.sh"',
+		},
+	});
+});
+
+// Public uninstaller. Removes office-town-* extensions from Goose config and
+// re-enables the built-in memory extension. Doesn't touch officetowd or the
+// goose CLI itself — those are the user's call to remove.
+dashboardRoutes.get('/disconnect.sh', async () => {
+	const script = `#!/usr/bin/env bash
+# Office Town — remove all 6 MCPs from your Goose configuration.
+#
+# Run with:
+#   curl -fsSL <worker>/disconnect.sh | bash
+#
+# What this does:
+#   1. Removes all office-town-* entries from ~/.config/goose/config.yaml
+#   2. Re-enables Goose's built-in memory extension
+#   3. Leaves the goose CLI itself + officetowd untouched (uninstall those
+#      via 'brew uninstall block/tap/goose' and removing /usr/local/bin/officetowd
+#      respectively if you also want them gone)
+
+set -euo pipefail
+
+echo "→ Office Town uninstaller"
+echo ""
+
+if command -v python3 >/dev/null 2>&1; then
+  PY=python3
+elif command -v python >/dev/null 2>&1; then
+  PY=python
+else
+  echo "Error: Python 3 is required to edit the Goose config." >&2
+  exit 1
+fi
+
+if ! $PY -c "import yaml" 2>/dev/null; then
+  echo "→ Installing PyYAML (needed for the edit)..."
+  $PY -m pip install --user --quiet pyyaml 2>/dev/null \\
+    || $PY -m pip install --user --quiet --break-system-packages pyyaml \\
+    || { echo "Couldn't install PyYAML. Run: $PY -m pip install --user pyyaml" >&2; exit 1; }
+fi
+
+echo "→ Removing office-town-* extensions from ~/.config/goose/config.yaml..."
+$PY <<'PYEOF'
+import pathlib
+import yaml
+
+config_path = pathlib.Path.home() / '.config' / 'goose' / 'config.yaml'
+
+if not config_path.exists():
+    print('  No Goose config found — nothing to remove.')
+    raise SystemExit(0)
+
+config = yaml.safe_load(config_path.read_text()) or {}
+existing = config.get('extensions')
+
+removed = 0
+if isinstance(existing, dict):
+    for k in list(existing.keys()):
+        if k.startswith('office-town-'):
+            del existing[k]
+            removed += 1
+    if 'memory' in existing and isinstance(existing['memory'], dict):
+        existing['memory']['enabled'] = True
+    config['extensions'] = existing
+elif isinstance(existing, list):
+    new = []
+    for e in existing:
+        if isinstance(e, dict) and str(e.get('name', '')).startswith('office-town-'):
+            removed += 1
+            continue
+        if isinstance(e, dict) and e.get('name') == 'memory':
+            e['enabled'] = True
+        new.append(e)
+    config['extensions'] = new
+
+config_path.write_text(yaml.safe_dump(config, default_flow_style=False, sort_keys=False))
+print(f'  ✓ Removed {removed} office-town-* extension(s) from {config_path}')
+print(f'  ✓ Re-enabled the built-in memory extension')
+PYEOF
+
+echo ""
+echo "Done. Restart Goose Desktop (if open) so it reloads the config."
+echo ""
+echo "Note: this only removes the MCP wiring. The goose CLI and officetowd"
+echo "binary (if installed) are untouched — remove those manually if needed:"
+echo "  brew uninstall block/tap/goose       # if installed via brew"
+echo "  sudo rm /usr/local/bin/officetowd    # if you installed the sync daemon"
+`;
+
+	return new Response(script, {
+		headers: {
+			'content-type': 'text/x-shellscript; charset=utf-8',
+			'cache-control': 'no-store',
+			'content-disposition': 'inline; filename="disconnect.sh"',
 		},
 	});
 });
@@ -1377,6 +1555,12 @@ dashboardRoutes.get('/dashboard/connect', async (c) => {
   </details>
 </div>
 
+<details class="card" style="max-width: 800px; margin-top: 1.5rem;">
+  <summary style="cursor: pointer; font-weight: 600;">Uninstall — remove the MCP wiring</summary>
+  <p class="muted" style="margin: 0.6rem 0; font-size: 0.9em;">If you ever want to undo this, paste the line below. It removes only the office-town-* extensions and re-enables Goose's built-in memory — it doesn't touch the goose CLI or officetowd binary.</p>
+  <pre id="oneliner-uninstall" style="background: var(--code); border: 1px solid var(--border); border-radius: 6px; padding: 0.75rem; font-size: 0.85em; overflow-x: auto; white-space: pre-wrap; word-break: break-all;"></pre>
+</details>
+
 <div class="card" style="max-width: 800px; margin-top: 1.5rem;">
   <h2>What gets installed</h2>
   <p class="muted" style="font-size: 0.9em; margin: 0.25rem 0 0.75rem;">The six MCP servers wired into your Goose. Each points at this worker; all share the bearer above.</p>
@@ -1415,6 +1599,9 @@ function generateOneliner() {
 
 function refreshOneliner() {
   document.getElementById('oneliner').textContent = generateOneliner();
+  const url = document.getElementById('worker-url').value.replace(/\\/+$/, '') || 'https://YOUR-WORKER-URL.workers.dev';
+  document.getElementById('oneliner-uninstall').textContent =
+    'curl -fsSL ' + shSingleQuote(url + '/disconnect.sh') + ' | bash';
 }
 
 function copyOneliner() {
