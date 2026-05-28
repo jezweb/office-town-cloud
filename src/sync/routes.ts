@@ -191,6 +191,57 @@ async function sha256Hex(buf: ArrayBuffer): Promise<string> {
 		.join('');
 }
 
+// Upsert a wiki_attachments row for a non-markdown PUT under
+// wiki/<col>/<slug>/<file>. Without this, binaries are in R2 but the
+// dashboard's attachment list + wiki(action:list_attachments) returns
+// empty.
+async function upsertWikiAttachment(env: Env, key: string, size: number, contentType: string): Promise<void> {
+	const wikiKey = parseWikiKey(key);
+	if (!wikiKey || key.endsWith('.md')) return;
+	// Only the 3-part shape (wiki/<col>/<slug>/<file>) has attachments —
+	// 2-part shapes (dated-stream + flat-topic) don't.
+	if (!key.split('/').length || key.split('/').length !== 4) return;
+
+	await env.DB.prepare(
+		`INSERT INTO wiki_attachments (attachment_id, collection, slug, filename, r2_key, content_type, size_bytes, uploaded_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		 ON CONFLICT(collection, slug, filename) DO UPDATE SET
+			r2_key = excluded.r2_key,
+			content_type = excluded.content_type,
+			size_bytes = excluded.size_bytes,
+			uploaded_at = excluded.uploaded_at`,
+	)
+		.bind(
+			crypto.randomUUID(),
+			wikiKey.collection,
+			wikiKey.slug,
+			wikiKey.filename,
+			key,
+			contentType,
+			size,
+			Date.now(),
+		)
+		.run();
+}
+
+// Delete the D1 rows for a deleted R2 object. Mirrors the cleanup logic
+// in the wiki MCP's archive/delete handlers but driven by the sync API
+// when a daemon removes a file locally.
+async function deleteWikiRows(env: Env, key: string): Promise<void> {
+	const wikiKey = parseWikiKey(key);
+	if (!wikiKey) return;
+	if (key.endsWith('.md')) {
+		const id = `${wikiKey.collection}:${wikiKey.slug}`;
+		await env.DB.prepare('DELETE FROM wiki_entries WHERE id = ?').bind(id).run();
+	} else if (key.split('/').length === 4) {
+		await env.DB.prepare(
+			'DELETE FROM wiki_attachments WHERE collection = ? AND slug = ? AND filename = ?',
+		)
+			.bind(wikiKey.collection, wikiKey.slug, wikiKey.filename)
+			.run();
+	}
+}
+
 // Upsert a wiki_entries row for a markdown PUT. Mirrors the schema used
 // by the WikiService — we re-use the same table so dashboard/MCP queries
 // see the synced entry. Without this, the bytes are in R2 but the D1
@@ -305,16 +356,27 @@ app.put('/object/*', async (c) => {
 		agent_slug: machineId === 'unknown' ? 'sync-api' : `officetowd:${machineId}`,
 		why: `${userIntent}${repairNote}`,
 	});
-	// Update D1 wiki_entries so the dashboard + MCPs see the synced entry.
-	// Only fires for wiki/*/*.md keys; no-op for binary attachments + files/.
+	// Update D1 so the dashboard + MCPs see the synced object.
+	//   - Markdown wiki entries → wiki_entries row
+	//   - Binary attachments under wiki/<col>/<slug>/ → wiki_attachments row
+	//   - Files outside wiki/ → no D1 row (files/ doesn't have a registry)
 	if (wikiKey && key.endsWith('.md')) {
 		try {
 			const bodyText = new TextDecoder().decode(body);
 			await upsertWikiEntry(c.env, key, bodyText, hash, machineId);
 		} catch (err) {
-			// Don't fail the PUT if the D1 upsert hiccups — R2 has the bytes,
-			// queue consumer can re-derive D1 on its retry.
 			console.error(JSON.stringify({ event: 'wiki_entry_upsert_failed', key, error: String(err) }));
+		}
+	} else if (wikiKey && key.split('/').length === 4) {
+		try {
+			await upsertWikiAttachment(
+				c.env,
+				key,
+				(body as ArrayBuffer).byteLength,
+				c.req.header('content-type') ?? 'application/octet-stream',
+			);
+		} catch (err) {
+			console.error(JSON.stringify({ event: 'wiki_attachment_upsert_failed', key, error: String(err) }));
 		}
 	}
 	await queueIndex(c.env, key, 'index');
@@ -376,6 +438,15 @@ app.delete('/object/*', async (c) => {
 		agent_slug: machineId === 'unknown' ? 'sync-api' : `officetowd:${machineId}`,
 		why: userIntent,
 	});
+	// Cleanup the matching D1 row so the dashboard + MCPs don't show a
+	// stale entry. Errors here are non-fatal — R2 is gone, the
+	// orphaned row will just look like a broken entry until next manual
+	// fix or queue retry.
+	try {
+		await deleteWikiRows(c.env, key);
+	} catch (err) {
+		console.error(JSON.stringify({ event: 'wiki_row_delete_failed', key, error: String(err) }));
+	}
 	await queueIndex(c.env, key, 'delete');
 	return c.json({ ok: true, key });
 });
