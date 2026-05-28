@@ -135,28 +135,31 @@ audited, indexed, embedded — everything normal entries get.
 
 These are deliberate gaps to address later:
 
-1. **Delete propagation to `wiki_entries`** — sync DELETE removes the
-   R2 object + queues a delete message but the queue consumer only
-   handles vector index cleanup. The `wiki_entries` row stays. Fix:
-   extend the consumer to also `DELETE FROM wiki_entries` for the
-   delete-type message. ~5 lines.
+1. ~~Delete propagation to `wiki_entries`~~ ✅ **Closed 2026-05-28**.
+   Sync DELETE now calls `deleteWikiRows()` at the API boundary,
+   targeting `wiki_entries` (for .md) or `wiki_attachments` (for
+   binary attachments) based on the key shape.
 
 2. **Optimistic concurrency on PUT** — today we accept any PUT and
    resolve conflicts client-side via `.conflict-<ts>` files. Server-
    side `If-Match` + 409 responses would catch races at the API
    layer. Defer until the daemon supports it.
 
-3. **Binary attachment metadata** — `wiki_attachments` table tracks
-   non-markdown files associated with wiki entries. The sync API
-   writes them to R2 but doesn't populate `wiki_attachments`.
-   Currently only `wiki(action:attach)` via MCP does that. Sync
-   should mirror the behaviour for binary uploads under
-   `wiki/<col>/<slug>/<filename>`.
+3. ~~Binary attachment metadata~~ ✅ **Closed 2026-05-28**. Sync PUT
+   for non-.md files under `wiki/<col>/<slug>/<file>` now upserts
+   `wiki_attachments` with content_type + size + uploaded_at via
+   `upsertWikiAttachment()`. Idempotent via the unique
+   (collection, slug, filename) index.
 
-4. **Bulk upload endpoint** — large initial syncs do N HTTP requests
-   for N files. A `/api/sync/batch` that takes a multipart payload
-   with multiple files would cut this dramatically. Defer until
-   someone reports actual slowness on initial sync.
+4. ~~Bulk upload endpoint~~ ✅ **Closed 2026-05-28 (different approach)**.
+   Rather than adding a server-side batch endpoint, the daemon now
+   parallelises apply ops at concurrency 8 (semaphore-bounded
+   goroutine pool). Initial syncs of thousands of files are ~8x
+   faster with no worker-side complexity. v0.2.1 released.
+
+5. **Optimistic concurrency** still open (was #2 above) — the only
+   real remaining item. Will be a v1.2 feature when we add
+   if-match-aware daemon resync semantics.
 
 ## Verified end-to-end
 
