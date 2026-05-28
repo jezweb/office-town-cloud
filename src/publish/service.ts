@@ -99,17 +99,73 @@ export class PublishService {
 	}
 }
 
-// Render options. `imageBasePath` is prefixed to any image src that
-// isn't already an absolute URL (http/https/data/leading-slash) so that
-// agents can drop binaries into wiki/<col>/<slug>/attachments/ and refer
-// to them as `![alt](attachments/foo.png)` in the markdown — the
-// renderer resolves them to the auth-gated `/dashboard/wiki-files/...`
-// route.
+// Render options:
+//   - imageBasePath: prefix for relative image srcs (so agents can write
+//     `![alt](attachments/foo.png)` and have it resolve to the auth-gated
+//     /dashboard/wiki-files/... route).
+//   - wikilinkResolver: slug → resolution. Lets the renderer turn
+//     `[[engagement-trace]]` into a direct link to the entity's detail
+//     page when there's a unique match, a search link when the slug is
+//     ambiguous (multiple collections), and a styled "broken" link when
+//     no match exists yet. Build the map BEFORE rendering with
+//     resolveWikilinks(env, md).
+export interface WikilinkTarget {
+	collection: string;
+	slug: string;
+	title: string | null;
+}
+
+export type WikilinkResolution =
+	| { kind: 'resolved'; target: WikilinkTarget }
+	| { kind: 'ambiguous'; candidates: WikilinkTarget[] }
+	| { kind: 'broken' };
+
 export interface MarkdownRenderOptions {
 	imageBasePath?: string;
+	wikilinkResolver?: (slug: string) => WikilinkResolution;
 }
 
 const ABSOLUTE_HREF_PATTERN = /^(https?:\/\/|data:|\/)/i;
+const WIKILINK_SCAN_PATTERN = /\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/g;
+
+/**
+ * Scan markdown for [[wikilink]] references and resolve them against D1
+ * in a single batched query. Returns a resolver function suitable for
+ * passing as `wikilinkResolver` to renderMarkdownBody / renderMarkdownToHtml.
+ */
+export async function resolveWikilinks(
+	env: Env,
+	md: string,
+): Promise<(slug: string) => WikilinkResolution> {
+	const slugs = new Set<string>();
+	for (const match of md.matchAll(WIKILINK_SCAN_PATTERN)) {
+		slugs.add(match[1].trim());
+	}
+	if (slugs.size === 0) {
+		return () => ({ kind: 'broken' });
+	}
+
+	const placeholders = Array.from(slugs).map(() => '?').join(',');
+	const rows = await env.DB.prepare(
+		`SELECT collection, slug, title FROM wiki_entries WHERE slug IN (${placeholders}) AND status != 'deleted'`,
+	)
+		.bind(...slugs)
+		.all<{ collection: string; slug: string; title: string | null }>();
+
+	const grouped = new Map<string, WikilinkTarget[]>();
+	for (const row of rows.results ?? []) {
+		const list = grouped.get(row.slug) ?? [];
+		list.push(row);
+		grouped.set(row.slug, list);
+	}
+
+	return (slug: string): WikilinkResolution => {
+		const candidates = grouped.get(slug);
+		if (!candidates || candidates.length === 0) return { kind: 'broken' };
+		if (candidates.length === 1) return { kind: 'resolved', target: candidates[0] };
+		return { kind: 'ambiguous', candidates };
+	};
+}
 
 // One Marked instance per render — keeps extension state scoped to the
 // call. Marked's image renderer is overridden to apply imageBasePath;
@@ -145,7 +201,19 @@ function buildRenderer(options: MarkdownRenderOptions = {}): Marked {
 						.replace(/&/g, '&amp;')
 						.replace(/</g, '&lt;')
 						.replace(/>/g, '&gt;');
-					return `<a href="/dashboard/wiki?q=${encodeURIComponent(safeSlug)}" class="wikilink">${safeLabel}</a>`;
+
+					const resolution = options.wikilinkResolver?.(slug) ?? { kind: 'broken' as const };
+
+					if (resolution.kind === 'resolved') {
+						const t = resolution.target;
+						const titleAttr = t.title ? ` title="${t.title.replace(/"/g, '&quot;')}"` : '';
+						return `<a href="/dashboard/wiki/${encodeURIComponent(t.collection)}/${encodeURIComponent(t.slug)}" class="wikilink wikilink-resolved"${titleAttr}>${safeLabel}</a>`;
+					}
+					if (resolution.kind === 'ambiguous') {
+						return `<a href="/dashboard/wiki?q=${encodeURIComponent(safeSlug)}" class="wikilink wikilink-ambiguous" title="Multiple entries share this slug — search to pick">${safeLabel}</a>`;
+					}
+					// broken — no matching entry yet
+					return `<a href="/dashboard/wiki?q=${encodeURIComponent(safeSlug)}" class="wikilink wikilink-broken" title="No entry yet for &quot;${safeSlug}&quot;">${safeLabel}</a>`;
 				},
 			},
 		],

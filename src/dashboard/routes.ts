@@ -8,7 +8,7 @@ import {
 	isClaimed,
 	markClaimed,
 } from '../auth/dashboard-gate';
-import { renderMarkdownBody } from '../publish/service';
+import { renderMarkdownBody, resolveWikilinks } from '../publish/service';
 import type { AppContext } from '../types';
 import { loadTownStats, renderTownView } from './town-view';
 import { PROMPT_VARIANTS } from '../setup/prompts';
@@ -131,8 +131,13 @@ hr { border: 0; border-top: 1px solid var(--border); margin: 1.5rem 0; }
 .md-table th, .md-table td { padding: 0.5rem 0.75rem; text-align: left; border-bottom: 1px solid var(--border); vertical-align: top; }
 .md-table tr:last-child td { border-bottom: 0; }
 .md-table th { background: var(--bg-warmer); font-family: 'Trajan Pro', 'Optima', 'Palatino', Georgia, serif; font-weight: 600; font-size: 0.85em; letter-spacing: 0.04em; color: var(--ink-soft); }
-a.wikilink { color: var(--accent); background: rgba(194, 94, 79, 0.08); padding: 1px 4px; border-radius: 3px; text-decoration: none; font-weight: 500; }
-a.wikilink:hover { background: rgba(194, 94, 79, 0.18); }
+a.wikilink { padding: 1px 4px; border-radius: 3px; text-decoration: none; font-weight: 500; }
+a.wikilink-resolved { color: var(--accent); background: rgba(194, 94, 79, 0.08); }
+a.wikilink-resolved:hover { background: rgba(194, 94, 79, 0.18); }
+a.wikilink-ambiguous { color: #8a6d3b; background: rgba(240, 173, 78, 0.12); border-bottom: 1px dashed rgba(138, 109, 59, 0.5); }
+a.wikilink-ambiguous:hover { background: rgba(240, 173, 78, 0.25); }
+a.wikilink-broken { color: #a94442; background: rgba(169, 68, 66, 0.08); border-bottom: 1px dashed rgba(169, 68, 66, 0.5); }
+a.wikilink-broken:hover { background: rgba(169, 68, 66, 0.18); }
 </style>
 </head>
 <body>
@@ -880,10 +885,13 @@ dashboardRoutes.get('/dashboard/wiki/:collection/:slug', async (c) => {
 		.map(([k, v]) => `<tr><th>${escapeHtml(k)}</th><td>${linkifyValue(k, v)}</td></tr>`)
 		.join('');
 
-	// Render the body. Pass imageBasePath so relative `![alt](attachments/foo.png)`
-	// resolves to the auth-gated wiki-files route under the same entry folder.
+	// Resolve [[wikilinks]] against D1 in one batched query, then render.
+	// Relative `![alt](attachments/foo.png)` resolves to the auth-gated
+	// wiki-files route under the same entry folder.
+	const wikilinkResolver = await resolveWikilinks(c.env, row.body);
 	const innerBody = renderMarkdownBody(row.body, {
 		imageBasePath: `/dashboard/wiki-files/${collection}/${slug}`,
+		wikilinkResolver,
 	});
 
 	// Companion files: list R2 objects under wiki/<collection>/<slug>/
