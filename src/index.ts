@@ -24,6 +24,7 @@ import { cronMcpRoutes } from './mcp-server/cron';
 import { voiceMcpRoutes } from './mcp-server/voice';
 import { sandboxMcpRoutes } from './mcp-server/sandbox';
 import { handleInboundEmail } from './email/inbound';
+import { syncRoutes } from './sync/routes';
 import type { ForwardableEmailMessage } from '@cloudflare/workers-types';
 
 // Required export for the Cloudflare Containers binding declared in
@@ -86,6 +87,9 @@ app.route('/api/wiki', wikiRoutes);
 app.route('/api/files', filesRoutes);
 app.route('/api/publish', publishRoutes);
 app.route('/api/cron', cronRoutes);
+// Sync API — worker is the canonical write-orchestrator for officetowd
+// + future dashboard editors + server-side AI agents. See src/sync/routes.ts.
+app.route('/api/sync', syncRoutes);
 
 // MCP servers (JSON-RPC over streamable-HTTP). Each enforces its own bearer
 // auth internally; mounted at /mcp/{name}. Goose connects to each path as a

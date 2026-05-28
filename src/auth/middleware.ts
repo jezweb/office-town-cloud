@@ -7,7 +7,7 @@ import type { Context, MiddlewareHandler } from 'hono';
 import type { AppContext } from '../types';
 import { getEffectiveBearer } from './bearer';
 
-const MCP_PATH_PREFIXES = ['/mcp/', '/api/wiki/', '/api/files/', '/api/publish/', '/api/cron/'];
+const MCP_PATH_PREFIXES = ['/mcp/', '/api/wiki/', '/api/files/', '/api/publish/', '/api/cron/', '/api/sync/'];
 
 function isMcpRequest(c: Context<AppContext>): boolean {
 	const path = c.req.path;
