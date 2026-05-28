@@ -23,7 +23,11 @@ These match Workers AI's `@cf/baai/bge-base-en-v1.5` embedding model that the wi
 
 ~2-3 minutes later you'll have a worker URL like `https://office-town-<you>.<account>.workers.dev`. (First deploy is ~30 sec slower than subsequent ones — Cloudflare builds the sandbox container image once and caches it.)
 
-> **Want to pre-set a specific bearer or wire Google sign-in?** Optional secrets you can set in the deploy form OR later via `wrangler secret put`: `MCP_BEARER_TOKEN` (overrides the auto-generated one), `GOOGLE_CLIENT_ID` + `GOOGLE_CLIENT_SECRET` (enables Google sign-in for the dashboard), `BETTER_AUTH_SECRET` (session signing for dashboard sign-in). None are required for the worker to run.
+> **Want to wire Google sign-in for the dashboard, or rotate the bearer to a value of your choice?** Set these post-deploy via `wrangler secret put NAME` (none of them are required, none appear in the deploy form):
+>
+> - `MCP_BEARER_TOKEN` — overrides the auto-generated one
+> - `BETTER_AUTH_SECRET` — session signing for dashboard Google sign-in (`openssl rand -hex 32`)
+> - `GOOGLE_CLIENT_ID` + `GOOGLE_CLIENT_SECRET` — from `https://console.cloud.google.com/apis/credentials`
 
 > **Self-deploying via `wrangler deploy` instead of the button?** You'll need Docker running locally for that first deploy — wrangler builds the sandbox container image on your machine and pushes it to Cloudflare's registry. After that, normal deploys reuse the cached image. End-users clicking the button above don't need Docker (Cloudflare's hosted build infra handles it).
 
