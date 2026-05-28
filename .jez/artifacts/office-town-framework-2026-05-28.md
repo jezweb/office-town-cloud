@@ -619,6 +619,76 @@ Living memory doesn't bypass schema-as-emergence. A first-time observation lands
 
 What living memory adds: **the n=1 observation gets captured at all**, instead of being lost when the conversation ends. The promotion discipline is unchanged.
 
+### Reality check: when does the LLM actually *see* the synthesis?
+
+**This is the part the original sketch didn't account for.** Per `goose-self-improvement-survey-2026-05-28.md` (source-verified against Goose's runtime), most self-improvement artefacts are *durable on disk* but **only visible to the LLM in the next session, not this one**. The framework keeps this asymmetry visible to the agent so it doesn't oversell what mid-session synthesis can do.
+
+| Artefact | Persists to disk | Visible NEXT session | Visible THIS session |
+|---|---|---|---|
+| Skill (`SKILL.md`) | yes | yes (auto-discovered, description injected into system prompt) | only if explicitly loaded via `/skills <name>` or Summon's `load` tool |
+| Recipe (YAML) | yes | yes (in `goose recipe list`) | only via `goose run --recipe <path>` from shell |
+| Memory entry (`remember_memory`) | yes | yes (baked into Memory MCP's `instructions` block at extension startup) | only via `retrieve_memories` tool call (LLM has to explicitly query) |
+| Hook (`hooks.json`) | yes | yes (fires on next session-start) | no — hooks loaded once at `Agent::new` |
+| `tom`/MOIM file | yes | yes | **yes — re-injected every turn** (the only true mid-session channel) |
+| Per-entity AGENTS.md (homing beacon) | yes | yes (cascade loads at session start) | only if Goose reloads the cascade — typically requires restart |
+
+The implication: **mid-session synthesis works, but the LLM doesn't automatically benefit from it within the same conversation.** The conversation ends, the synthesis lands, the next session is wiser. The exception is `tom`/MOIM which re-injects every turn — anything written there is live from the next turn onward.
+
+### Four concrete write surfaces (the Office Town MCP exposes these)
+
+The agent doesn't write to files directly. Office Town's wiki MCP exposes four write tools that handle the destination + persistence + sync:
+
+| Tool | What it writes | Lands at | Auto-visible next session via |
+|---|---|---|---|
+| `wiki(action: skill_write, name, description, body)` | A new Goose skill | `~/.agents/skills/office-town-<name>/SKILL.md` (synced from cortex `wiki/skills/<name>/SKILL.md`) | Goose's skill-discovery scan at session-start |
+| `wiki(action: recipe_write, name, yaml)` | A new Goose recipe | `~/.config/goose/recipes/office-town/<name>.yaml` (synced from `wiki/recipes/<name>.yaml`) | `goose recipe list` (re-scans disk every call) |
+| `wiki(action: remember_memory, category, data, tags, is_global)` | A memory entry (signature matches Goose's Memory MCP) | Cortex (R2 + D1) + surfaced in Office Town MCP's `instructions` block on next start | Office Town MCP startup; OR `retrieve_memories` tool call mid-session |
+| `wiki(action: tom_append, text)` | A persistent rule | `~/.config/office-town/tom.md` (synced from `wiki/tom.md`) | **Re-injected every turn** (only if user has set `GOOSE_MOIM_MESSAGE_FILE`) |
+
+Plus the existing `wiki(action: write|update)` for typed entries (orgs, contacts, projects, decisions, knowledge concepts) — those land in their collections and get auto-discovered via the AGENTS.md cascade.
+
+### The curator-at-session-end pattern
+
+Mid-session synthesis runs at the *end* of meaningful work, not continuously. The pattern:
+
+1. **During the conversation** — agent flags things worth keeping in a session-local notepad (e.g. via `wiki(action: tom_append)` for true mid-session rules, or just by writing them in its journal entry).
+2. **At session end** — a "curator" skill (invoked manually via `/skills curator` or automatically via a `SessionEnd` hook) reviews the session's transcript + journal entries and decides:
+   - Did a *methodology* emerge worth a skill? → `wiki(action: skill_write)`
+   - Did a *workflow* emerge worth a recipe? → `wiki(action: recipe_write)`
+   - Did a *fact* emerge worth remembering? → `wiki(action: remember_memory)`
+   - Did a *rule* emerge that must apply every turn? → `wiki(action: tom_append)`
+   - Did a *concept* emerge worth promoting to canonical doctrine? → `wiki(action: write, collection: knowledge)` (with 3-instance threshold check)
+3. **Next session** — the agent starts with all the synthesised artefacts visible. Skills auto-discovered. Recipes listed. Memory baked into instructions. Tom rules re-injecting every turn.
+
+### MVP: skills first
+
+The survey is unambiguous on where to start. Quoting the recommendation:
+
+> **The minimum viable artefact: skill files. Start there. If we can reliably write one skill per useful session and have it available next session, we have a self-improving agent. Everything else is gravy.**
+
+So Office Town's first living-memory deliverable is `wiki(action: skill_write)` and a curator skill that knows when to call it. Recipes, memory entries, tom appends, hooks come after.
+
+### Install-time wiring
+
+For living memory to work, the Office Town installer needs to wire (one-time, at install):
+
+- `GOOSE_MOIM_MESSAGE_FILE` env var pointing at `~/.config/office-town/tom.md` (or `~/Documents/my-town/wiki/tom.md` symlinked) — enables mid-session rule injection
+- Office Town MCP added to Goose's extension list — exposes the four write tools
+- `~/.agents/plugins/office-town/hooks/hooks.json` with `SessionEnd` → curator — enables automatic synthesis at session end
+- The curator skill at `~/.agents/skills/office-town-curator/SKILL.md` — the skill the hook invokes
+
+All of this lands via the same `officetowd` sync daemon path that handles the wiki — so it's portable across machines.
+
+### Open smoke-test items (worth ~30 min of live verification before committing)
+
+The survey identified three things that should be verified against a real Goose install before the architecture relies on them:
+
+1. **Slash command hot-discovery via `Config::global().set_param`** — whether a fresh `slash_commands` config entry written mid-session becomes invokable on the next user keypress, or requires restart
+2. **Memory MCP refresh by toggling the extension off and on mid-session** — could be a cheap mid-session inject path if it works
+3. **`inline_python` extension type in a freshly-written recipe** — whether an agent can effectively give itself a new tool mid-session by writing a recipe with inline Python, without a deploy
+
+If any of these work, the mid-session reach expands. None are blockers for the MVP (skill files); they're optimisations to test once the foundation is real.
+
 ### Surfacing what was learned
 
 The dashboard exposes "what was learned this session":
