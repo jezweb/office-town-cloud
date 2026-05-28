@@ -3,6 +3,32 @@
 **Date**: 2026-05-28
 **Status**: Strategic design note. Captures the bigger picture that the curator + structured-ingestion + graph + audit + provenance pieces all serve.
 
+## The category shift this enables
+
+The current default for "AI + business knowledge" is a human-in-loop pattern:
+the human reads the email, asks an agent to help draft a reply, the agent
+generates text without context, the human edits and sends. The agent is a
+typing aid.
+
+The cortex pattern is a different category of system. The agent already
+knows the client's backstory, the project status, the recent decisions, the
+billing state, the tone of past interactions. It drafts independently —
+with provenance — because the relevant business reality is already in its
+prompt. The human reviews and approves rather than authors.
+
+| Old paradigm | New paradigm |
+|---|---|
+| Human reads email + asks agent to help draft a reply | Agent already knows client backstory, current project, recent decisions, billing state, last interaction tone — drafts independently with provenance |
+| New staff member learns by asking other humans | New staff member (or new agent) queries the cortex and gets the answer with sources |
+| "I need to look that up" | "The cortex already has it" |
+| Quality depends on what the human remembers to include in the prompt | Quality depends on what the cortex contains, not human recall |
+| Onboarding takes weeks of shadowing | Onboarding is reading the cortex |
+
+This is the difference between an agent that types faster than you can and
+an agent that *does the work*. That gap is the moat. Everything else in
+this document — curator, ingestion pipeline, structured entries, graph,
+provenance — exists to close it.
+
 ## The problem
 
 Imagine you've run a business for 20 years. The knowledge is real but it's everywhere:
