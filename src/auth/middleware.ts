@@ -9,8 +9,13 @@ import { getEffectiveBearer } from './bearer';
 
 const MCP_PATH_PREFIXES = ['/mcp/', '/api/wiki/', '/api/files/', '/api/publish/', '/api/cron/', '/api/sync/'];
 
+// Paths under MCP_PATH_PREFIXES that are explicitly public — they don't
+// expose any data themselves, only direct the caller to authenticate.
+const PUBLIC_AUTH_EXCEPTIONS = ['/api/sync/install.sh'];
+
 function isMcpRequest(c: Context<AppContext>): boolean {
 	const path = c.req.path;
+	if (PUBLIC_AUTH_EXCEPTIONS.includes(path)) return false;
 	return MCP_PATH_PREFIXES.some((p) => path.startsWith(p));
 }
 

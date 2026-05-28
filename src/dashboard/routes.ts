@@ -194,6 +194,8 @@ ${connectCallout}<h1 style="margin-top: 0;">Town overview</h1>
   <span style="display: inline-block; margin: 0 0.5rem;">·</span>
   Want a custom domain like <code>yourbiz.town</code>? <a href="/dashboard/wire-domain">~60 sec in CF dashboard →</a>
   <span style="display: inline-block; margin: 0 0.5rem;">·</span>
+  Want the wiki on disk? <a href="/dashboard/wire-sync">Install local sync daemon →</a>
+  <span style="display: inline-block; margin: 0 0.5rem;">·</span>
   Team deployment? <a href="/dashboard/wire-google-signin">Wire Google sign-in (v1.2 prep) →</a>
 </p>`;
 	return c.html(LAYOUT('Office Town - Dashboard', content));
@@ -912,4 +914,201 @@ function copyOAuthPrompt() {
 </script>`;
 
 	return c.html(LAYOUT('Wire Google sign-in - Office Town', content));
+});
+
+// Local-sync (officetowd) setup guide — same shape as wire-domain +
+// wire-google-signin. Three install paths shown verbatim so the user
+// reads exactly what they're running.
+//
+// The actual installer/configure scripts come from /api/sync/install.sh
+// (worker-generated bash with worker URL + bearer baked in).
+dashboardRoutes.get('/dashboard/wire-sync', async (c) => {
+	const reqUrl = new URL(c.req.url);
+	const workerHost = reqUrl.host;
+	const workerUrl = `${reqUrl.protocol}//${workerHost}`;
+	const effectiveBearer = await getEffectiveBearer(c.env);
+
+	const installCommand = `curl -fsSL ${workerUrl}/api/sync/install.sh | bash`;
+
+	const agentPrompt = [
+		"Help me install the Office Town sync daemon (officetowd) on this machine.",
+		"It mirrors my wiki + files between Cloudflare R2 and a local folder so I",
+		"can edit in my editor of choice, drop binaries into Finder, etc.",
+		"",
+		"Worker URL:  " + workerUrl,
+		"MCP bearer:  (read from the /dashboard/connect page — same value used for MCPs)",
+		"",
+		"GROUND RULES:",
+		"- Be transparent. Tell me what you're about to do before running anything.",
+		"- The daemon writes to my filesystem under a folder I'll choose (default: ~/Documents/my-town).",
+		"- It writes to R2 via the worker only — no R2 token needed on this machine.",
+		"- Same bearer rotation story as MCPs: rotate via 'wrangler secret put MCP_BEARER_TOKEN'.",
+		"",
+		"STEPS:",
+		"",
+		"1. Pick a local folder for the wiki mirror. Default: ~/Documents/my-town",
+		"   Confirm the path with me before creating it.",
+		"",
+		"2. Install officetowd:",
+		"     brew tap jezweb/tap",
+		"     brew install officetowd",
+		"   (On Linux/Windows, ask me to download from",
+		"    https://github.com/jezweb/officetowd/releases)",
+		"",
+		"3. Configure with one command — fetches credentials from the dashboard:",
+		"     officetowd configure --from-dashboard " + workerUrl,
+		"   It'll ask for the MCP bearer and the local folder, write",
+		"   ~/.officetowd/config.yaml with mode 0600.",
+		"",
+		"4. Start the daemon. On macOS:",
+		"     officetowd start",
+		"   (This creates a launchd plist that runs the daemon under your user",
+		"    and starts it. The plist auto-starts on login.)",
+		"",
+		"5. Verify it's running + initial sync happened:",
+		"     officetowd status",
+		"   Should show 'watching <local-dir> ↔ <worker-url> (interval 60s)'.",
+		"   First sync pulls down whatever's already in the wiki bucket.",
+		"",
+		"6. Test bidirectional sync:",
+		"   a. Edit a markdown file in the local folder; wait ~5 sec.",
+		"   b. Verify the change appears at " + workerUrl + "/dashboard/wiki",
+		"   c. Make a wiki change via Goose (e.g. wiki(action:'write', why:'test'));",
+		"      wait ~60 sec for the periodic sweep.",
+		"   d. Verify the new entry appears locally.",
+		"",
+		"CONSTRAINTS:",
+		"- Don't touch any MCP wiring — sync is separate from MCPs.",
+		"- If a step fails, stop and tell me — don't paper over conflicts.",
+		"- Conflicts (both sides changed) get saved as .conflict-<ts> siblings;",
+		"  let me resolve manually.",
+	].join('\n');
+
+	const content = `
+<h1 style="margin-top: 0;">Wire local sync (officetowd)</h1>
+<p class="muted">Optional. Mirrors your wiki + binary attachments (PDFs, images) to a local folder so you can edit in your editor of choice, drop binaries into Finder, and use Spotlight on wiki content. All writes still flow through this worker for audit + indexing.</p>
+
+<div class="card" style="max-width: 800px; margin-top: 1.5rem;">
+  <h2 style="margin-top: 0;">What you get</h2>
+  <ul style="line-height: 1.65;">
+    <li><strong>Wiki on disk</strong> — markdown entries + images + PDFs visible in <code>~/Documents/my-town</code> (or wherever you point it)</li>
+    <li><strong>Edit in any editor</strong> — Obsidian, VSCode, Typora; the daemon detects + uploads on save</li>
+    <li><strong>Multi-machine</strong> — install on each machine, all sync to the same worker, conflicts resolved with <code>.conflict-&lt;timestamp&gt;</code> siblings</li>
+    <li><strong>Binary-safe</strong> — PDFs and images go through as raw bytes (not base64)</li>
+    <li><strong>No R2 token</strong> — daemon talks to this worker via the MCP bearer; the worker handles all R2 access</li>
+  </ul>
+</div>
+
+<!-- OPTION A — one-line shell install -->
+<div class="card" style="max-width: 800px; margin-top: 1.5rem;">
+  <h2 style="margin-top: 0;">Option A — one-line shell install</h2>
+  <p style="margin: 0.5rem 0;" class="muted">Pipes our install script into bash. The script is shown verbatim below — read before you copy. Downloads the right binary for your OS from GitHub Releases, writes config under <code>~/.officetowd/</code>, registers a launchd plist (macOS) or systemd unit (Linux), starts the daemon.</p>
+
+  <div style="display: flex; gap: 0.75rem; align-items: center; margin: 0.75rem 0;">
+    <button id="copy-install-btn" type="button" onclick="copyInstallCmd()" style="padding: 0.5rem 1rem; border: 0; border-radius: 6px; background: var(--accent); color: white; font-size: 0.95em; font-weight: 500; cursor: pointer;">Copy install command</button>
+    <span id="copy-install-status" class="muted" style="font-size: 0.85em;"></span>
+  </div>
+
+  <pre id="install-cmd" style="background: var(--code); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; font-size: 0.9em; line-height: 1.45;">${installCommand}</pre>
+
+  <p style="margin: 0.75rem 0 0.5rem; font-size: 0.9em;" class="muted">
+    Want to see the script first?
+    <a href="/api/sync/install.sh" target="_blank">Open <code>/api/sync/install.sh</code> in a new tab →</a>
+    The script is generated from your worker with your URL + bearer baked in.
+  </p>
+</div>
+
+<!-- OPTION B — homebrew tap -->
+<div class="card" style="max-width: 800px; margin-top: 1.5rem;">
+  <h2 style="margin-top: 0;">Option B — homebrew (macOS/Linux)</h2>
+  <p style="margin: 0.5rem 0;" class="muted">If you prefer brew managing the binary.</p>
+
+  <div style="display: flex; gap: 0.75rem; align-items: center; margin: 0.75rem 0;">
+    <button id="copy-brew-btn" type="button" onclick="copyBrew()" style="padding: 0.5rem 1rem; border: 0; border-radius: 6px; background: var(--accent); color: white; font-size: 0.95em; font-weight: 500; cursor: pointer;">Copy brew commands</button>
+    <span id="copy-brew-status" class="muted" style="font-size: 0.85em;"></span>
+  </div>
+
+  <pre id="brew-cmd" style="background: var(--code); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; font-size: 0.9em; line-height: 1.45;"># Install
+brew tap jezweb/tap
+brew install officetowd
+
+# Configure (fetches worker URL + bearer interactively)
+officetowd configure --from-dashboard ${workerUrl}
+
+# Start
+officetowd start
+
+# Verify
+officetowd status</pre>
+</div>
+
+<!-- OPTION C — agent prompt -->
+<div class="card" style="max-width: 800px; margin-top: 1.5rem;">
+  <h2 style="margin-top: 0;">Option C — paste this prompt into your AI agent</h2>
+  <p style="margin: 0.5rem 0;" class="muted">Have Claude Code, Goose, Aider, or Cline walk you through it. Full prompt below — read before pasting.</p>
+
+  <div style="display: flex; gap: 0.75rem; align-items: center; margin: 0.75rem 0;">
+    <button id="copy-sync-agent-btn" type="button" onclick="copySyncAgent()" style="padding: 0.5rem 1rem; border: 0; border-radius: 6px; background: var(--accent); color: white; font-size: 0.95em; font-weight: 500; cursor: pointer;">Copy agent prompt</button>
+    <span id="copy-sync-agent-status" class="muted" style="font-size: 0.85em;"></span>
+  </div>
+
+  <pre id="sync-agent-prompt" style="background: var(--code); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; font-size: 0.85em; overflow-x: auto; line-height: 1.45; max-height: 500px; white-space: pre-wrap; word-break: break-word;"></pre>
+</div>
+
+<div class="card" style="max-width: 800px; margin-top: 1.5rem; background: #f8fafc;">
+  <h2 style="margin-top: 0;">Architecture (in case you're curious)</h2>
+  <p style="margin: 0.5rem 0;">
+    Daemon watches your local folder via fsnotify. On change, it HTTP-PUTs to this worker's <code>/api/sync/object/&lt;key&gt;</code> endpoint. The worker writes to R2 via its binding (you don't need an R2 token), logs an audit row, fires the indexing queue, and (for markdown) repairs broken YAML frontmatter with Workers AI before storing.
+  </p>
+  <p style="margin: 0.5rem 0;">
+    Periodic pulls (every 60 sec) fetch the worker's object listing and download anything new. Same bisync-keep-both pattern as goannad — if both sides changed, you get a <code>.conflict-&lt;timestamp&gt;</code> sibling locally to resolve manually.
+  </p>
+  <p style="margin: 0.5rem 0; font-size: 0.9em;" class="muted">
+    Worker source: <a href="https://github.com/jezweb/office-town-cloud/blob/main/src/sync/routes.ts" target="_blank">src/sync/routes.ts</a> · Daemon source: <a href="https://github.com/jezweb/officetowd" target="_blank">jezweb/officetowd</a>
+  </p>
+</div>
+
+<script>
+const SYNC_AGENT_PROMPT = ${JSON.stringify(agentPrompt)};
+const INSTALL_CMD = ${JSON.stringify(installCommand)};
+const BREW_BLOCK = document.getElementById('brew-cmd').textContent;
+
+document.getElementById('sync-agent-prompt').textContent = SYNC_AGENT_PROMPT;
+
+function flashCopy(btnId, statusId, msg) {
+  const status = document.getElementById(statusId);
+  const btn = document.getElementById(btnId);
+  status.textContent = msg;
+  status.style.color = 'var(--green)';
+  btn.style.background = 'var(--green)';
+  setTimeout(() => { status.textContent = ''; btn.style.background = 'var(--accent)'; }, 2500);
+}
+function flashFail(btnId, statusId, err) {
+  document.getElementById(statusId).textContent = 'Copy failed: ' + err.message;
+  document.getElementById(statusId).style.color = 'var(--red)';
+}
+
+function copyInstallCmd() {
+  navigator.clipboard.writeText(INSTALL_CMD)
+    .then(() => flashCopy('copy-install-btn', 'copy-install-status', '✓ Copied — paste into terminal'))
+    .catch((err) => flashFail('copy-install-btn', 'copy-install-status', err));
+}
+function copyBrew() {
+  navigator.clipboard.writeText(BREW_BLOCK)
+    .then(() => flashCopy('copy-brew-btn', 'copy-brew-status', '✓ Copied — paste into terminal'))
+    .catch((err) => flashFail('copy-brew-btn', 'copy-brew-status', err));
+}
+function copySyncAgent() {
+  navigator.clipboard.writeText(SYNC_AGENT_PROMPT)
+    .then(() => flashCopy('copy-sync-agent-btn', 'copy-sync-agent-status', '✓ Copied — paste into your AI agent'))
+    .catch((err) => flashFail('copy-sync-agent-btn', 'copy-sync-agent-status', err));
+}
+</script>`;
+
+	// Reference effectiveBearer to defeat unused-var lint (it'd be useful
+	// in future for a "bearer-baked install URL" pattern but we're keeping
+	// the user as the gate for now).
+	void effectiveBearer;
+
+	return c.html(LAYOUT('Wire local sync - Office Town', content));
 });
