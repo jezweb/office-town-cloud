@@ -52,7 +52,7 @@ The curator subagent is invoked by the user (interactively) or scheduled (via Go
 2. **Stage** — write raw content into Office Town's `wiki/inbox/<sha-prefix>/<id>.md` collection via the unified write path. Inbox is intentionally messy.
 3. **Classify** — route each Inbox entry to the right target collection via the structured-ingestion router (Workers AI classifier on the worker side, behind `/api/ingest`).
 4. **Extract** — for each routable item, call `/api/ingest` with `{content, target_collection, target_slug}`. Worker runs the per-collection extractor (Workers AI) and writes typed entries with `derived_from` provenance.
-5. **Reconcile** — when the new entry references an entity that already exists (Acme Corp in Xero matches Acme Corp in Jim2), curator surfaces the duplicate and either auto-merges (high confidence) or asks the user (ambiguous).
+5. **Reconcile** — when the new entry references an entity that already exists (e.g. an Org appearing in two systems), curator attempts auto-resolution first per `agent-autonomy-default-2026-05-28.md`: query the cortex for existing matches, run ABR/billing-system/DNS lookups via MCP, check Vectorize similarity. Auto-merge at confidence ≥0.85 with any strong corroborating signal. Below that threshold, queue with a **recommended action** + supporting evidence — never with an open question. Genuinely-ambiguous cases (signals contradict) are the only ones the user sees.
 6. **Link** — populate `wiki_links` between new entries and existing ones (this org owns these projects; this decision references these people).
 7. **Cite** — every auto-generated entry carries `derived_from:` frontmatter pointing back to the Inbox chunk or external system source. Provenance is non-optional.
 

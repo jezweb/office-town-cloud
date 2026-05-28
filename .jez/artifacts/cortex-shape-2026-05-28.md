@@ -373,18 +373,25 @@ From the dev.to scaling piece: *"You're not starting from a blank directory — 
 
 ### Q6: Conflict file handling
 
-**Answer (Goanna-inherited principle)**: **Smoothed-over contradictions are a smell. Surface the disagreement, let the user resolve.**
+**Answer (agent tries first; surfaces only the genuinely ambiguous)**: Per `agent-autonomy-default-2026-05-28.md`, the curator (or whichever agent is writing) attempts auto-resolution before surfacing.
 
-From librarian's CLAUDE.md: *"Don't merge contradictory records into a smoothed-over compromise. Surface the contradiction, ask the user, then resolve."*
+**Auto-resolve when** any of these are true:
+- The diff is formatting-only (whitespace, case, punctuation)
+- One source is clearly authoritative AND newer (e.g. ABR > invoice body)
+- The newer source has higher-tier provenance per the source-tier hierarchy
+- Vectorize similarity confirms it's the same content with cosmetic edits
+
+**Surface only when** the conflict survives auto-resolution AND the signals genuinely contradict. The surface is a *recommended resolution with sources*, not the raw disagreement.
+
+The librarian principle "don't smooth over contradictions" still holds — but it's about how the resolved entry is written, not about who resolves. The resolved entry includes a `discrepancy:` block in the body noting the disagreement and how it was resolved. Trail stays in the wiki for forensics.
 
 Operationally:
 - `.conflict-<ts>` files persist (cheap, valuable for forensics)
-- Dashboard surfaces them in a "needs reconciliation" panel — side-by-side comparison with key-field diffs highlighted
-- Curator gets a `resolve-conflict` skill that prompts the user, applies their choice, audits the resolution
-- Status field on the canonical entry transitions: `status: stale` while the conflict is unresolved, `status: active` once resolved
-- Auto-resolve only when the conflict is *clearly* trivial (same value, different whitespace; same fact, different formatting)
+- Curator's `resolve-conflict` skill runs auto-resolution first; queues for review only when auto-fail
+- Dashboard's reconciliation queue shows the agent's *recommended action* + supporting signals; user approves or overrides
+- Status field on the canonical entry transitions: `status: stale` while in the queue, `status: active` once resolved (auto or by user)
 
-This connects to Karpathy's lint passes — orphan detection, broken-link detection, contradiction-spotting should run on every ingest, not just nightly.
+This connects to Karpathy's lint passes — orphan detection, broken-link detection, contradiction-spotting should run on every ingest, not just nightly. Most of what lint catches, the agent should be able to resolve without user input.
 
 ---
 
@@ -426,16 +433,22 @@ This matches the tiered loading from Part 4. Karpathy + the agentwiki.org common
 
 The pieces — D1 queue, dashboard panel, MCP merge action — are right. What was missing from my earlier sketch is the **judgment discipline** Goanna codified:
 
-#### 9a. Peer-record vs umbrella rule
+#### 9a. Peer-record vs umbrella rule (agent investigates first)
 
 When a "duplicate" is detected, the first question isn't "merge or not" — it's "are these the same entity or two related entities?"
 
-- **Peer record** (separate folder) when Jezweb's (or the cortex owner's) service relationship is **independent** — separate domain, separate hosting account, separate support history
+- **Peer record** (separate folder) when the cortex owner's service relationship is **independent** — separate domain, separate hosting account, separate support history
 - **Umbrella section** (section inside parent record) when legally distinct but **operationally unified** — shared domain, shared hosting, shared support footprint
 
-Diagnostic: *"Does the cortex owner have two separate service relationships, or one?"*
+**The agent investigates the signals before asking** (per `agent-autonomy-default-2026-05-28.md`):
+- Are there separate domains? (DNS lookup, Rocket sites query, Synergy domain query via MCP)
+- Are there separate billing contacts in the accounting system? (Xero contacts MCP)
+- Are there separate cardfiles in the ERP? (Jim2 cardfiles MCP)
+- Is there separate support history? (D1 query: projects/tasks per slug)
 
-Cross-link shape: each peer record carries a `related_entities:` field naming the relationship (`"sister Pty Ltd, same primary contact, shared Xero account"`).
+If signals consistently indicate **separate** service relationships → peer records. If they consistently indicate **operationally unified** → umbrella section. Only when signals **conflict** does the agent surface — with a recommended call (e.g. "Recommend peer records; 3 of 4 signals support separate relationships; the shared Xero contact is the only counter-signal").
+
+Cross-link shape: each peer record carries a `related_entities:` field naming the relationship (`"sister Pty Ltd, same primary contact, shared accounting account"`).
 
 #### 9b. ABN-first aggregation (Australian context — adapt for non-AU)
 
@@ -462,7 +475,12 @@ When peer-vs-umbrella + ABR confirm a real duplicate (e.g. `orgs/acme-corp` and 
 
 Duplicate entry persists (soft-delete). Future queries for either slug return the primary. Old slug stays in `aliases:` so external references don't break.
 
-This is the genuinely hard piece. The dashboard reconciliation queue is where humans approve — auto-merge only on high-confidence + ABR-verified matches.
+**Threshold for auto-merge** (per `agent-autonomy-default-2026-05-28.md`):
+- Confidence ≥0.85 AND any of: (ABR-verified match) OR (shared canonical domain) OR (shared accounting-system contact ID) → auto-merge
+- Confidence 0.6-0.85 → queue with **recommended action** ("merge as duplicate" / "keep separate as sisters" / "keep separate as unrelated") + supporting signals. User approves a recommendation; they don't solve from scratch.
+- Confidence <0.6 → queue with the recommendation flagged as "low confidence" so the user investigates more closely
+
+The reconciliation queue is where the agent surfaces its own work for review — not where it asks the user to do the reconciliation. Most merges go through automatically; only the genuinely-ambiguous tail gets queued.
 
 ---
 

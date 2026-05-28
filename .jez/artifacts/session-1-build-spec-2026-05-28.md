@@ -9,7 +9,7 @@
 
 ## TL;DR
 
-By the end of Session 1, the worker accepts `POST /api/ingest` with structured content, runs Workers AI extraction against a per-collection schema, and writes a typed wiki entry with provenance back to immutable `raw/` content. Frontmatter is the source of truth; `wiki_links` rows are derived from it on write. Six starter collections exist with their CLAUDE.md schema docs and frontmatter contracts.
+By the end of Session 1, the worker accepts `POST /api/ingest` with structured content, runs Workers AI extraction against a per-collection schema, and writes a typed wiki entry with provenance back to immutable `raw/` content. Frontmatter is the source of truth; `wiki_links` rows are derived from it on write. Six starter collections exist with their AGENTS.md schema docs and frontmatter contracts.
 
 **Demo at the end**:
 ```bash
@@ -239,9 +239,9 @@ wrangler d1 execute office-town --remote --command \
 
 ---
 
-## Phase 1.1 — Collection schemas + per-collection CLAUDE.md
+## Phase 1.1 — Collection schemas + per-collection AGENTS.md
 
-**Goal**: Define the six starter collections' schemas (required fields + voice + allowed subfolders), one CLAUDE.md per collection, and seed them into D1 + R2.
+**Goal**: Define the six starter collections' schemas (required fields + voice + allowed subfolders), one AGENTS.md per collection, and seed them into D1 + R2.
 
 ### File: `src/wiki/seeds/collections.ts` (new)
 
@@ -249,7 +249,7 @@ wrangler d1 execute office-town --remote --command \
 /**
  * Starter collection definitions for Office Town's cortex.
  * Each entry is the seed-of-record for D1 wiki_collections + the
- * source-of-truth for the per-collection CLAUDE.md at wiki/<col>/CLAUDE.md.
+ * source-of-truth for the per-collection AGENTS.md at wiki/<col>/AGENTS.md.
  */
 
 export interface CollectionSeed {
@@ -261,7 +261,7 @@ export interface CollectionSeed {
   required_fields: string[];
   relationship_fields: string[];   // names of frontmatter fields that hold ID arrays
   allowed_subfolders: string[];     // notes/, sessions/, research/, attachments/, etc.
-  claudeMd: string;                 // the schema doc body
+  agentsMd: string;                 // the schema doc body
 }
 
 const FRONTMATTER_NOTE = `Required frontmatter sextet on every entry:
@@ -292,7 +292,7 @@ export const STARTER_COLLECTIONS: CollectionSeed[] = [
     required_fields: ['source_system', 'source_id'],
     relationship_fields: ['related_to', 'derived_from'],
     allowed_subfolders: [],
-    claudeMd: `# Inbox
+    agentsMd: `# Inbox
 
 Short-lived staging collection. Curator writes here when content arrives that hasn't yet been
 classified into a typed collection (orgs/contacts/projects/decisions/knowledge).
@@ -344,7 +344,7 @@ or a faithful excerpt. NOT a summary — that's what typed entries are for.
     required_fields: ['name', 'entity_type'],
     relationship_fields: ['contacts', 'projects', 'related_orgs', 'derived_from'],
     allowed_subfolders: ['notes', 'sessions', 'research', 'attachments', 'findings'],
-    claudeMd: `# Orgs
+    agentsMd: `# Orgs
 
 External organisations the cortex owner does business with: clients, vendors, partners, prospects.
 
@@ -411,7 +411,7 @@ Diagnostic: *"Does the cortex owner have two separate service relationships, or 
     required_fields: ['name'],
     relationship_fields: ['orgs', 'projects', 'derived_from'],
     allowed_subfolders: ['notes', 'sessions', 'attachments'],
-    claudeMd: `# Contacts
+    agentsMd: `# Contacts
 
 External people. Employees of orgs the cortex owner works with; contractors; individuals.
 
@@ -459,7 +459,7 @@ Plus contact-specific:
     required_fields: ['name'],
     relationship_fields: ['org', 'contacts', 'related_projects', 'decisions', 'derived_from'],
     allowed_subfolders: ['notes', 'sessions', 'research', 'attachments', 'findings', 'plans'],
-    claudeMd: `# Projects
+    agentsMd: `# Projects
 
 Active or historical work — client projects, internal initiatives, experiments. Each project
 is an entity with a defined scope and (eventually) outcome.
@@ -517,7 +517,7 @@ Plus project-specific:
     required_fields: ['title'],
     relationship_fields: ['orgs', 'contacts', 'projects', 'related_decisions', 'derived_from'],
     allowed_subfolders: ['attachments'],
-    claudeMd: `# Decisions
+    agentsMd: `# Decisions
 
 Decisions made — each is its own written-once entry. When a decision is revised, write a NEW
 decision and link the old one with \`superseded_by\`. Never silently overwrite.
@@ -573,7 +573,7 @@ Numbered sections:
     required_fields: ['title'],
     relationship_fields: ['related_concepts', 'derived_from'],
     allowed_subfolders: ['attachments'],
-    claudeMd: `# Knowledge
+    agentsMd: `# Knowledge
 
 Promoted patterns + concepts. Entries here have earned their place — they're not stubs, not
 single-instance observations. Watching-brief discipline: an observation lives as a finding or
@@ -633,23 +633,23 @@ import { STARTER_COLLECTIONS, type CollectionSeed } from './collections';
 
 /**
  * Idempotent: seed the starter collections into wiki_collections,
- * then write each collection's CLAUDE.md to R2 at wiki/<col>/CLAUDE.md.
+ * then write each collection's AGENTS.md to R2 at wiki/<col>/AGENTS.md.
  *
  * Safe to call multiple times. Uses INSERT OR REPLACE for collection
  * rows so we can bump schema_version + config_json without manual ops.
  *
- * The CLAUDE.md write is conditional — if the file already exists with a
+ * The AGENTS.md write is conditional — if the file already exists with a
  * different body_hash, we DON'T overwrite (preserves user customisations).
  * To force a refresh, pass { forceClaudeMd: true }.
  */
 export async function installStarterCollections(
   env: Env,
   opts: { forceClaudeMd?: boolean } = {},
-): Promise<{ inserted: number; updated: number; claude_md_written: number; claude_md_skipped: number }> {
+): Promise<{ inserted: number; updated: number; agents_md_written: number; agents_md_skipped: number }> {
   let inserted = 0;
   let updated = 0;
-  let claudeMdWritten = 0;
-  let claudeMdSkipped = 0;
+  let agentsMdWritten = 0;
+  let agentsMdSkipped = 0;
   const now = new Date().toISOString();
 
   for (const seed of STARTER_COLLECTIONS) {
@@ -704,38 +704,38 @@ export async function installStarterCollections(
       inserted += 1;
     }
 
-    const claudePath = `wiki/${seed.name}/CLAUDE.md`;
-    const existingClaude = await env.WIKI.get(claudePath);
-    if (existingClaude && !opts.forceClaudeMd) {
-      claudeMdSkipped += 1;
+    const agentsPath = `wiki/${seed.name}/AGENTS.md`;
+    const existingAgentsMd = await env.WIKI.get(agentsPath);
+    if (existingAgentsMd && !opts.forceClaudeMd) {
+      agentsMdSkipped += 1;
     } else {
-      await env.WIKI.put(claudePath, seed.claudeMd, {
+      await env.WIKI.put(agentsPath, seed.agentsMd, {
         httpMetadata: { contentType: 'text/markdown' },
       });
-      claudeMdWritten += 1;
+      agentsMdWritten += 1;
     }
   }
 
-  // Also write the wiki/raw/CLAUDE.md (covered in Phase 1.5; placed here so install
+  // Also write the wiki/raw/AGENTS.md (covered in Phase 1.5; placed here so install
   // is one call).
-  const rawClaudePath = 'wiki/raw/CLAUDE.md';
+  const rawClaudePath = 'wiki/raw/AGENTS.md';
   const existingRaw = await env.WIKI.get(rawClaudePath);
   if (!existingRaw || opts.forceClaudeMd) {
-    const { RAW_CLAUDE_MD } = await import('./raw');
-    await env.WIKI.put(rawClaudePath, RAW_CLAUDE_MD, {
+    const { RAW_AGENTS_MD } = await import('./raw');
+    await env.WIKI.put(rawClaudePath, RAW_AGENTS_MD, {
       httpMetadata: { contentType: 'text/markdown' },
     });
-    claudeMdWritten += 1;
+    agentsMdWritten += 1;
   }
 
-  return { inserted, updated, claude_md_written: claudeMdWritten, claude_md_skipped: claudeMdSkipped };
+  return { inserted, updated, agents_md_written: agentsMdWritten, agents_md_skipped: agentsMdSkipped };
 }
 ```
 
 ### File: `src/wiki/seeds/raw.ts` (new — small)
 
 ```typescript
-export const RAW_CLAUDE_MD = `# Raw — immutable source archive
+export const RAW_AGENTS_MD = `# Raw — immutable source archive
 
 Append-only. The agent reads this; the agent never edits files in here.
 Curator + the sync daemon are the only writers.
@@ -787,16 +787,16 @@ search projection.
 ```bash
 # After deploying:
 curl -s -X POST -H "Authorization: Bearer <bearer>" https://<worker>/api/install-collection-schemas
-# Returns: { inserted: N, updated: N, claude_md_written: 7, claude_md_skipped: N }
+# Returns: { inserted: N, updated: N, agents_md_written: 7, agents_md_skipped: N }
 
 # Confirm collections updated
 wrangler d1 execute office-town --remote --command \
   "SELECT name, schema_version, config_json IS NOT NULL as has_config FROM wiki_collections WHERE name IN ('inbox','orgs','contacts','projects','decisions','knowledge')" --json \
   | jq '.[0].results'
 
-# Confirm CLAUDE.md files in R2
-wrangler r2 object list office-town --prefix wiki/inbox/CLAUDE.md
-wrangler r2 object list office-town --prefix wiki/raw/CLAUDE.md
+# Confirm AGENTS.md files in R2
+wrangler r2 object list office-town --prefix wiki/inbox/AGENTS.md
+wrangler r2 object list office-town --prefix wiki/raw/AGENTS.md
 # Both should appear
 ```
 
@@ -830,8 +830,8 @@ await installStarterCollections(env);   // safe: idempotent + non-destructive
 
 ### Verification gate 1.2
 
-- Cold-deploy to a freshly-blank D1 + R2 should result in the six collections + their CLAUDE.md files automatically.
-- Subsequent deploys are no-op (idempotent — collections stay current, CLAUDE.md stays as-is unless `?force=true`).
+- Cold-deploy to a freshly-blank D1 + R2 should result in the six collections + their AGENTS.md files automatically.
+- Subsequent deploys are no-op (idempotent — collections stay current, AGENTS.md stays as-is unless `?force=true`).
 
 ---
 
@@ -994,7 +994,7 @@ export async function extractEntry(env: Env, input: ExtractInput): Promise<Extra
       collection: collection.name,
       requiredFields,
       relationshipFields,
-      claudeMd: await loadCollectionClaudeMd(env, collection.name),
+      agentsMd: await loadCollectionAgentsMd(env, collection.name),
     });
     extractedFrontmatter = extracted.frontmatter;
     extractedBody = extracted.body;
@@ -1006,6 +1006,22 @@ export async function extractEntry(env: Env, input: ExtractInput): Promise<Extra
     input.target_slug ||
     (extractedFrontmatter.slug as string | undefined) ||
     deriveSlugFromContent(extractedFrontmatter, collection.name, input.source_ref);
+
+  // 4b. Agent-autonomy-default enrichment: if confidence is low,
+  //     try to raise it by checking the cortex + Vectorize before resorting
+  //     to `pending` review status. Per agent-autonomy-default-2026-05-28.md,
+  //     the agent should exhaust internal resources before surfacing.
+  if (confidence < 0.5 && !input.structured) {
+    const enriched = await tryEnrichLowConfidence(env, {
+      collection: collection.name,
+      extractedFrontmatter,
+      content: input.content,
+    });
+    if (enriched.raisedConfidence > confidence) {
+      confidence = enriched.raisedConfidence;
+      Object.assign(extractedFrontmatter, enriched.additionalFields);
+    }
+  }
 
   // 5. Build the entry's full frontmatter (universal + collection-specific)
   const now = new Date().toISOString();
@@ -1111,7 +1127,7 @@ interface ExtractorInput {
   collection: string;
   requiredFields: string[];
   relationshipFields: string[];
-  claudeMd: string;
+  agentsMd: string;
 }
 
 interface ExtractorOutput {
@@ -1126,10 +1142,10 @@ export async function runExtractor(env: Env, input: ExtractorInput): Promise<Ext
 Required fields: ${JSON.stringify(input.requiredFields)}
 Relationship fields (return slug arrays): ${JSON.stringify(input.relationshipFields)}
 
-Schema doc (the collection's CLAUDE.md) follows. Use this for voice + field rules:
+Schema doc (the collection's AGENTS.md) follows. Use this for voice + field rules:
 
 ---
-${input.claudeMd}
+${input.agentsMd}
 ---
 
 CONTENT TO EXTRACT FROM:
@@ -1191,8 +1207,8 @@ function coerceToString(result: unknown): string {
 ### Helpers in `src/ingest/extract.ts` (continued)
 
 ```typescript
-async function loadCollectionClaudeMd(env: Env, collection: string): Promise<string> {
-  const obj = await env.WIKI.get(`wiki/${collection}/CLAUDE.md`);
+async function loadCollectionAgentsMd(env: Env, collection: string): Promise<string> {
+  const obj = await env.WIKI.get(`wiki/${collection}/AGENTS.md`);
   if (!obj) return '';
   return await obj.text();
 }
@@ -1265,7 +1281,7 @@ curl -s -X POST https://<worker>/api/ingest \
   -H "Authorization: Bearer <bearer>" \
   -H "Content-Type: application/json" \
   -d '{
-    "content": "Hi Jeremy, this is Sarah from Acme Corp Pty Ltd (acme.com.au). We need to renew our hosting contract for next year. Can you send a quote? Cheers, Sarah",
+    "content": "Hi there, this is Sarah from Acme Corp Pty Ltd (acme.example.com). We need to renew our hosting contract for next year. Can you send a quote? Cheers, Sarah",
     "target_collection": "inbox",
     "source_ref": {
       "source_system": "manual",
@@ -1302,7 +1318,7 @@ curl -s -X POST https://<worker>/api/ingest \
   -H "Authorization: Bearer <bearer>" \
   -H "Content-Type: application/json" \
   -d '{
-    "content": "Acme Corp Pty Ltd (acme.com.au) is a client based in Newcastle NSW. Primary contact is Sarah Smith (sarah@acme.com.au, 0412 345 678). Active project: 2024 hosting renewal.",
+    "content": "Acme Corp Pty Ltd (acme.example.com) is a client based in Sydney NSW. Primary contact is Sarah Smith (sarah@acme.example.com, 0412 345 678). Active project: 2024 hosting renewal.",
     "target_collection": "orgs",
     "source_ref": { "source_system": "manual", "source_id": "test-002", "fetched_at": "2026-05-28T13:05:00Z" },
     "agent_slug": "test",
@@ -1471,14 +1487,14 @@ wrangler d1 execute office-town --remote --command \
 
 ## Phase 1.5 — wiki/raw/ + gravity-wells mapping
 
-**Goal**: One short markdown doc, written to `wiki/CLAUDE.md`, that declares the gravity-wells doctrine for the install and maps the six starter collections to their well-creation status (5 forces × 6 collections).
+**Goal**: One short markdown doc, written to `wiki/AGENTS.md`, that declares the gravity-wells doctrine for the install and maps the six starter collections to their well-creation status (5 forces × 6 collections).
 
 This is the schema-doc-at-root that Karpathy talks about and that warms up the cortex for any agent.
 
-### File: `src/wiki/seeds/wiki-claude-md.ts` (new)
+### File: `src/wiki/seeds/wiki-agents-md.ts` (new)
 
 ```typescript
-export const WIKI_ROOT_CLAUDE_MD = `# Office Town wiki
+export const WIKI_ROOT_AGENTS_MD = `# Office Town wiki
 
 This is the typed-entity layer of the cortex — what the LLM reads on every session.
 \`wiki/raw/\` holds the immutable source archive (read but not edited).
@@ -1510,8 +1526,8 @@ When new content arrives, ask three questions in order:
 | \`decisions/\` | entity-as-folder | \`decision.md\` | Decisions made, append-only via supersede |
 | \`knowledge/\` | entity-as-folder | \`concept.md\` | Promoted patterns (n≥3 evidence) |
 
-Each collection has its own \`CLAUDE.md\` declaring its schema, voice rules, and lint rules.
-Read \`wiki/<collection>/CLAUDE.md\` when working with that collection.
+Each collection has its own \`AGENTS.md\` declaring its schema, voice rules, and lint rules.
+Read \`wiki/<collection>/AGENTS.md\` when working with that collection.
 
 ## Frontmatter sextet (universal)
 
@@ -1519,7 +1535,7 @@ Every entry has: \`slug, kind, created, last_updated, last_edited_by, last_chang
 
 Plus the cortex extensions: \`schema_version, status, derived_from, confidence, review_status\`.
 
-See each collection's CLAUDE.md for the collection-specific required + relationship fields.
+See each collection's AGENTS.md for the collection-specific required + relationship fields.
 
 ## Status lifecycle
 
@@ -1544,8 +1560,8 @@ entry or add to a \`history:\` block; don't overwrite silently.
 
 ## Pointers
 
-- Provenance archive: \`wiki/raw/CLAUDE.md\`
-- Schema for any collection: \`wiki/<collection>/CLAUDE.md\`
+- Provenance archive: \`wiki/raw/AGENTS.md\`
+- Schema for any collection: \`wiki/<collection>/AGENTS.md\`
 - Index of everything: \`/INDEX.md\` (regenerated by worker)
 - Activity log: \`/LOG.md\` (regenerated by worker)
 `;
@@ -1553,17 +1569,17 @@ entry or add to a \`history:\` block; don't overwrite silently.
 
 ### File: `src/wiki/seeds/install.ts` (modify)
 
-Add a call to write `wiki/CLAUDE.md`:
+Add a call to write `wiki/AGENTS.md`:
 
 ```typescript
-const rootClaudePath = 'wiki/CLAUDE.md';
+const rootClaudePath = 'wiki/AGENTS.md';
 const existingRoot = await env.WIKI.get(rootClaudePath);
 if (!existingRoot || opts.forceClaudeMd) {
-  const { WIKI_ROOT_CLAUDE_MD } = await import('./wiki-claude-md');
-  await env.WIKI.put(rootClaudePath, WIKI_ROOT_CLAUDE_MD, {
+  const { WIKI_ROOT_AGENTS_MD } = await import('./wiki-agents-md');
+  await env.WIKI.put(rootClaudePath, WIKI_ROOT_AGENTS_MD, {
     httpMetadata: { contentType: 'text/markdown' },
   });
-  claudeMdWritten += 1;
+  agentsMdWritten += 1;
 }
 ```
 
@@ -1571,16 +1587,16 @@ if (!existingRoot || opts.forceClaudeMd) {
 
 ```bash
 # Confirm all schema docs in R2
-wrangler r2 object list office-town --prefix wiki/ | grep CLAUDE.md
+wrangler r2 object list office-town --prefix wiki/ | grep AGENTS.md
 # Should list:
-# wiki/CLAUDE.md
-# wiki/raw/CLAUDE.md
-# wiki/inbox/CLAUDE.md
-# wiki/orgs/CLAUDE.md
-# wiki/contacts/CLAUDE.md
-# wiki/projects/CLAUDE.md
-# wiki/decisions/CLAUDE.md
-# wiki/knowledge/CLAUDE.md
+# wiki/AGENTS.md
+# wiki/raw/AGENTS.md
+# wiki/inbox/AGENTS.md
+# wiki/orgs/AGENTS.md
+# wiki/contacts/AGENTS.md
+# wiki/projects/AGENTS.md
+# wiki/decisions/AGENTS.md
+# wiki/knowledge/AGENTS.md
 ```
 
 ---
@@ -1605,7 +1621,7 @@ echo
 echo "=== 2. Ingest into Inbox ==="
 curl -s -X POST -H "Authorization: Bearer $BEARER" -H "Content-Type: application/json" \
   -d '{
-    "content": "Hi Jeremy, just got off the call with Sarah at Acme Corp Pty Ltd. They want to renew their hosting (acme.com.au) and add a new staging environment. Budget around $2000/year. Sarah is the decision-maker; her direct is sarah@acme.com.au.",
+    "content": "Just got off the call with Sarah at Acme Corp Pty Ltd. They want to renew their hosting (acme.example.com) and add a new staging environment. Budget around $2000/year. Sarah is the decision-maker; her direct is sarah@acme.example.com.",
     "target_collection": "inbox",
     "source_ref": {
       "source_system": "manual",
@@ -1658,7 +1674,7 @@ echo "=== Done. Visit $WORKER/dashboard/wiki/orgs/acme-corp to view the extracte
 - `wiki_links` has the derived rows for `contacts` + `derived_from`
 - `wiki_audit` has one row for the entry write with `agent_slug: demo` and the `why`
 - Dashboard shows the new entry with proper formatting
-- All six collection CLAUDE.md files + the root `wiki/CLAUDE.md` + `wiki/raw/CLAUDE.md` are in R2
+- All six collection AGENTS.md files + the root `wiki/AGENTS.md` + `wiki/raw/AGENTS.md` are in R2
 
 ---
 
@@ -1704,11 +1720,11 @@ These are dependencies whose breakage would cascade. Verify each before starting
 | Phase | Effort | Risk |
 |---|---|---|
 | 1.0 Migrations | 30 min | Low — pure ALTER, idempotent |
-| 1.1 Collection seeds | 90 min | Low — most of the work is writing the per-collection CLAUDE.md content |
+| 1.1 Collection seeds | 90 min | Low — most of the work is writing the per-collection AGENTS.md content |
 | 1.2 Install endpoint + bootstrap wire-up | 15 min | Low |
 | 1.3 /api/ingest endpoint + extractor | 90 min | Medium — Workers AI extractor needs prompt iteration |
 | 1.4 Frontmatter → wiki_links derivation | 45 min | Low — pure D1 |
-| 1.5 wiki/CLAUDE.md + wiki/raw/CLAUDE.md | 15 min | Low |
+| 1.5 wiki/AGENTS.md + wiki/raw/AGENTS.md | 15 min | Low |
 | 1.6 Verify + demo | 30 min | The truth-checker |
 | **Total** | **~5 hours of focused work** | |
 
