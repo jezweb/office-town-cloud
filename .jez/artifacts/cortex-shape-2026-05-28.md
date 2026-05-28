@@ -11,9 +11,105 @@ These two streams converged on the same answers more often than not. Where they 
 
 ---
 
-## Part 1 — Roles, redefined
+## Part 1 — Roles, redefined (now reconciled with the four-shapes finding)
 
-The Curator joins the existing lineup. With it, the role boundaries need to be clean so the agents don't drift into doing each other's jobs. The clarifying principle: **each role faces a different direction, with a different primary verb.**
+**Updated 2026-05-28** after Goanna-doctrine extraction surfaced the claim that there are only four agent shapes: **router / doer / curator / watcher**. After a month of running fleets, no fifth shape has emerged. Office Town adopts this — the five roles I sketched earlier are *not* five primitives; they're four shapes, with Curator and Librarian being two specialisations of the same curator-shape.
+
+### The four shapes
+
+| Shape | Verb | Direction | Office Town role(s) |
+|---|---|---|---|
+| **Router** | Directs | User ↔ subordinates | Boss |
+| **Doer** | Executes | Intent → world | Worker (+ domain specialists: Editor, Bookkeeper, Project Manager, etc.) |
+| **Curator** | Curates | External ↔ substrate | Curator (inbound from connectors) AND Librarian (organises the wiki) |
+| **Watcher** | Finds | External (no auth) → findings | Scout |
+
+The four shapes are *capability surfaces*, not job descriptions. Domain ≠ shape. A newsletter editor is a doer-shape specialisation; a contact-records minter is a curator-shape specialisation; an uptime monitor is a watcher-shape specialisation. They differ in scope and material, not in primitive.
+
+### Curator-shape, two scopes
+
+Curator and Librarian are both curator-shape — they curate the substrate. They differ in scope:
+
+| | Curator (inbound scope) | Librarian (organisational scope) |
+|---|---|---|
+| **What they curate** | External content flowing INTO the substrate | Existing entries within the substrate |
+| **Tools used** | User's Goose-side connector MCPs (gmail/slack/github/xero/...) + Office Town wiki MCP + `/api/ingest` | Office Town wiki MCP + Vectorize + audit log |
+| **Primary verb** | Ingest, classify, extract, link | Organise, promote, lint, deepen, reconcile |
+| **Cadence** | User-triggered or per-event | Scheduled (reactive/bootstrap/quiet-cycle/cascade-refresh) |
+| **Typical output** | New typed entries with `derived_from` provenance | Updated existing entries; new `wiki/knowledge/` promotions; INDEX.md maintenance |
+
+They share the curator-shape file family + the curator-shape disciplines. They differ in *which substrate they reach for* and *which side of the inbound/internal boundary they live on*.
+
+### Each role's job, in one line
+
+| Role | Shape | Verb | Reads | Writes |
+|---|---|---|---|---|
+| **Boss** | router | Directs | User intent + delegate responses | Nothing structural; user-facing replies |
+| **Curator** | curator-shape (inbound scope) | Ingests | External MCPs + raw archive | wiki entries via `/api/ingest` + Inbox + derived_from |
+| **Librarian** | curator-shape (organisational scope) | Organises | wiki + audit log + Vectorize | Updated entries; knowledge promotions; INDEX.md |
+| **Scout** | watcher | Finds | Web (no auth) | Findings entries (optional) |
+| **Worker** | doer | Executes | Context from Librarian/Curator | External state (with user approval) |
+
+### Why this matters
+
+The four-shapes claim narrows what we have to design. We don't need to invent custom architectures for "secretary" or "bookkeeper" or "client-research-agent" — they're all doer-shape or curator-shape specialisations. The file family, kickoff procedure, cadence shape, and discipline package are shared.
+
+This also means **library and curator share most of their AGENTS.md content** — the differences are scope (which collections they curate) and tool whitelist (Curator gets external connectors; Librarian doesn't). The shared structure is the *curator-shape baseline*.
+
+### The agent file family (universal to all four shapes)
+
+From Goanna's doctrine, every agent — regardless of shape — has the same file family:
+
+| File | Purpose |
+|---|---|
+| `AGENTS.md` | Identity, role, boundaries, modes, cadence, voice, routing. The agent's own contract. |
+| `facts/` | Atomic fact files — feedback the agent has accumulated. One topic per file. |
+| `status.md` | One-line current state. NOW, not history. |
+| `journal/<date>.md` | Daily narrative of what was done + why. |
+| `findings/<date>-<slug>.md` | Surfaced patterns the agent noticed (not yet promoted to wiki/knowledge). |
+| `inbox/` | Comms briefs from siblings + user-routed asks awaiting pickup. |
+| `jobs/<cycle>/SKILL.md` (optional) | Per-cycle runnable skill the agent's cadence invokes. |
+
+Plus a **domain workshop** for content-heavy specialists: a per-agent working folder for drafts, references, assets. Earned-place — mint folders only when 3+ items of the same shape accumulate.
+
+### The clarifying principle
+
+**Each role faces a different direction with a different primary verb.**
+
+---
+
+## Part 1.5 — The kickoff procedure (universal to all agents)
+
+Every Office Town agent — boss, curator, librarian, scout, worker, future specialists — runs the same session-start ritual. Inherited from Goanna's `skills/kickoff/SKILL.md`. 11 steps:
+
+1. **Confirm local files are current** — sync layer handles this; optional sanity check on substrate freshness
+2. **Soak up the framework** — read every `.md` in `wiki/` schema docs (collection AGENTS.mds, root AGENTS.md)
+3. **Read your facts/** — keyed atomic facts the agent has accumulated; reload feedback
+4. **Read the owner context** — `wiki/owner/AGENTS.md` cascade + `wiki/owner/voice.md` (load-bearing — every agent reads voice.md before producing styled output)
+5. **Pick up open tasks** — your `tasks/*.md` filtered on `surface: true`
+6. **Check in-flight** — today's `journal/<date>.md` for what's mid-stream
+7. **Glance recent journal** — last 3-5 days for ambient context
+8. **Check inbox** — `agents/<slug>/inbox/` and `wiki/broadcasts/`
+9. **Glance own findings + skills** — what you noticed recently; what skills you have available
+10. **Wire your cron cycles** — read the `cycles:` YAML map in your AGENTS.md; CronCreate any missing
+11. **Now work.** Don't end kickoff and ask *"what would you like to do?"* — that's the wrong default. You know your job. Do it.
+
+Step 11 is the autonomy-default doctrine encoded as ritual. The agent's job is its file; kickoff loads context; then it acts. The "what should I do" question is the failure mode the procedure prevents.
+
+### The brand-new-Mac test
+
+The acid test for whether the cortex is working:
+
+> A fresh Goose install on a new Mac, with the user's Office Town worker URL + bearer, should be able to do useful work on any of the user's projects immediately — without prior conversational context. The substrate IS the brief.
+
+If the agent has to ask the user "what's the situation with Acme?" or "what was decided about X?" then the cortex doesn't contain enough structured context — that's a substrate gap, not an agent gap.
+
+This is the operational definition of "cortex works":
+- Fresh agent + clean install → asks for the worker URL + bearer
+- Reads the cortex during kickoff (steps 2-9 above)
+- Does useful work
+
+When this test fails, the cortex is missing wells (the right files aren't there) or the wells are sink-shaped (files are there but unfindable). Both are fixable; neither is a runtime problem.
 
 ```
                  ┌──────────────── Boss ────────────────┐
@@ -352,6 +448,47 @@ The format follows Karpathy's pattern: every wiki entry has provenance back to i
 **Worth NOT adding**:
 - Free-form `tags:` — Goanna and practitioners agree: *"be ruthlessly stingy with tags"*. Use frontmatter typed fields (`org:`, `vertical:`, `groups:`) instead. Tags reserved for genuinely cross-cutting attributes (`#urgent`, `#legal`).
 
+### Engagement-trace primitive (entity records)
+
+For entities that accumulate interactions (orgs, contacts, projects), the canonical client-memory shape is **the engagement trace**: one line per substantive interaction, four fields:
+
+```
+2026-05-28 / Sarah Smith (email) / agreed renewal terms 2024-2025 / msg-18f3a1b
+```
+
+| Field | Required | Note |
+|---|---|---|
+| **date** | yes | ISO date (or full timestamp if precision matters) |
+| **actor (channel)** | yes — non-negotiable | Who did it, in parens which channel. *"The 'I did X' pattern collapses when several writers contribute."* |
+| **verb-phrase with outcome** | yes | What happened + what changed |
+| **reference ID** | yes | Link back to the raw archive (gmail msg ID, slack ts, doc URL) |
+
+Lives in the entity's canonical file under `## Recent` (or in dated subfiles when there are too many). Multi-writer accumulating store — append, don't rewrite. Curator writes new traces; never edits old ones.
+
+Three sizes of interaction record by complexity:
+- **Trace** — one-liner, the default. Most interactions.
+- **Touchpoint** — companion file (`notes/2026-05-28-sarah-quote-call.md`) when the interaction warrants a paragraph or two.
+- **Deep narrative** — `sessions/<date>.md` for multi-hour multi-topic sessions worth full notes.
+
+The agent picks the size based on the interaction. Default to traces; promote upward when the content earns it.
+
+### Service-state, not single-status
+
+For orgs (and any entity with multiple ongoing service relationships), don't collapse to a single `status:` field. A client relationship is a *bundle of services*, each with its own state:
+
+```yaml
+services:
+  hosting: { state: active, since: 2024-03-15 }
+  email: { state: managed, since: 2024-03-15 }
+  domain: { state: managed, since: 2018-09-01 }
+  seo: { state: dormant, last_active: 2023-11-01 }
+  development: { state: project-driven }
+```
+
+Entity-level summary (e.g. *"active client"*) derives from the bundle, not the other way around. The dashboard shows the bundle when you click into an org; the org's `status:` field is the rollup.
+
+This matters for the autonomy-default doctrine: when an agent decides "is this client active?", it queries the bundle. Single-status fields lose detail and force the agent to guess.
+
 ---
 
 ### Q5: Schema evolution
@@ -484,16 +621,22 @@ The reconciliation queue is where the agent surfaces its own work for review —
 
 ---
 
-## Part 6 — Watching-brief promotion (Goanna's "hotness" equivalent)
+## Part 6 — Schema-as-emergence with 1/2/3/4+ thresholds (universal)
 
-Goanna has a more deliberate promotion model than OpenHuman's automatic hotness score. From `agents/librarian/facts/fact-finding-watches.md`:
+Goanna applies the same instance-threshold rule **identically** across multiple kinds of schema. This is the *schema-as-emergence* doctrine — pre-designed schemas drift; schemas earned from 3+ instances of the same shape stick.
 
-- **n=1 observation** — captured as a "watching brief" in the entity body or in a `findings/` note. Visible but not yet canonical.
-- **n=2-3 confirmed instances** — still watching. Updated note with each new instance.
-- **n≥3 (sometimes n=2 with curator judgment)** — promoted to `wiki/knowledge/<topic>/concept.md` as canonical doctrine
-- **Some patterns promote at n=1** when "upstream-confirmed" (architectural reality, not pattern-matching)
+| Domain | n=1 | n=2 | n=3 | n=4+ |
+|---|---|---|---|---|
+| **Entity field** | Capture inline as prose in body | Extract to frontmatter | Promote to required field in collection schema | Schema-fundamental; cascade-refresh older entries |
+| **Watching brief → wiki/knowledge/** | Capture as finding or in entity body | Still watching; second confirmation | Promote to `wiki/knowledge/<topic>/concept.md` | Concept earns its place; cite in related concepts |
+| **Skill** | Note in journal | Note + light SOP in journal | Author `skills/<name>/SKILL.md` before iteration 4 | Skill is canonical; sibling agents reference it |
+| **Group-index file** | n/a | n/a | n/a | At 4+ instances mint `_<topic>-group.md`; at 15+ milestone; at 20+ consolidation |
 
-This is curator + librarian judgment, not pure auto-counting. The `relevance_score` we proposed in Part 2 is a *machine* hint that helps prioritise *human* judgment — not a replacement for it.
+**The rule across all four**: don't pre-author for hypothetical patterns. Wait for the third instance, then promote. *"Pre-designed schemas drift. Schemas earned from 3+ instances of the same shape stick."*
+
+Exception: **upstream-confirmed at n=1.** When a single instance is architectural reality verified against an authoritative source (vendor docs, ABR, regulatory standard), promote immediately. Don't wait for false confirmations.
+
+This is curator + librarian judgment, not pure auto-counting. The `relevance_score` from Part 2 is a *machine* hint that helps prioritise *agent* judgment — not a replacement for it.
 
 The combined model for Office Town:
 
@@ -557,6 +700,66 @@ In Office Town this means:
 - `wiki_links` derived from frontmatter on every write
 - Orphan + broken-link detection runs nightly (worker scheduled handler)
 - Schema-compliance checked at PUT time, surfaced in dashboard
+
+### 6. No archive folders, ever
+
+Goanna's `docs/HYGIENE.md` rule: the activity log is the audit trail. Ephemeral content is **deleted** when terminal, **never moved to an archive folder**. Before deleting, the "graduation check":
+
+> Is anything in this ephemeral file evergreen?
+> - If yes — promote to reference (knowledge, decision, finding, skill)
+> - If no — delete clean
+
+Why no archive folders: they become sinks (Part 3's gravity-wells failure mode). Content lands there because "we might need it" and never comes back out. `wiki_audit` already holds the trail of every write; the body of an entry with `status: archived` already holds historical state. Archive folders add a third location that's neither current nor audited — and the agent can't tell when to read it.
+
+This is also why Office Town's `.conflict-<ts>` files persist forever — they're *forensic*, not *archived*. Different role.
+
+### 7. The skill body template (universal)
+
+When an Office Town skill (or recipe) is authored, it follows a fixed body shape inherited from Goanna's `templates/skill/SKILL.md`:
+
+```markdown
+---
+description: "<load-bearing description — leads with the trigger>"
+---
+
+## When to invoke
+<concrete triggers as bullets/table, including negative cases>
+
+## Procedure
+<numbered steps; each is one observable action>
+
+## Non-obvious disciplines
+<ONLY when there's a genuine non-obvious trap — skip the section otherwise>
+
+## Composition with other skills
+<table of what this replaces / pairs with>
+
+## Verification
+<checklist; concrete signals you can check>
+
+## See also
+<related skills + concepts>
+
+## Last updated
+<date + change summary>
+```
+
+The 3-instance threshold from Part 6 applies: don't author a skill for hypothetical patterns. After three instances of the same procedural shape, write the SKILL.md before iteration four.
+
+### 8. Manufactured work is the recurring meta-failure
+
+Goanna names this explicitly across multiple docs (FRAMEWORK, SPECIALIST, RHYTHMS, HYGIENE):
+
+> If you catch yourself making work — posting low-signal status, drafting unprompted, inventing tasks to look busy — end the cycle.
+
+Operationally: every cycle must produce one of:
+- A new file (entry, finding, brief, skill, decision)
+- An update (existing entry, status, INDEX.md)
+- A "nothing to act on, X stable, because..." memo with reasoning
+
+The verbal signature of plateau: *"still monitoring X"*, *"watching for further developments"*, *"continuing to track"*. If the cycle's output is empty, exit cleanly — don't pad. Plateau ≠ silence.
+
+This is the autonomy-default doctrine paired with anti-coasting: agents act when there's signal, exit when there isn't. They don't pad to look productive.
 
 ---
 
