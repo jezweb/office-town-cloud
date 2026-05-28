@@ -16,6 +16,7 @@ import { dashboardRoutes } from './dashboard/routes';
 import { filesRoutes } from './files/routes';
 import { handleIndexMessage } from './queue/index-consumer';
 import { publicReaderRoutes, publishRoutes } from './publish/routes';
+import { setupRoutes } from './setup/routes';
 import type { AppContext, Env, IndexMessage } from './types';
 import { wikiRoutes } from './wiki/routes';
 import { wikiMcpRoutes } from './mcp-server/wiki';
@@ -103,6 +104,7 @@ app.route('/api/cron', cronRoutes);
 // Sync API — worker is the canonical write-orchestrator for officetowd
 // + future dashboard editors + server-side AI agents. See src/sync/routes.ts.
 app.route('/api/sync', syncRoutes);
+app.route('/', setupRoutes);
 
 // MCP servers (JSON-RPC over streamable-HTTP). Each enforces its own bearer
 // auth internally; mounted at /mcp/{name}. Goose connects to each path as a
