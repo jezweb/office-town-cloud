@@ -188,7 +188,10 @@ ${connectCallout}<h1 style="margin-top: 0;">Town overview</h1>
     <h2>Recently updated</h2>
     <ul style="margin: 0; padding-left: 1.2rem;">${recentList || '<li class="muted">Nothing yet</li>'}</ul>
   </div>
-</div>`;
+</div>
+<p class="muted" style="margin-top: 2rem; font-size: 0.9em;">
+  Running on <code>${new URL(c.req.url).host}</code>. Want a custom domain like <code>yourbiz.town</code>? <a href="/dashboard/wire-domain">~60 seconds in the Cloudflare dashboard →</a>
+</p>`;
 	return c.html(LAYOUT('Office Town - Dashboard', content));
 });
 
@@ -610,4 +613,64 @@ dashboardRoutes.post('/dashboard/claim', async (c) => {
 dashboardRoutes.get('/dashboard/sign-out', async (c) => {
 	c.header('Set-Cookie', clearSessionCookie());
 	return c.redirect('/dashboard/connect', 302);
+});
+
+// Custom-domain wiring guide — pure docs, no API. Walks the user
+// through the ~60 seconds of clicks in the Cloudflare dashboard to
+// point a custom domain at this worker. Optional — workers.dev URL
+// works fine; this is a "make it yours" bonus path.
+dashboardRoutes.get('/dashboard/wire-domain', async (c) => {
+	const reqUrl = new URL(c.req.url);
+	const workerHost = reqUrl.host;
+	// Try to extract the worker name from the host (e.g. `office-town`
+	// from `office-town.jezweb.workers.dev`). Falls back to a placeholder
+	// if the user has already attached a custom domain and we can't see
+	// the workers.dev hostname from here.
+	const workerName = workerHost.endsWith('.workers.dev')
+		? workerHost.split('.')[0]
+		: 'office-town';
+
+	const content = `
+<h1 style="margin-top: 0;">Wire a custom domain</h1>
+<p class="muted">Optional. Your worker already runs at <code>${workerHost}</code> — this guide adds a friendlier address like <code>town.example.com</code> or <code>yourbiz.town</code>.</p>
+
+<div class="card" style="max-width: 760px; margin-top: 1.5rem;">
+  <h2 style="margin-top: 0;">~60 seconds, three clicks</h2>
+  <ol style="line-height: 1.7; padding-left: 1.2rem;">
+    <li>
+      <strong>Get a domain (skip if you have one).</strong><br>
+      <a href="https://dash.cloudflare.com/?to=/:account/domains/register" target="_blank" rel="noopener">Register one through Cloudflare →</a>
+      <span class="muted">— <code>.town</code> is ~$30/yr and reads beautifully for an Office Town deployment. Or transfer in any existing domain.</span>
+    </li>
+    <li style="margin-top: 0.75rem;">
+      <strong>Add the domain to your Cloudflare account</strong> (auto-done if you registered via step 1).<br>
+      <a href="https://dash.cloudflare.com/?to=/:account" target="_blank" rel="noopener">Cloudflare dashboard → Websites → Add a site →</a>
+    </li>
+    <li style="margin-top: 0.75rem;">
+      <strong>Attach the domain to this worker.</strong><br>
+      Go to <a href="https://dash.cloudflare.com/?to=/:account/workers/services/view/${workerName}/production/domains-and-routes" target="_blank" rel="noopener">Workers → ${workerName} → Domains &amp; Routes →</a> click <em>Add → Custom Domain</em> and paste your domain (e.g. <code>town.yourbiz.com</code> or <code>yourbiz.town</code>).
+    </li>
+  </ol>
+  <p style="margin-top: 1rem; font-size: 0.9em;" class="muted">
+    Cloudflare auto-provisions an SSL cert and routes the domain to this worker. DNS propagates in seconds when the domain is on Cloudflare. After that, point Goose at the new URL via <a href="/dashboard/connect">/dashboard/connect</a> — the install script regenerates with the new URL.
+  </p>
+</div>
+
+<div class="card" style="max-width: 760px; margin-top: 1.5rem; background: #f8fafc;">
+  <h2 style="margin-top: 0;">Why bother?</h2>
+  <ul style="line-height: 1.65; margin-top: 0.5rem;">
+    <li><strong>Memorable URL</strong> — <code>jezweb.town</code> beats <code>office-town-x9k2.jezweb.workers.dev</code> in your address bar.</li>
+    <li><strong>Stable across redeploys</strong> — the workers.dev URL is fine, but if you ever rename the worker or move accounts, your Goose config breaks. Custom domains travel with you.</li>
+    <li><strong>Team-shaped feel</strong> — typing <code>@boss</code> at <code>acme.town</code> just hits different.</li>
+  </ul>
+</div>
+
+<div class="card" style="max-width: 760px; margin-top: 1.5rem;">
+  <h2 style="margin-top: 0;">Doesn't change anything else</h2>
+  <p style="margin: 0.5rem 0;">
+    The MCP bearer, the dashboard session cookie, the wiki content — all unchanged. The only thing to redo is the Goose MCP wiring (because the URL changes), and that's just running the install script from <a href="/dashboard/connect">/dashboard/connect</a> one more time.
+  </p>
+</div>`;
+
+	return c.html(LAYOUT('Wire a custom domain - Office Town', content));
 });
