@@ -404,7 +404,7 @@ if [ -z "$TAG" ]; then
 fi
 echo "→ Latest tag: $TAG"
 
-ASSET="officetowd_$\{TAG#v\}_$\{OS\}_$\{ARCH\}.tar.gz"
+ASSET="officetowd-$\{OS\}-$\{ARCH\}.tar.gz"
 URL="https://github.com/$DAEMON_REPO/releases/download/$TAG/$ASSET"
 TMP=$(mktemp -d)
 trap "rm -rf $TMP" EXIT
