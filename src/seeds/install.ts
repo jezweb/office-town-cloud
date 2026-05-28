@@ -25,7 +25,7 @@ export async function installSeedsIfNeeded(env: Env): Promise<void> {
 	// Check the flag first. We use a versioned flag name so a schema or content
 	// bump in this file forces a fresh re-seed (overwriting prior entries via
 	// INSERT OR REPLACE below).
-	const FLAG_KEY = 'seeds_installed_v3';
+	const FLAG_KEY = 'seeds_installed_v4';
 	const flag = await env.DB.prepare('SELECT value FROM worker_config WHERE key = ?')
 		.bind(FLAG_KEY)
 		.first<{ value: string }>();
