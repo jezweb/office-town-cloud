@@ -76,7 +76,84 @@ The Goanna 6-question pattern, ported. For users who:
 
 The setup skill walks them through identity → voice → work → business → rhythm → expertise → opinions, writing as it goes.
 
-### All three paths converge on the same routing table
+### Path 4 — Web-fetch from public profiles (lightweight, complementary)
+
+Modern AIs have web access. Instead of asking 5 questions about the user's business + role + history, ask once:
+
+> *"Any URLs you'd like me to look at? Your website, LinkedIn, GitHub, Twitter, anything that introduces you publicly?"*
+
+User pastes 1-5 URLs. The onboarding agent fetches each, runs Workers AI extraction, drops the content into the right cortex slots:
+
+| URL type | Lands in |
+|---|---|
+| Personal/business website | `wiki/business/<biz>/entity.md` body + `wiki/owner/bio.md` |
+| LinkedIn profile | `wiki/owner/bio.md` + `wiki/owner/expertise.md` (career history, skills) |
+| GitHub profile | `wiki/owner/expertise.md` (languages, repos, README) + `wiki/projects/` (active repos as projects) |
+| Twitter/X bio + recent posts | `wiki/owner/voice.md` signal (tone, topics) — light touch, the bio is short |
+| Personal blog or portfolio | `wiki/owner/expertise.md` + `wiki/owner/opinions.md` (recent posts surface stances) |
+
+For services requiring auth (LinkedIn full profile, gated content): agent either uses the user's Goose-installed connector MCPs if available, OR prompts the user to copy-paste content directly. No silent scraping.
+
+The web-fetch path is lower depth than the dossier path but very cheap — the user supplies a URL, the agent does the rest.
+
+### Path 5 — Folder-dump (the operational-artifact path)
+
+The user has folders of work artefacts: contracts, brochures, P&L spreadsheets, voice guidelines, sample emails, recent quotes, team photos, logo files. They use these documents every day; they're more honest about how the business actually operates than any summary.
+
+The folder-dump path:
+
+1. Office Town's officetowd daemon syncs `~/Documents/my-town/`
+2. There's a designated drop folder: `~/Documents/my-town/wiki/inbox/onboarding/`
+3. User dumps files into it — could be 5 files, could be 50
+4. Curator persona (interactive session or scheduled scan) processes the folder:
+   - PDFs → text extraction → classify (contract / brochure / spec / financial / etc.) → route per the table
+   - Images → vision-LLM description → classify (logo / product photo / team photo / org chart) → route
+   - Spreadsheets → first-sheet parse → look for client lists / contact lists / project lists → route per row
+   - Markdown / text → direct classify → route
+5. Curator summarises: *"I processed N files: M went into orgs, K into projects, J into contacts, L into raw/ for reference. Have a look at the dashboard to verify."*
+6. Files that don't classify get an `inbox/needs-review.md` finding with the path + a guess at where it might belong
+
+Why this works:
+- **Lower friction than copy-paste.** "Drop 20 files in a folder" is a 1-minute task; "summarise these 20 documents and paste the summary" is a 20-minute task users won't do
+- **Binary-safe.** Logos, photos, signed PDF contracts all flow through without re-encoding
+- **The user is selective.** They don't need to dump *everything* — just what they'd put in the metaphorical "filing box if I had to start over" (per Jez's framing)
+- **Scales naturally.** 50 documents vs 5 documents: same pattern, no extra UX
+- **It composes with the dossier path.** Dossier provides voice + preferences (the AI-observed self); folder-dump provides operational artifacts (the work itself). Both can run in the same onboarding session.
+
+### Four signal sources, one routing table
+
+We now have four complementary signal sources for onboarding, each capturing a different dimension:
+
+| Source | Captures | Mechanism | Effort for user |
+|---|---|---|---|
+| **Dossier extraction** (path 1 / 2 / 3) | AI-observed *behavioural* self — voice, preferences, work style | Paste prompt into existing AI; paste result back | 5-30 min depending on depth |
+| **Web-fetch** (path 4) | Self-*projected* / public-facing presentation | Paste 1-5 URLs; agent fetches + extracts | 1 min |
+| **Folder-dump** (path 5) | Real *operational* artefacts — documents used in work | Drop files in `~/Documents/my-town/wiki/inbox/onboarding/` | 5-15 min selecting files |
+| **Conversational walkthrough** (fallback) | Whatever the user is willing to volunteer interactively | Goanna-style 6-question flow | 15-30 min |
+
+All four converge on the same routing table. None alone is complete; together they're rich. The setup skill ships them in priority order:
+
+1. **Default: dossier path + web-fetch** (combined) — covers behavioural + presentational dimensions in ~5-10 min
+2. **Recommended add-on: folder-dump** — for operational depth
+3. **Fallback only: conversational** — when the user has no prior AI history + no useful URLs
+
+### Path 5 mechanics for v1.0
+
+The folder-dump is implemented as:
+
+- **Drop folder**: `~/Documents/my-town/wiki/inbox/onboarding/` (under the officetowd-synced folder)
+- **Trigger**: user runs `/skills office-town-process-onboarding-folder` OR the onboarding setup skill auto-scans it as step 3
+- **Per-file pipeline**:
+  - **.md / .txt** → read direct, run classifier
+  - **.pdf** → Cloudflare AI PDF extraction → classify → route
+  - **.png / .jpg / .heic** → vision-LLM (`@cf/meta/llama-3.2-11b-vision` or similar) → classify (logo / photo / chart / doc) → route to attachments or extract content
+  - **.csv / .xlsx** → parse first sheet → look for known shapes (contact list, client list, project list) → route per row OR write as a `raw/spreadsheet-<sha>.md` reference
+  - **other** → write to `wiki/raw/uploads/<sha-prefix>/<filename>` as binary; create stub note in `inbox/needs-review.md`
+- **Output**: summary in journal + `inbox/processed-<date>.md` log
+
+The folder isn't deleted after processing — files stay there as an audit trail. User can move them to archive when ready.
+
+### All paths converge on the same routing table
 
 | Source content | Lands in |
 |---|---|
