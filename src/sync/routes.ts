@@ -214,14 +214,21 @@ async function upsertWikiEntry(env: Env, key: string, body: string, bodyHash: st
 			}
 		}
 	}
-	const title =
-		(frontmatter.name as string | undefined) ??
-		(frontmatter.title as string | undefined) ??
-		wikiKey.slug;
+	// YAML parses dates ('2026-05-28') as JS Date objects. D1.bind() rejects
+	// non-primitive values, so we coerce everything that might land in a
+	// bound parameter back to its string form.
+	const asString = (v: unknown): string | undefined => {
+		if (v == null) return undefined;
+		if (typeof v === 'string') return v;
+		if (v instanceof Date) return v.toISOString().slice(0, 10);
+		return String(v);
+	};
+
+	const title = asString(frontmatter.name) ?? asString(frontmatter.title) ?? wikiKey.slug;
 
 	const id = `${wikiKey.collection}:${wikiKey.slug}`;
 	const now = new Date().toISOString();
-	const uuid = ((frontmatter.uuid as string | undefined) ?? crypto.randomUUID());
+	const uuid = asString(frontmatter.uuid) ?? crypto.randomUUID();
 
 	await env.DB.prepare(
 		`INSERT INTO wiki_entries
@@ -243,12 +250,12 @@ async function upsertWikiEntry(env: Env, key: string, body: string, bodyHash: st
 			wikiKey.slug,
 			key,
 			title,
-			JSON.stringify(frontmatter),
+			JSON.stringify(frontmatter), // JSON.stringify handles Date objects correctly
 			bodyOnly,
 			bodyHash,
-			(frontmatter.last_change_summary as string | undefined) ?? `synced from ${machineId}`,
-			(frontmatter.last_edited_by as string | undefined) ?? `officetowd:${machineId}`,
-			(frontmatter.created as string | undefined) ?? now,
+			asString(frontmatter.last_change_summary) ?? `synced from ${machineId}`,
+			asString(frontmatter.last_edited_by) ?? `officetowd:${machineId}`,
+			asString(frontmatter.created) ?? now,
 			now,
 			uuid,
 		)
