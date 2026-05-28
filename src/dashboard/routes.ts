@@ -682,13 +682,12 @@ dashboardRoutes.get('/dashboard/wiki/:collection/:slug', async (c) => {
 </nav>
 <h1 style="margin-top: 0;">${escapeHtml(row.title ?? row.slug)}</h1>
 <div class="card" style="margin-bottom: 1.5rem;">
-  <h2>Frontmatter</h2>
-  <table>${fmRows}</table>
-</div>
-<div class="card">
-  <h2>Body</h2>
   <div>${innerBody}</div>
-</div>`;
+</div>
+<details class="card" style="margin-bottom: 1.5rem;">
+  <summary style="cursor: pointer; font-family: 'Trajan Pro', 'Optima', 'Palatino', Georgia, serif; font-weight: 600; font-size: 1.05rem; letter-spacing: 0.02em; color: var(--ink);">Frontmatter</summary>
+  <table style="margin-top: 0.75rem;">${fmRows}</table>
+</details>`;
 	return c.html(LAYOUT(row.title ?? row.slug, content));
 });
 
