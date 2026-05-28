@@ -191,6 +191,70 @@ async function sha256Hex(buf: ArrayBuffer): Promise<string> {
 		.join('');
 }
 
+// Upsert a wiki_entries row for a markdown PUT. Mirrors the schema used
+// by the WikiService — we re-use the same table so dashboard/MCP queries
+// see the synced entry. Without this, the bytes are in R2 but the D1
+// index doesn't know about them and `wiki(action:list)` returns empty.
+async function upsertWikiEntry(env: Env, key: string, body: string, bodyHash: string, machineId: string): Promise<void> {
+	const wikiKey = parseWikiKey(key);
+	if (!wikiKey || !key.endsWith('.md')) return;
+
+	// Parse frontmatter (may be missing or repair-failed — fall back gracefully)
+	let frontmatter: Record<string, unknown> = {};
+	let bodyOnly = body;
+	if (body.startsWith('---')) {
+		const end = body.indexOf('\n---', 3);
+		if (end >= 0) {
+			try {
+				frontmatter = (yaml.load(body.slice(3, end).trim()) as Record<string, unknown>) ?? {};
+				bodyOnly = body.slice(end + 4).replace(/^\s*\n/, '');
+			} catch {
+				// Already tried to repair in the PUT handler; if it still
+				// fails just store empty frontmatter and full body.
+			}
+		}
+	}
+	const title =
+		(frontmatter.name as string | undefined) ??
+		(frontmatter.title as string | undefined) ??
+		wikiKey.slug;
+
+	const id = `${wikiKey.collection}:${wikiKey.slug}`;
+	const now = new Date().toISOString();
+	const uuid = ((frontmatter.uuid as string | undefined) ?? crypto.randomUUID());
+
+	await env.DB.prepare(
+		`INSERT INTO wiki_entries
+			(id, collection, slug, r2_key, title, frontmatter_json, body, body_hash, last_change_summary, last_edited_by, created_at, updated_at, status, uuid)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?)
+		 ON CONFLICT(id) DO UPDATE SET
+			r2_key = excluded.r2_key,
+			title = excluded.title,
+			frontmatter_json = excluded.frontmatter_json,
+			body = excluded.body,
+			body_hash = excluded.body_hash,
+			last_change_summary = excluded.last_change_summary,
+			last_edited_by = excluded.last_edited_by,
+			updated_at = excluded.updated_at`,
+	)
+		.bind(
+			id,
+			wikiKey.collection,
+			wikiKey.slug,
+			key,
+			title,
+			JSON.stringify(frontmatter),
+			bodyOnly,
+			bodyHash,
+			(frontmatter.last_change_summary as string | undefined) ?? `synced from ${machineId}`,
+			(frontmatter.last_edited_by as string | undefined) ?? `officetowd:${machineId}`,
+			(frontmatter.created as string | undefined) ?? now,
+			now,
+			uuid,
+		)
+		.run();
+}
+
 // ============================================================
 // Endpoints
 // ============================================================
@@ -234,6 +298,18 @@ app.put('/object/*', async (c) => {
 		agent_slug: machineId === 'unknown' ? 'sync-api' : `officetowd:${machineId}`,
 		why: `${userIntent}${repairNote}`,
 	});
+	// Update D1 wiki_entries so the dashboard + MCPs see the synced entry.
+	// Only fires for wiki/*/*.md keys; no-op for binary attachments + files/.
+	if (wikiKey && key.endsWith('.md')) {
+		try {
+			const bodyText = new TextDecoder().decode(body);
+			await upsertWikiEntry(c.env, key, bodyText, hash, machineId);
+		} catch (err) {
+			// Don't fail the PUT if the D1 upsert hiccups — R2 has the bytes,
+			// queue consumer can re-derive D1 on its retry.
+			console.error(JSON.stringify({ event: 'wiki_entry_upsert_failed', key, error: String(err) }));
+		}
+	}
 	await queueIndex(c.env, key, 'index');
 
 	return c.json({
