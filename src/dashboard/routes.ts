@@ -563,7 +563,7 @@ function generateScript() {
     "",
     "WORKER_URL=" + escapeShell(urlSafe),
     "BEARER=" + escapeShell(bearerSafe),
-    "AUTH_HEADER=\"Authorization: Bearer $BEARER\"",
+    'AUTH_HEADER="Authorization: Bearer $BEARER"',
     "",
     "echo 'Disabling Goose built-in Memory — wiki MCP replaces it.'",
     "goose mcp disable memory 2>/dev/null || true",
@@ -574,8 +574,8 @@ function generateScript() {
     lines.push("echo 'Adding office-town-" + name + " (" + name + " MCP)...'");
     lines.push("goose mcp add office-town-" + name + " \\\\");
     lines.push("  --transport streamable_http \\\\");
-    lines.push("  --url \"$WORKER_URL/mcp/" + name + "\" \\\\");
-    lines.push("  --header \"$AUTH_HEADER\"");
+    lines.push('  --url "$WORKER_URL/mcp/' + name + '" \\\\');
+    lines.push('  --header "$AUTH_HEADER"');
     lines.push("");
   }
 
@@ -618,7 +618,7 @@ function generateAgentPrompt() {
     "",
     "2. Verify the deployment URL is reachable:",
     "     curl -s " + urlSafe + "/health",
-    "   Should return {\"status\":\"ok\",\"service\":\"office-town\",...}",
+    '   Should return {"status":"ok","service":"office-town",...}',
     "",
     "3. Disable Goose's built-in Memory extension (wiki MCP replaces it):",
     "     goose mcp disable memory",
@@ -629,7 +629,7 @@ function generateAgentPrompt() {
     "       goose mcp add office-town-$name \\\\",
     "         --transport streamable_http \\\\",
     "         --url " + urlSafe + "/mcp/$name \\\\",
-    "         --header \"Authorization: Bearer " + bearerSafe + "\"",
+    '         --header "Authorization: Bearer ' + bearerSafe + '"',
     "     done",
     "",
     "5. Verify all 6 MCPs registered:",
