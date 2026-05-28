@@ -10,6 +10,7 @@ import { cors } from 'hono/cors';
 import { authMiddleware } from './auth/middleware';
 import { dashboardGate } from './auth/dashboard-gate';
 import { ensureSchema } from './bootstrap';
+import { installSeedsIfNeeded } from './seeds/install';
 import { cronRoutes } from './cron/routes';
 import { dashboardRoutes } from './dashboard/routes';
 import { filesRoutes } from './files/routes';
@@ -65,6 +66,18 @@ app.use(
 // is a no-op early return.
 app.use('*', async (c, next) => {
 	await ensureSchema(c.env);
+	// Seed example entries on first cold start (memoised; cheap thereafter).
+	// Don't block the request if seeding fails — log + continue.
+	try {
+		await installSeedsIfNeeded(c.env);
+	} catch (err) {
+		console.error(
+			JSON.stringify({
+				event: 'seed_install_unhandled_error',
+				error: err instanceof Error ? err.message : String(err),
+			}),
+		);
+	}
 	return next();
 });
 
