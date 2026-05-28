@@ -1,17 +1,29 @@
 # Secrets for the Office Town worker.
-# When deploying via the "Deploy to Cloudflare" button, Cloudflare reads
-# this file and prompts you to fill in each value during the deploy flow.
-# Empty defaults force you to provide them.
+#
+# Cloudflare's "Deploy to Cloudflare" button reads this file and surfaces
+# each variable as a form field. ALL four are optional — the worker boots
+# fine with every field blank. Set any of them post-deploy via
+# `wrangler secret put NAME` if/when you need them.
 
-# REQUIRED — gates the HTTP API + all 4 MCP servers (wiki, files, browser, email).
-# Generate via: openssl rand -hex 32
+# OPTIONAL — gates the HTTP API + all 6 MCP servers.
+# Leave blank to let the worker auto-generate one on first request
+# (it's stored in D1 worker_config and surfaced on /dashboard/connect).
+# Only set this explicitly if you want to choose your own value, or for
+# shared/team deployments where rotating the token shouldn't lose anyone.
+# To rotate later: wrangler secret put MCP_BEARER_TOKEN
 MCP_BEARER_TOKEN=
 
-# REQUIRED — better-auth session secret for the dashboard.
-# Generate via: openssl rand -hex 32
+# OPTIONAL — better-auth session signing secret. Only used if you enable
+# the dashboard sign-in flow (Google OAuth) via the two GOOGLE_* fields
+# below. Leave blank if you'll just use the MCP-bearer claim-on-first-
+# visit dashboard auth (the default).
+# To generate when needed: openssl rand -hex 32
 BETTER_AUTH_SECRET=
 
-# OPTIONAL — for dashboard Google sign-in.
+# OPTIONAL — Google OAuth credentials for dashboard sign-in. Add these
+# only if you want team members to sign into the dashboard with their
+# Google accounts (instead of the single MCP-bearer claim flow). Set
+# ALLOWED_AUTH_DOMAINS in wrangler.jsonc to restrict to your domain(s).
 # Get from https://console.cloud.google.com/apis/credentials
 GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=

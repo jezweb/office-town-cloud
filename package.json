@@ -44,5 +44,21 @@
     "node": ">=20",
     "pnpm": ">=9"
   },
-  "packageManager": "pnpm@9.15.0"
+  "packageManager": "pnpm@9.15.0",
+  "cloudflare": {
+    "bindings": {
+      "MCP_BEARER_TOKEN": {
+        "description": "**Leave blank** — the worker auto-generates a token on first request and surfaces it at `/dashboard/connect`. Only set this if you want to choose your own value. Rotate later via `wrangler secret put MCP_BEARER_TOKEN`."
+      },
+      "BETTER_AUTH_SECRET": {
+        "description": "**Leave blank** unless you're wiring Google sign-in (next two fields). Generate when needed via `openssl rand -hex 32`."
+      },
+      "GOOGLE_CLIENT_ID": {
+        "description": "**Leave blank** unless you want team members to sign into the dashboard with Google. Default dashboard auth uses the MCP bearer (claim on first visit)."
+      },
+      "GOOGLE_CLIENT_SECRET": {
+        "description": "**Leave blank** unless wiring Google sign-in. Pair with `GOOGLE_CLIENT_ID` from `https://console.cloud.google.com/apis/credentials`."
+      }
+    }
+  }
 }
