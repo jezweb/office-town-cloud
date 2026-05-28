@@ -10,6 +10,9 @@
 		"logs": { "invocation_logs": true, "head_sampling_rate": 1 }
 	},
 
+	// On first self-deploy: run `wrangler d1 create office-town-d1` and paste
+	// the returned id below. The "Deploy to Cloudflare" button on the README
+	// substitutes the id automatically — placeholder is fine for that path.
 	"d1_databases": [
 		{
 			"binding": "DB",
