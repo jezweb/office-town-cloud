@@ -104,7 +104,12 @@
 
 	"vars": {
 		"ENVIRONMENT": "production",
-		"ALLOWED_AUTH_DOMAINS": "jezweb.net,jezweb.com.au",
+		// Comma-separated email domains allowed to sign in via Google OAuth
+		// (only matters if you wire GOOGLE_CLIENT_ID + _SECRET later). Leave
+		// empty to require setting it explicitly before enabling Google sign-in.
+		"ALLOWED_AUTH_DOMAINS": "",
+		// Used as the From: address on outbound emails via Email Routing.
+		// Change to a verified destination on your domain.
 		"DEFAULT_FROM_EMAIL": "agent@example.com",
 		"DEFAULT_FROM_NAME": "Office Town Agent"
 	},
