@@ -11,6 +11,7 @@ import {
 import { renderMarkdownToHtml } from '../publish/service';
 import type { AppContext } from '../types';
 import { loadTownStats, renderTownView } from './town-view';
+import { PROMPT_VARIANTS } from '../setup/prompts';
 
 export const dashboardRoutes = new Hono<AppContext>();
 
@@ -223,38 +224,65 @@ dashboardRoutes.get('/', async (c) => {
 	return c.html(renderTownView(stats, workerHost));
 });
 
-// Dossier-paste setup surface — pastes one big multi-file blob with file
-// boundaries detected by H1 headings matching <filename>.md. Submits to
-// /api/setup/dossier; renders the result summary inline.
+// Dossier-paste setup surface — inline prompts + file upload + paste textarea
+// + result summary. Three paths to populate (file upload / paste / future
+// path 5 mixed-type workflow), one routing endpoint.
 dashboardRoutes.get('/dashboard/setup', async (c) => {
 	const effectiveBearer = await getEffectiveBearer(c.env);
 
+	const promptCards = PROMPT_VARIANTS.map(
+		(v) => `
+<details class="prompt-detail" ${v.recommended ? 'open' : ''}>
+  <summary>
+    <strong>${escapeHtml(v.title)}</strong>${v.recommended ? ' <span class="tag" style="background: var(--accent); color: white; border-color: var(--accent); margin-left: 0.4rem;">recommended</span>' : ''}
+    <div class="muted" style="font-size: 0.85em; margin: 0.25rem 0 0 0; font-weight: 400;">${escapeHtml(v.shortDescription)}</div>
+  </summary>
+  <div style="margin-top: 0.75rem;">
+    <div style="display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.5rem;">
+      <button type="button" onclick="copyPrompt('${v.id}')" style="font-size: 0.85em; padding: 0.35rem 0.75rem;">Copy prompt</button>
+      <span id="copy-status-${v.id}" class="muted" style="font-size: 0.85em;"></span>
+    </div>
+    <pre id="prompt-text-${v.id}" style="background: var(--code); border: 1px solid var(--border); border-radius: 6px; padding: 1rem; font-size: 0.82em; line-height: 1.55; white-space: pre-wrap; max-height: 360px; overflow-y: auto;">${escapeHtml(v.body)}</pre>
+  </div>
+</details>`,
+	).join('');
+
 	const content = `
+<style>
+.prompt-detail { background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; padding: 0.75rem 1rem; margin-bottom: 0.75rem; }
+.prompt-detail summary { cursor: pointer; padding: 0.25rem 0; }
+.prompt-detail summary::marker, .prompt-detail summary::-webkit-details-marker { color: var(--accent); }
+.file-list { margin: 0.75rem 0; padding: 0; list-style: none; font-family: ui-monospace, monospace; font-size: 0.85em; }
+.file-list li { padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; }
+.file-list li:last-child { border-bottom: 0; }
+.file-list .file-name { flex: 1; }
+.file-list .file-meta { color: var(--muted); font-size: 0.85em; }
+.file-list .file-remove { color: var(--red); cursor: pointer; background: transparent; border: 0; font-size: 0.95em; padding: 0.2rem 0.5rem; }
+.file-list .file-unsupported { color: var(--amber); font-size: 0.8em; font-style: italic; }
+.drop-zone { border: 2px dashed var(--border); border-radius: 8px; padding: 1.5rem; text-align: center; cursor: pointer; transition: background 0.15s ease, border-color 0.15s ease; }
+.drop-zone:hover, .drop-zone.dragover { background: var(--bg-warmer); border-color: var(--accent); }
+.drop-zone-prompt { color: var(--ink-soft); font-size: 0.95em; }
+.drop-zone-hint { color: var(--muted); font-size: 0.85em; margin-top: 0.4rem; }
+</style>
+
 <h1 style="margin-top: 0;">Set up your town</h1>
-<p class="muted" style="max-width: 720px;">
-  Paste the output from a dossier-extraction prompt run against your existing AI
-  (Claude / Gemini / ChatGPT). The setup routes each file to the right cortex collection:
-  <code>bio.md</code> + <code>voice.md</code> + similar go to your <a href="/dashboard/wiki?c=owner">owner</a> cascade;
+<p class="muted" style="max-width: 760px;">
+  Bring context across from your existing AI. Office Town routes the output into the right cortex collection:
+  <code>bio.md</code>, <code>voice.md</code>, and other owner files go to the <a href="/dashboard/wiki?c=owner">owner</a> cascade;
   <code>people.md</code> splits into <a href="/dashboard/wiki?c=contacts">contacts</a> + <a href="/dashboard/wiki?c=team">team</a> + <a href="/dashboard/wiki?c=orgs">orgs</a>;
-  <code>projects.md</code> splits into <a href="/dashboard/wiki?c=projects">projects</a>; and unknown files land in <code>wiki/raw/</code> for review.
+  <code>projects.md</code> splits into <a href="/dashboard/wiki?c=projects">projects</a>; unknown markdown lands in <code>wiki/raw/</code> for review.
 </p>
 
 <div class="card" style="max-width: 920px; margin-top: 1rem;">
-  <h2 style="margin-top: 0;">Don't have a dossier yet?</h2>
-  <p class="muted" style="margin: 0.4rem 0;">
-    Run one of the dossier prompts against your existing AI first. The three variants live in the
-    <a href="https://docs.google.com/document/d/1Kvl7aTrF1WdrSgVrL5UU2M7nj2QAkzCdsdnCpqYV6pA/edit" target="_blank">Office Town dossier prompts doc</a>
-    (sharable Google Doc). Variant 2 is the recommended default — it produces ~11 separate files as artifacts.
-    Once you have the output, paste it below.
+  <h2 style="margin-top: 0;">Step 1 — Get a dossier</h2>
+  <p class="muted" style="margin: 0.4rem 0 1rem;">
+    Open Claude / ChatGPT / Gemini, copy one of the prompts below, paste it into your existing chat, and the AI writes a dossier from your prior conversations. Three variants: pick the one that suits your AI and how much depth you want.
   </p>
+  ${promptCards}
 </div>
 
 <div class="card" style="max-width: 920px; margin-top: 1.5rem;">
-  <h2 style="margin-top: 0;">Paste your dossier</h2>
-  <p class="muted" style="margin: 0.4rem 0;">
-    Paste the multi-file output. Files are detected automatically by H1 headings (e.g. <code># voice.md</code>, <code># people.md</code>).
-    Each H1 starts a new file. Content before the first H1 is ignored.
-  </p>
+  <h2 style="margin-top: 0;">Step 2 — Bring the dossier into your town</h2>
 
   <div style="margin: 0.75rem 0;">
     <label style="display: block; font-size: 0.85em; color: var(--muted); margin-bottom: 0.25rem;">Source AI (for audit attribution)</label>
@@ -266,11 +294,28 @@ dashboardRoutes.get('/dashboard/setup', async (c) => {
     </select>
   </div>
 
-  <textarea id="dossier-textarea" placeholder="# bio.md\n\n## Name and what to call them\n...\n\n# voice.md\n\n## Overall register\n..." rows="20" style="width: 100%; font-family: ui-monospace, SFMono-Regular, monospace; font-size: 0.85em; padding: 0.75rem; line-height: 1.5;"></textarea>
+  <p class="muted" style="margin: 1rem 0 0.5rem;">Drop files (markdown / text supported now; PDF / image / spreadsheet coming in v1.1):</p>
+  <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
+    <div class="drop-zone-prompt">Click here or drag files in</div>
+    <div class="drop-zone-hint">Markdown (.md) and text (.txt) processed immediately. Other types (PDF, images, spreadsheets) accepted but flagged for v1.1 processing.</div>
+    <input type="file" id="file-input" multiple style="display: none;" accept=".md,.txt,.markdown,.pdf,.png,.jpg,.jpeg,.csv,.xlsx,.docx" onchange="handleFiles(event.target.files)">
+  </div>
+
+  <p class="muted" style="margin: 1.25rem 0 0.5rem;">— or paste a single multi-file dossier (boundaries detected by <code># &lt;filename&gt;.md</code> headings):</p>
+  <textarea id="dossier-textarea" placeholder="# bio.md&#10;&#10;## Name and what to call them&#10;...&#10;&#10;# voice.md&#10;&#10;## Overall register&#10;..." rows="14" style="width: 100%; font-family: ui-monospace, SFMono-Regular, monospace; font-size: 0.85em; padding: 0.75rem; line-height: 1.5;"></textarea>
+  <div style="margin: 0.5rem 0;">
+    <button type="button" onclick="loadFromTextarea()" style="font-size: 0.85em; padding: 0.4rem 0.85rem; background: transparent; color: var(--accent-deep); border: 1px solid var(--accent-deep);">Add pasted content</button>
+  </div>
+</div>
+
+<div class="card" id="files-card" style="max-width: 920px; margin-top: 1.5rem; display: none;">
+  <h2 style="margin-top: 0;">Files staged for setup</h2>
+  <ul class="file-list" id="file-list"></ul>
 
   <div style="display: flex; gap: 0.75rem; align-items: center; margin: 1rem 0 0.5rem;">
     <button type="button" id="setup-preview-btn" onclick="runSetup(true)" style="background: transparent; color: var(--accent-deep); border: 1px solid var(--accent-deep);">Preview (dry-run)</button>
     <button type="button" id="setup-apply-btn" onclick="runSetup(false)">Apply to cortex</button>
+    <button type="button" onclick="clearAllFiles()" style="background: transparent; color: var(--muted); border: 1px solid var(--border); margin-left: auto;">Clear all</button>
     <span id="setup-status" class="muted" style="font-size: 0.9em;"></span>
   </div>
 </div>
@@ -284,14 +329,38 @@ dashboardRoutes.get('/dashboard/setup', async (c) => {
 
 <script>
 const BEARER = ${JSON.stringify(effectiveBearer)};
+const PROMPT_BODIES = ${JSON.stringify(Object.fromEntries(PROMPT_VARIANTS.map((v) => [v.id, v.body])))};
+
+const TEXT_EXTENSIONS = new Set(['md', 'markdown', 'txt']);
+const FUTURE_EXTENSIONS = new Set(['pdf', 'png', 'jpg', 'jpeg', 'csv', 'xlsx', 'docx']);
+
+// Staged-files store: { id, filename, content, supported, source }
+let stagedFiles = [];
+let nextFileId = 1;
+
+function copyPrompt(variantId) {
+  const text = PROMPT_BODIES[variantId];
+  const status = document.getElementById('copy-status-' + variantId);
+  if (!text) {
+    status.textContent = 'Prompt not found';
+    status.style.color = 'var(--red)';
+    return;
+  }
+  navigator.clipboard.writeText(text).then(() => {
+    status.textContent = '✓ Copied — paste into your AI';
+    status.style.color = 'var(--green)';
+    setTimeout(() => { status.textContent = ''; }, 2500);
+  }).catch((err) => {
+    status.textContent = 'Copy failed: ' + err.message;
+    status.style.color = 'var(--red)';
+  });
+}
 
 function splitDossier(text) {
-  // Find H1 headings like "# foo.md" — those mark file boundaries.
   const lines = text.split('\\n');
   const files = [];
   let current = null;
   const fileHeading = /^#\\s+([a-z][a-z0-9_-]*\\.md)\\s*$/i;
-
   for (const line of lines) {
     const m = line.match(fileHeading);
     if (m) {
@@ -303,6 +372,128 @@ function splitDossier(text) {
   }
   if (current) files.push(current);
   return files;
+}
+
+function getExt(filename) {
+  const parts = filename.toLowerCase().split('.');
+  return parts.length > 1 ? parts[parts.length - 1] : '';
+}
+
+function isSupported(filename) {
+  return TEXT_EXTENSIONS.has(getExt(filename));
+}
+
+function isFuture(filename) {
+  return FUTURE_EXTENSIONS.has(getExt(filename));
+}
+
+function renderFileList() {
+  const card = document.getElementById('files-card');
+  const list = document.getElementById('file-list');
+  list.textContent = '';
+
+  if (stagedFiles.length === 0) {
+    card.style.display = 'none';
+    return;
+  }
+
+  card.style.display = 'block';
+  for (const f of stagedFiles) {
+    const li = document.createElement('li');
+
+    const nameEl = document.createElement('span');
+    nameEl.className = 'file-name';
+    nameEl.textContent = f.filename;
+
+    const metaEl = document.createElement('span');
+    metaEl.className = 'file-meta';
+    metaEl.textContent = (f.content.length / 1024).toFixed(1) + ' KB · ' + f.source;
+
+    li.appendChild(nameEl);
+    li.appendChild(metaEl);
+
+    if (!f.supported) {
+      const futureEl = document.createElement('span');
+      futureEl.className = 'file-unsupported';
+      futureEl.textContent = isFuture(f.filename) ? 'v1.1 processing' : 'unsupported';
+      li.appendChild(futureEl);
+    }
+
+    const removeBtn = document.createElement('button');
+    removeBtn.type = 'button';
+    removeBtn.className = 'file-remove';
+    removeBtn.textContent = '✕';
+    removeBtn.title = 'Remove';
+    removeBtn.dataset.fileId = String(f.id);
+    removeBtn.addEventListener('click', (e) => {
+      const id = parseInt(e.currentTarget.dataset.fileId, 10);
+      stagedFiles = stagedFiles.filter((sf) => sf.id !== id);
+      renderFileList();
+    });
+    li.appendChild(removeBtn);
+
+    list.appendChild(li);
+  }
+}
+
+function addFile(filename, content, source) {
+  const supported = isSupported(filename);
+  stagedFiles.push({
+    id: nextFileId++,
+    filename,
+    content,
+    supported,
+    source,
+  });
+  renderFileList();
+}
+
+function handleFiles(fileList) {
+  for (const file of fileList) {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const result = e.target.result;
+      // For unsupported binary types, still capture a tiny placeholder so the
+      // user can see we acknowledged it. v1.1 will replace with actual content.
+      const content = typeof result === 'string'
+        ? result
+        : '(binary file ' + file.name + ', ' + Math.round(file.size / 1024) + ' KB — v1.1 processing)';
+      addFile(file.name, content, 'upload');
+    };
+    if (isSupported(file.name)) {
+      reader.readAsText(file);
+    } else {
+      // Don't try to read binary as text; placeholder only
+      reader.onload({ target: { result: null } });
+    }
+  }
+  // Reset the input so the same file can be re-uploaded if needed
+  document.getElementById('file-input').value = '';
+}
+
+function loadFromTextarea() {
+  const text = document.getElementById('dossier-textarea').value.trim();
+  if (!text) return;
+  const files = splitDossier(text);
+  if (files.length === 0) {
+    const status = document.getElementById('setup-status');
+    status.textContent = 'No file boundaries detected in textarea. Each file should start with "# <filename>.md".';
+    status.style.color = 'var(--red)';
+    return;
+  }
+  for (const f of files) {
+    addFile(f.filename, f.content, 'paste');
+  }
+  document.getElementById('dossier-textarea').value = '';
+}
+
+function clearAllFiles() {
+  stagedFiles = [];
+  renderFileList();
+  const result = document.getElementById('setup-result');
+  result.style.display = 'none';
+  const status = document.getElementById('setup-status');
+  status.textContent = '';
 }
 
 function renderPlannedList(planned) {
@@ -333,27 +524,28 @@ function renderApplyCta() {
 }
 
 async function runSetup(dryRun) {
-  const text = document.getElementById('dossier-textarea').value.trim();
   const source = document.getElementById('setup-source').value;
   const status = document.getElementById('setup-status');
   const resultDiv = document.getElementById('setup-result');
   const summaryEl = document.getElementById('setup-summary');
   const ctaEl = document.getElementById('setup-cta');
 
-  if (!text) {
-    status.textContent = 'Paste your dossier first.';
+  const supportedFiles = stagedFiles
+    .filter((f) => f.supported)
+    .map((f) => ({ filename: f.filename, content: f.content }));
+
+  if (supportedFiles.length === 0) {
+    status.textContent = 'No supported files staged. Add markdown (.md) or text (.txt) files first.';
     status.style.color = 'var(--red)';
     return;
   }
 
-  const files = splitDossier(text);
-  if (files.length === 0) {
-    status.textContent = 'No file boundaries detected. Make sure each file starts with "# <filename>.md".';
-    status.style.color = 'var(--red)';
-    return;
-  }
+  const unsupportedCount = stagedFiles.length - supportedFiles.length;
+  const noteAboutUnsupported = unsupportedCount > 0
+    ? ' ' + unsupportedCount + ' file' + (unsupportedCount === 1 ? '' : 's') + ' deferred to v1.1.'
+    : '';
 
-  status.textContent = 'Sending ' + files.length + ' file' + (files.length === 1 ? '' : 's') + ' to setup endpoint…';
+  status.textContent = 'Sending ' + supportedFiles.length + ' file' + (supportedFiles.length === 1 ? '' : 's') + ' to setup endpoint…' + noteAboutUnsupported;
   status.style.color = 'var(--ink-soft)';
   resultDiv.style.display = 'none';
   ctaEl.textContent = '';
@@ -365,7 +557,7 @@ async function runSetup(dryRun) {
         'Content-Type': 'application/json',
         'Authorization': 'Bearer ' + BEARER,
       },
-      body: JSON.stringify({ files, source, dry_run: dryRun }),
+      body: JSON.stringify({ files: supportedFiles, source, dry_run: dryRun }),
     });
 
     const data = await response.json();
@@ -377,7 +569,7 @@ async function runSetup(dryRun) {
       return;
     }
 
-    status.textContent = dryRun ? '✓ Preview generated' : '✓ Applied to cortex';
+    status.textContent = (dryRun ? '✓ Preview generated.' : '✓ Applied to cortex.') + noteAboutUnsupported;
     status.style.color = 'var(--green)';
 
     resultDiv.style.display = 'block';
@@ -393,6 +585,29 @@ async function runSetup(dryRun) {
     console.error(err);
   }
 }
+
+// Drag/drop handlers
+(function setupDragDrop() {
+  const zone = document.getElementById('drop-zone');
+  if (!zone) return;
+  ['dragenter', 'dragover'].forEach((event) => {
+    zone.addEventListener(event, (e) => {
+      e.preventDefault();
+      zone.classList.add('dragover');
+    });
+  });
+  ['dragleave', 'drop'].forEach((event) => {
+    zone.addEventListener(event, (e) => {
+      e.preventDefault();
+      zone.classList.remove('dragover');
+    });
+  });
+  zone.addEventListener('drop', (e) => {
+    if (e.dataTransfer && e.dataTransfer.files) {
+      handleFiles(e.dataTransfer.files);
+    }
+  });
+})();
 </script>
 `;
 
