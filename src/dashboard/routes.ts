@@ -129,6 +129,12 @@ input[type="text"], input[type="password"], input[type="url"], input[type="email
 }
 input:focus, textarea:focus { outline: none; border-color: var(--accent); }
 hr { border: 0; border-top: 1px solid var(--border); margin: 1.5rem 0; }
+.md-table { width: 100%; border-collapse: collapse; margin: 1em 0; font-size: 0.92em; background: var(--card-bg); border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+.md-table th, .md-table td { padding: 0.5rem 0.75rem; text-align: left; border-bottom: 1px solid var(--border); vertical-align: top; }
+.md-table tr:last-child td { border-bottom: 0; }
+.md-table th { background: var(--bg-warmer); font-family: 'Trajan Pro', 'Optima', 'Palatino', Georgia, serif; font-weight: 600; font-size: 0.85em; letter-spacing: 0.04em; color: var(--ink-soft); }
+a.wikilink { color: var(--accent); background: rgba(194, 94, 79, 0.08); padding: 1px 4px; border-radius: 3px; text-decoration: none; font-weight: 500; }
+a.wikilink:hover { background: rgba(194, 94, 79, 0.18); }
 </style>
 </head>
 <body>

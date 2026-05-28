@@ -28,19 +28,19 @@ export interface SeedEntry {
 
 const SEXTET_PRELUDE = (slug: string, kind: string, title: string, lastChangeSummary: string) =>
 	`---
-slug: ${slug}
-kind: ${kind}
-title: ${title}
+slug: ${JSON.stringify(slug)}
+kind: ${JSON.stringify(kind)}
+title: ${JSON.stringify(title)}
 seed: true
 schema_version: 1
 status: active
 confidence: 1.0
 review_status: approved
 derived_from: []
-created: 2026-05-28T09:00:00Z
-last_updated: 2026-05-28T09:00:00Z
+created: "2026-05-28T09:00:00Z"
+last_updated: "2026-05-28T09:00:00Z"
 last_edited_by: bootstrap
-last_change_summary: ${lastChangeSummary}`;
+last_change_summary: ${JSON.stringify(lastChangeSummary)}`;
 
 const GRAVITY_WELLS_CONCEPT = `${SEXTET_PRELUDE(
 	'gravity-wells',
@@ -330,8 +330,7 @@ const ADOPT_CORTEX_DECISION = `${SEXTET_PRELUDE(
 	'Adopt the cortex framework for Office Town v1.0',
 	'seed: example decision for shape reference'
 )}
-title: Adopt the cortex framework for Office Town v1.0
-decided_on: 2026-05-28
+decided_on: "2026-05-28"
 decided_by: [jez]
 orgs: [acme-corp]
 projects: [acme-renewal-2024]

@@ -28,11 +28,14 @@ const LIST_OL_PATTERN = /^\d+\.\s+/;
 const FENCE_PATTERN = /^```/;
 const QUOTE_PATTERN = /^>\s/;
 const HR_PATTERN = /^-{3,}$|^\*{3,}$/;
-const BLOCK_BREAK_PATTERN = /^(#{1,6}|>\s|[-*]\s+|\d+\.\s+|```)/;
+const BLOCK_BREAK_PATTERN = /^(#{1,6}|>\s|[-*]\s+|\d+\.\s+|```|\|)/;
 const LINK_PATTERN = /\[([^\]]+)\]\(([^)]+)\)/g;
 const BOLD_PATTERN = /\*\*([^*]+)\*\*/g;
 const ITALIC_PATTERN = /\*([^*]+)\*/g;
 const CODE_PATTERN = /`([^`]+)`/g;
+const WIKILINK_PATTERN = /\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g;
+const TABLE_ROW_PATTERN = /^\|(.+)\|\s*$/;
+const TABLE_SEPARATOR_PATTERN = /^\|(\s*:?-+:?\s*\|)+\s*$/;
 
 function isValidPublishSlug(slug: string): boolean {
 	return SLUG_PATTERN.test(slug);
@@ -218,6 +221,29 @@ function renderBlocks(md: string, escape: (s: string) => string): string {
 			continue;
 		}
 
+		// GFM table: header row matching `^| col | col |$`, then a separator
+		// row matching `^| --- | --- |$`, then any number of body rows.
+		if (TABLE_ROW_PATTERN.test(line) && i + 1 < lines.length && TABLE_SEPARATOR_PATTERN.test(lines[i + 1])) {
+			const headers = splitTableRow(line);
+			i += 2; // skip header + separator
+			const bodyRows: string[][] = [];
+			while (i < lines.length && TABLE_ROW_PATTERN.test(lines[i])) {
+				bodyRows.push(splitTableRow(lines[i]));
+				i++;
+			}
+			const headerCells = headers.map((h) => `<th>${renderInline(h, escape)}</th>`).join('');
+			const bodyHtml = bodyRows
+				.map((row) => {
+					const cells = row.map((c) => `<td>${renderInline(c, escape)}</td>`).join('');
+					return `<tr>${cells}</tr>`;
+				})
+				.join('');
+			out.push(
+				`<table class="md-table"><thead><tr>${headerCells}</tr></thead><tbody>${bodyHtml}</tbody></table>`,
+			);
+			continue;
+		}
+
 		if (line.trim() === '') {
 			i++;
 			continue;
@@ -247,5 +273,18 @@ function renderInline(text: string, escape: (s: string) => string): string {
 		const safeHref = href.replace(/"/g, '&quot;');
 		return `<a href="${safeHref}">${label}</a>`;
 	});
+	// [[wiki-link]] or [[slug|Label]] -> search link to wiki for now
+	result = result.replace(WIKILINK_PATTERN, (_, slug, label) => {
+		const safeSlug = slug.trim().replace(/"/g, '&quot;');
+		const linkLabel = (label ?? slug).trim();
+		return `<a href="/dashboard/wiki?q=${encodeURIComponent(safeSlug)}" class="wikilink">${linkLabel}</a>`;
+	});
 	return result;
+}
+
+// Split a "| col1 | col2 | col3 |" row into ["col1", "col2", "col3"].
+function splitTableRow(line: string): string[] {
+	const matched = line.match(TABLE_ROW_PATTERN);
+	if (!matched) return [];
+	return matched[1].split('|').map((c) => c.trim());
 }

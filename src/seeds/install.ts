@@ -22,30 +22,37 @@ let seedsConfirmed = false;
 export async function installSeedsIfNeeded(env: Env): Promise<void> {
 	if (seedsConfirmed) return;
 
-	// Check the flag first
+	// Check the flag first. We use a versioned flag name so a schema or content
+	// bump in this file forces a fresh re-seed (overwriting prior entries via
+	// INSERT OR REPLACE below).
+	const FLAG_KEY = 'seeds_installed_v3';
 	const flag = await env.DB.prepare('SELECT value FROM worker_config WHERE key = ?')
-		.bind('seeds_installed')
+		.bind(FLAG_KEY)
 		.first<{ value: string }>();
 	if (flag?.value) {
 		seedsConfirmed = true;
 		return;
 	}
 
-	// Don't dump seeds on a populated cortex
-	const countRow = await env.DB.prepare('SELECT COUNT(*) AS n FROM wiki_entries').first<{ n: number }>();
-	const existingCount = countRow?.n ?? 0;
-	if (existingCount > 0) {
+	// Don't dump seeds on a cortex that has non-seed entries. Re-running the
+	// seed installer is fine if the existing entries are only seeds (we
+	// upsert them); otherwise it stays its hand.
+	const userEntryRow = await env.DB.prepare(
+		`SELECT COUNT(*) AS n FROM wiki_entries WHERE last_edited_by != 'bootstrap'`,
+	).first<{ n: number }>();
+	const userEntries = userEntryRow?.n ?? 0;
+	if (userEntries > 0) {
 		await env.DB.prepare(
 			'INSERT OR REPLACE INTO worker_config (key, value) VALUES (?, ?)',
 		)
-			.bind('seeds_installed', 'skipped-populated')
+			.bind(FLAG_KEY, 'skipped-user-content-present')
 			.run();
 		seedsConfirmed = true;
 		console.log(
 			JSON.stringify({
 				event: 'seed_install_skipped',
-				reason: 'wiki_entries already populated',
-				existing_count: existingCount,
+				reason: 'wiki_entries has non-bootstrap content',
+				user_entries: userEntries,
 			}),
 		);
 		return;
@@ -75,9 +82,10 @@ export async function installSeedsIfNeeded(env: Env): Promise<void> {
 				httpMetadata: { contentType: 'text/markdown' },
 			});
 
-			// D1 wiki_entries insert (idempotent — INSERT OR IGNORE on existing id)
+			// D1 wiki_entries upsert — REPLACE so re-seeding picks up frontmatter
+			// and body changes from updated seed sources.
 			await env.DB.prepare(
-				`INSERT OR IGNORE INTO wiki_entries
+				`INSERT OR REPLACE INTO wiki_entries
 					(id, collection, slug, r2_key, title, frontmatter_json, body, body_hash, last_change_summary, last_edited_by, status, uuid, created_at, updated_at)
 					VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			)
@@ -138,7 +146,7 @@ export async function installSeedsIfNeeded(env: Env): Promise<void> {
 	await env.DB.prepare(
 		'INSERT OR REPLACE INTO worker_config (key, value) VALUES (?, ?)',
 	)
-		.bind('seeds_installed', 'true')
+		.bind(FLAG_KEY, 'true')
 		.run();
 
 	seedsConfirmed = true;
