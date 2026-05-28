@@ -1,9 +1,13 @@
 # Cortex Shape — Roles, Naming, Structure
 
 **Date**: 2026-05-28
-**Status**: Design proposal. Companion to `cortex-pattern-2026-05-28.md` (the why) and `curator-pattern-2026-05-28.md` (the how). This doc covers the *what shape* — agent roles, the right word for "hotness", and the open structural questions about folders, frontmatter, links, schema evolution.
+**Status**: Design proposal. Companion to `cortex-pattern-2026-05-28.md` (the why) and `curator-pattern-2026-05-28.md` (the how). This doc covers the *what shape* — agent roles, the right word for "hotness", the structural conventions (folders, frontmatter, links, schema evolution), and the inherited doctrine from Goanna's CURATION.md (gravity wells).
 
-Some parts of this doc await synthesis from two research dispatches (running 2026-05-28): one to Goanna's librarian for hard-won lessons, one to a general-purpose agent for Karpathy + Obsidian-AI community patterns. Findings will be folded in once they return.
+Updated 2026-05-28 with research from two streams:
+- General-purpose agent research → `research-wiki-for-agents-2026-05-28.md` (Karpathy's LLM Wiki spine + Obsidian-AI practitioner consensus)
+- Goanna substrate reads → `agents/librarian/facts/*` + `docs/CURATION.md` + `agents/librarian/CLAUDE.md`
+
+These two streams converged on the same answers more often than not. Where they diverged, Goanna's hard-won doctrine wins — it has years of operational use behind it, whereas Karpathy's pattern is months old.
 
 ---
 
@@ -131,138 +135,460 @@ Fallback option if "relevance" feels too soft: **`prominence`**. Has more standa
 
 ---
 
-## Part 3 — Open structural questions
+## Part 3 — Doctrine inherited from Goanna: gravity wells
 
-The cortex's shape isn't yet fully designed. Here's the open question list — research findings will inform the answers. Where I have a current lean, I've named it.
+Goanna's `docs/CURATION.md` ships the most coherent treatment of markdown-knowledge placement I've encountered. Office Town inherits it as foundational doctrine. The full text lives in Goanna; the operational summary is:
 
-### Q1: Folder layout per collection
+> **In a markdown-first knowledge layout, the location and naming of content shapes how often, how reliably, and by whom it gets read. Location is an active force on retrieval. Predictive routing is the success metric; deliberation is the warning sign.**
 
-Three shapes appeared in the substrate-conventions rule:
+### The five forces (a well attracts content only when all five are true)
 
-- **Entity-as-folder** — `wiki/<collection>/<slug>/<canonical>.md` plus subfolders. For things with companion files (orgs, contacts, projects, decisions).
-- **Dated stream** — `wiki/<collection>/YYYY-MM-DD-<topic>.md`. For broadcasts, research notes, sessions.
-- **Flat topic** — `wiki/<collection>/<topic>.md`. For owner-only, secrets, business-config.
+1. **Path predictability** — well lives at a documented fixed location; agents at warm-up don't *discover* it, they're told it exists
+2. **Name-content match** — filename is the search query; a reader who'd never seen the file should guess its content from the name alone
+3. **Size matched to read frequency** — frequently-read files must be small; the soft cap creates the gravity by forcing curation
+4. **Cross-link reinforcement** — every file mentioning a concept links to the canonical file for that concept
+5. **Warm-up makes it load-bearing** — for highest-traffic files (boss/curator/librarian session start), declared as required reading in the warm-up procedure
 
-Open questions:
-- Should the Inbox collection use content-hash IDs (`wiki/inbox/<sha-prefix>/<id>.md`) or dated (`wiki/inbox/YYYY-MM-DD/<id>.md`)? **My lean**: sha-prefix because Inbox is deduped by content, not chronology.
-- Subfolders inside an entity-as-folder (notes/, sessions/, research/, attachments/) — do we standardise the set per collection (in `wiki_collections.config_json`)? **My lean**: yes, list allowed subfolders per collection.
-- Is there a "generated" folder convention (`.generated/`, `_derived/`) for auto-summaries, or should derived content live inline with provenance? **My lean**: inline with `derived_from:` frontmatter — fewer paths to navigate, audit log gives history.
+Remove any one of these five and the well weakens to a sink.
 
-### Q2: Relationships in frontmatter vs `wiki_links` table
+### The failure modes (named so curators spot them earlier)
 
-Three viable representations:
-
-| Approach | Pro | Con |
+| Failure | Detection signal | Treatment |
 |---|---|---|
-| Only frontmatter (`related_to: [proj-acme, contact-sarah]`) | Human-readable, portable, git-diffable | DB queries require parsing markdown |
-| Only `wiki_links` table | Query-efficient | Wiki entry file alone doesn't show relationships |
-| Both, frontmatter as source of truth | Best of both | Sync burden, drift risk |
-| Both, `wiki_links` as source of truth | Best of both | Frontmatter can lie; readers can be misled |
+| **Sink** | File >200 lines holding multiple unrelated H2 sections | Sink is structural, not a curator failure. Split the file or mint a new well. |
+| **Black hole** | Content everyone agrees is misplaced, but no one can name the right place | Framework needs a new well. File feedback, don't keep forcing the existing ones. |
+| **Galactic dust** | Updating a fact requires touching 3+ files | No single well exerts enough gravity. Mint a well; move all instances; leave pointer-stubs. |
+| **Empty well** | Schema declares a likely-file that nobody mints, while the matching content lands elsewhere | Tighten the well's name and purpose, or remove from likely-files list. |
+| **Wells too close together** | Two adjacent wells; curators routinely struggle to choose between | Write a sharp split criterion (mnemonic or decision tree). If you can't, merge them. |
 
-**My lean**: both, with **`wiki_links` as source of truth and frontmatter as a generated view**. Worker derives frontmatter `links:` block from `wiki_links` on every write. Users edit frontmatter; daemon round-trips through worker; worker updates `wiki_links` to match. Conflicts (manual frontmatter edit vs DB) resolve by re-deriving from DB.
+### Curatorial operating procedure (3 questions in order)
 
-This makes a single-line write to `wiki_links` (e.g. by Curator) immediately visible in the frontmatter on next read, without requiring frontmatter manipulation. Cleaner than two write paths.
+When new content arrives at the curator/librarian:
 
-Waiting on research for what others do here — Obsidian's `[[wiki-link]]` body syntax is one answer, dedicated databases (Dendron, Foam) are another.
+1. **Is there an existing well whose name and purpose match this?** → if yes, route there. Don't create a new file because the existing one feels under-used.
+2. **If no, does the content earn a new well?** → apply the three-tier scaling rule (see Part 5, Q1): section first → file when substantial → subfolder when 5+ items.
+3. **Is there a sink forming?** → if you're routing content to a file whose name doesn't match, that's the structural signal. Rename, split, or file feedback.
 
-### Q3: Where does `derived_from` live?
+These three questions are useful for any agent making routing decisions, not just librarian.
 
-Two clean options:
-- In frontmatter: `derived_from: [inbox/abc123, gmail/thread-456]`
-- In a `wiki_derived_from` table
+### Detection rule
 
-Frontmatter has the advantage that the file alone tells the provenance story (no DB join needed to know "where did this entry come from"). It's also human-readable.
+> **Route to the well, not the bucket.** Before placing content, ask: *"If a future agent searched for this concept by name, would they find it here?"* If no, the content is in a sink — even if the file is small.
 
-**My lean**: frontmatter as primary, mirrored to `wiki_links` with edge kind `derived_from` for queryability. Same dual-representation pattern as Q2.
+### Propagation rule
 
-### Q4: Frontmatter — what beyond the sextet?
+Curation generates structural change as a side-effect. The shipping commit propagates the change in the same fire, not "I'll catch it on the next quiet cycle":
 
-Current sextet: `slug, kind, created, last_updated, last_edited_by, last_change_summary`.
+- **Mint into collection** → write the entity file AND add the `INDEX.md` row in the same commit
+- **Slug rename** → update every reference AND move/rename the file in the same commit
+- **Cohort promotion** → cohort-index lands with per-member tags + schema bumps in the same commit
 
-Candidates worth standardising:
-- `tags: [...]` — free-form tags (curator may add, user may edit)
-- `links: {...}` — auto-derived from `wiki_links` (Q2 decision)
-- `derived_from: [...]` — provenance (Q3 decision)
-- `valid_from`, `valid_until` — temporal validity for fact-bearing entries
-- `pinned: bool` — manual relevance override
-- `confidence: 0.0-1.0` — for auto-generated entries, how confident is the extractor
-- `review_status: pending|approved|rejected` — for entries needing human review
-
-Waiting on research for which of these prove load-bearing vs which add noise.
-
-### Q5: Schema evolution
-
-`wiki_collections.required_fields_json` defines the expected shape for each collection. When the schema changes (we add a field, rename one, change a required → optional), existing entries don't auto-update.
-
-Options:
-1. **Migration scripts per change** — invasive but explicit
-2. **Lazy migration on next write** — entry updates when touched
-3. **Versioned schemas** — each collection has a schema_version; entries declare which version they're compliant with
-4. **Sentinel-based extension** — add new fields freely; only break entries that violate hard constraints; surface "incomplete entry" in dashboard
-
-**My lean**: option 4 (sentinel-based extension) for the dashboard UX, with option 2 (lazy migration on next write) as the cleanup mechanism. Treat the wiki as soft-typed; let the dashboard surface "this entry doesn't have field X yet" rather than refusing to load it.
-
-### Q6: Conflict file handling
-
-Today `.conflict-<ts>.md` files sit beside the canonical entry. They're real files in R2 + a row in the manifest. They're invisible to `wiki_entries` (the indexer skips non-canonical files).
-
-Questions:
-- Should conflicts surface in the dashboard (a "needs reconciliation" panel)?
-- Should curator have a `resolve-conflict` skill that picks one + writes the merge?
-- Lifecycle: do conflict files auto-expire after N days, or stay forever?
-
-**My lean**: dashboard surfaces them (it's the surface where humans can compare side-by-side), curator gets a skill to assist, conflict files persist forever (cheap, valuable for forensics).
-
-### Q7: Attachments vs companion files
-
-Inside `wiki/projects/<slug>/`, what's the rule for:
-- `project.md` (canonical) — always
-- `notes/<date>.md` — companion files
-- `attachments/contract.pdf` — binary attachments
-- `images/diagram.png` — visual companions
-
-Currently `wiki_attachments` table tracks binaries per (collection, slug). Do we expand it to track non-canonical markdown companions too? Or do we keep companions purely in R2 + audit, and only index the canonical?
-
-**My lean**: index only canonical in `wiki_entries`. Companions are in R2 + audit but not query-targeted. The canonical file's body or links can reference its companions. Keeps the entries table tight.
-
-### Q8: Vectorize granularity
-
-For semantic search, do we embed:
-- Per-entry whole body (one vector per entry)
-- Per-section (split on headings)
-- Per-paragraph
-- Some mix (whole-body for short entries, sectioned for long)
-
-**My lean**: per-entry for canonical files (the entry IS the semantic unit). For Inbox entries (which may be raw long emails), section-split with overflow. The structured-shaped bet says we don't need fine-grained chunking because the structure IS the index — vector search is the "search lookup" projection, not the primary recall path.
-
-### Q9: Reconciliation surface
-
-When the curator detects two entries that might be the same entity (e.g. `orgs/acme-corp` and `orgs/acme-corporation`), how does that get resolved?
-
-Pieces needed:
-- A `reconcile-candidates` queue (D1 table)
-- A dashboard panel showing pairs with similarity score + key fields side-by-side
-- A `wiki(action:merge_entries, primary, duplicate)` MCP action that:
-  - Moves wiki_links from duplicate to primary
-  - Adds duplicate's slug to primary's `aliases: []`
-  - Adds duplicate's `derived_from` to primary's
-  - Marks duplicate as `merged_into: <primary>` (soft-delete; entry stays but redirects)
-  - Audits the merge
-
-This is genuinely the hardest piece of the cortex. Worth its own design pass once we hit it.
+Index without members or members without index is half-shipped.
 
 ---
 
-## Part 4 — What to land first
+## Part 4 — The raw/ + wiki/ spine (from Karpathy)
 
-Given the research is still arriving and structural decisions are pending, here's the safest first build:
+Karpathy's April 2026 LLM Wiki gist proposed a deliberately minimal architecture that's now the dominant pattern in the agent-knowledge space. Office Town adopts the *spine* but rejects the *article shape*.
 
-1. **Land the Curator role definition + curate-inbox skill** in office-town-plugin. This is concrete and unblocks everything else. (`curator-pattern-2026-05-28.md` Phase A.)
-2. **Build `/api/ingest`** with a fixed schema for one collection (start: `inbox`). Single-collection extract, no router yet.
-3. **Rename hotness → relevance** in the design notes (this doc + cortex-pattern). When the relevance_score column gets added to wiki_entries, use the new name from day one.
-4. **Defer Q1-Q9 decisions** to a separate design session once research synthesis is in. We can build with sensible defaults (my leans above) and refine.
+### What we keep
 
-The roles are stable enough to build against today. The structural fine-tuning happens once Karpathy/Obsidian-AI research and Goanna's hard-won lessons land.
+```
+office-town/                            ← the cortex root
+├── raw/                                ← immutable source-of-truth archive
+│   ├── gmail/                          ← raw emails (saved by curator)
+│   ├── slack/                          ← raw slack archives
+│   ├── docs/                           ← imported google docs
+│   ├── jim2/                           ← cardfile snapshots, job snapshots
+│   ├── xero/                           ← invoice/payment snapshots
+│   ├── github/                         ← repo state snapshots
+│   └── scrapes/                        ← Browser Rendering scrape archives
+│
+├── wiki/                               ← LLM-territory: typed entities + concepts
+│   ├── orgs/                           ← entity-as-folder
+│   ├── contacts/                       ← entity-as-folder
+│   ├── projects/                       ← entity-as-folder
+│   ├── decisions/                      ← entity-as-folder
+│   ├── knowledge/                      ← concept-as-folder
+│   ├── inbox/                          ← short-lived staging (content-hash IDs)
+│   ├── business/                       ← the business's identity (from Goanna)
+│   ├── owner/                          ← Jez's voice / rhythm / expertise
+│   ├── team/                           ← team member profiles
+│   ├── skills/                         ← skill markdown
+│   └── templates/                      ← canonical file shapes
+│
+├── CLAUDE.md                           ← the schema doc the agent reads every session
+├── INDEX.md                            ← derived: catalog of everything in wiki/
+└── LOG.md                              ← derived: append-only ingest/query/lint log
+```
+
+**Properties that matter:**
+
+1. **`raw/` is append-only and immutable.** Curator writes; nobody edits. Wiki entries reference raw files via `derived_from:`. If the wiki schema changes, we delete + regenerate `wiki/` from `raw/` — the source of truth is preserved.
+2. **`wiki/` is LLM territory** but as a *typed-entity graph*, not encyclopaedia articles. This is where dailydoseofds.com's critique of Karpathy bites: encyclopaedia summaries don't track business state (deadlines, decisions, commitments shift constantly). Typed entities with explicit relationships do.
+3. **`CLAUDE.md` is the schema** the agent reads on every session — defines page kinds, frontmatter contracts, voice, contradiction policy. *"You spend an hour iterating with the LLM on schema.md and that hour determines everything else."*
+4. **`INDEX.md` and `LOG.md` are derived artefacts** maintained by deterministic tooling (worker-side cron + `wiki_audit` query), NOT by the agent. Practitioner consensus: *"akm handles operations that require invariants an agent can't reliably enforce across sessions."*
+
+### What we reject
+
+Karpathy's encyclopaedia-article shape works for *research* knowledge (concepts and their relationships are stable). It breaks for *business operations* knowledge (deadlines, plans, decisions, commitments evolve constantly).
+
+For Office Town, wiki entries are typed entities with explicit relationships — closer to the Rowboat-style decision/commitment pattern from the dailydoseofds critique:
+- Each decision is its own MD file
+- Each commitment is its own MD file
+- Backlinks via `wiki_links` to people + projects + orgs
+- Written-once + never-edited; new information becomes a *new* file linked back to the original
+
+### Tiered loading economics
+
+The wiki/raw split is also the answer to the wiki-vs-vector-store line:
+
+| Layer | Size | Loading strategy |
+|---|---|---|
+| `wiki/` typed entries | ~thousands of small files, tens of thousands of tokens | Loaded into agent context directly; agents reason over the full graph |
+| `raw/` source archive | hundreds of thousands of large files | Vector-indexed (Vectorize); retrieved on demand via `derived_from:` backlinks from wiki entries |
+
+This matches `themenonlab.blog`'s lifecycle hooks: `SessionStart` loads excerpts and filenames, then the agent queries semantically before reading specific files.
+
+---
+
+## Part 5 — Structural conventions (research-backed answers)
+
+The questions opened in the previous version of this doc now have research-backed answers. Where Goanna and Karpathy/practitioner consensus disagreed, I've noted both and named the winner.
+
+### Q1: Folder layout per collection
+
+**Answer**: Three shapes, with Goanna's "folders are earned" discipline overlaid.
+
+| Shape | Used for | Promotion threshold |
+|---|---|---|
+| **Entity-as-folder** | orgs, contacts, projects, decisions, knowledge concepts | Always — entities deserve a folder day one |
+| **Dated stream** | sessions, research notes, audit-driven digests | `wiki/<col>/YYYY-MM-DD-<topic>.md` |
+| **Flat topic** | owner-only, secrets, business-config, templates | Single file per topic |
+
+Within entity folders, **folders are earned** — start with one file per topic; promote to a subfolder when 5+ items each warrant their own page (Goanna's `fact-install-patterns` rule).
+
+**Inbox shape**: `wiki/inbox/<sha-prefix>/<id>.md` (content-hash, not dated) because Inbox is deduped by content, not chronology. Two emails about the same thread land at the same SHA path.
+
+**Standard subfolders inside entity folders** (codify in `wiki_collections.config_json`):
+- `<canonical>.md` (e.g. `project.md`, `contact.md`, `entity.md`) — always
+- `notes/` — ad-hoc working notes, dated
+- `sessions/` — multi-session narrative
+- `research/` — investigations
+- `findings/` — audit summary digests
+- `attachments/` — binary attachments
+
+No `.generated/` or `_derived/` folder — derived content lives inline with `derived_from:` frontmatter. Fewer paths; audit log gives history.
+
+---
+
+### Q2: Relationships in frontmatter vs `wiki_links` table
+
+**Answer (reversed from earlier lean)**: **Frontmatter is the source of truth.** `wiki_links` is a derived index, regenerated from frontmatter on every write.
+
+Research is unambiguous: practitioner consensus puts authoritative relationships in frontmatter as ID arrays because *they travel with the file when an agent reads it cold*. Goanna's INDEX.md discipline confirms — indexes are derived artefacts, not authoritative state. From the Steakhouse blog: *"40% of RAG failures are not generation errors, but retrieval errors"* because chunks lack context. Frontmatter persists no matter how the body is sliced.
+
+```yaml
+---
+slug: org-acme-corp
+kind: org
+# ... sextet fields ...
+
+# Relationships — frontmatter is the source of truth
+contacts: [contact-sarah-acme, contact-tom-acme]
+projects: [project-acme-renewal-2024]
+related_orgs: [org-globex-parent]   # parent corp
+derived_from: [raw/jim2/cardfile-acme-2015.md, raw/xero/contact-acme.md]
+---
+```
+
+On every write, the worker re-derives the `wiki_links` rows from frontmatter. Manual edits to frontmatter (via daemon sync) flow through the same path. `wiki_links` is for query performance only — never for canonical fact storage.
+
+This also matches Karpathy's `INDEX.md`/`LOG.md` derived-from-content pattern: source files are the truth; indexes regenerate.
+
+---
+
+### Q3: Where does `derived_from` live?
+
+**Answer**: In frontmatter as an array of source-archive IDs.
+
+```yaml
+derived_from:
+  - raw/gmail/msg-18f3a1b
+  - raw/xero/invoice-4421
+  - raw/jim2/job-7892
+```
+
+Mirrored to `wiki_links` (kind: `derived_from`) for queryability, but frontmatter is authoritative. This means the file alone tells the provenance story — no DB join needed.
+
+The format follows Karpathy's pattern: every wiki entry has provenance back to immutable raw/ archives. When the entry needs to be regenerated (schema change, extractor improvement), the agent re-reads the cited raw files.
+
+---
+
+### Q4: Frontmatter — what beyond the sextet?
+
+**Answer (research-backed)**: The sextet stays as universal. Beyond it, frontmatter divides into three layers.
+
+**Universal (every entry)**:
+- `slug` — stable ID assigned at first observation, never changed
+- `kind` — entry type (matches collection)
+- `created`, `last_updated` — timestamps
+- `last_edited_by` — agent or user slug
+- `last_change_summary` — one-line why
+- `schema_version` — integer; bumps when collection's required_fields_json changes
+
+**Provenance + relationships (every typed entry)**:
+- `derived_from: [...]` — source archive IDs (Q3)
+- Collection-specific relationship fields (e.g. `org`, `contacts`, `projects`) per the collection schema (Q2)
+
+**Status + lifecycle (Goanna-inherited)**:
+- `status` — `active | stale | dormant | archived | stub` (drop a record from results when stale/archived; surface stubs as needing completion)
+- `superseded_by` — slug of newer version (when a decision/commitment gets revised, OLD entry gets this + status:archived; NEW entry is the canonical one)
+- `valid_from`, `valid_until` — temporal validity for fact-bearing entries (contact roles, billing arrangements)
+- `pinned: bool` — manual relevance override
+- `confidence: 0.0-1.0` — auto-generated extractor's confidence (review-required below threshold)
+- `review_status` — `pending | approved | rejected` for entries flagged for human review
+
+**Worth NOT adding**:
+- Free-form `tags:` — Goanna and practitioners agree: *"be ruthlessly stingy with tags"*. Use frontmatter typed fields (`org:`, `vertical:`, `groups:`) instead. Tags reserved for genuinely cross-cutting attributes (`#urgent`, `#legal`).
+
+---
+
+### Q5: Schema evolution
+
+**Answer**: `schema_version` per entry + Goanna's cascade-refresh mode + immutable `raw/` as the safety net.
+
+When a collection's `required_fields_json` changes:
+
+1. Bump `wiki_collections.schema_version` (the collection-wide pointer)
+2. Existing entries keep their old `schema_version` until touched
+3. Librarian (or worker cron) runs **cascade-refresh** — walks old-schema entries, enriches each to new schema. This is one of Goanna's four librarian modes.
+4. If a migration goes wrong, the immutable `raw/` archive lets the curator delete + regenerate `wiki/` entries from sources.
+
+The dashboard surfaces "this entry is at schema_version 2; current is 4" rather than refusing to load. Soft-typed wiki, hard-typed migrations.
+
+From the dev.to scaling piece: *"You're not starting from a blank directory — you're starting from a structural contract."* The schema lives in the collection's CLAUDE.md (path: `wiki/<collection>/CLAUDE.md`), defines page kinds, voice, contradiction policy, allowed frontmatter fields.
+
+---
+
+### Q6: Conflict file handling
+
+**Answer (Goanna-inherited principle)**: **Smoothed-over contradictions are a smell. Surface the disagreement, let the user resolve.**
+
+From librarian's CLAUDE.md: *"Don't merge contradictory records into a smoothed-over compromise. Surface the contradiction, ask the user, then resolve."*
+
+Operationally:
+- `.conflict-<ts>` files persist (cheap, valuable for forensics)
+- Dashboard surfaces them in a "needs reconciliation" panel — side-by-side comparison with key-field diffs highlighted
+- Curator gets a `resolve-conflict` skill that prompts the user, applies their choice, audits the resolution
+- Status field on the canonical entry transitions: `status: stale` while the conflict is unresolved, `status: active` once resolved
+- Auto-resolve only when the conflict is *clearly* trivial (same value, different whitespace; same fact, different formatting)
+
+This connects to Karpathy's lint passes — orphan detection, broken-link detection, contradiction-spotting should run on every ingest, not just nightly.
+
+---
+
+### Q7: Attachments vs companion files
+
+**Answer (Goanna's thin-record + deep-folder symmetry)**: The canonical file is thin; the deep folder holds rich content.
+
+| File | Role |
+|---|---|
+| `<canonical>.md` (e.g. `project.md`) | CRM-shape record — frontmatter + summary + key fields. ~30-80 lines. Indexed in `wiki_entries`. |
+| `notes/<date>.md` | Companion files — dated working notes. Not indexed as separate entries; tracked in audit only. |
+| `sessions/<date>.md` | Session narratives. Same treatment. |
+| `attachments/<file>.pdf` | Binary attachments. Tracked in `wiki_attachments` (collection, slug, filename). |
+| `images/<file>.png` | Visual companions. Tracked in `wiki_attachments`. |
+
+The canonical file's body references its companions via relative links: `See [the May 2024 session notes](sessions/2024-05-12.md)`.
+
+**Companion files are NOT indexed as separate wiki_entries.** This keeps the entries table tight. Vectorize embeds raw companion content (it's archival material). Wiki queries return the canonical file with companion references; agents can pull companions on demand.
+
+---
+
+### Q8: Vectorize granularity
+
+**Answer (research-backed)**: Per-entry for `wiki/`; chunked for `raw/`.
+
+The structured-shaped bet:
+- `wiki/` entries are typed entities. Each entry IS the semantic unit. One vector per entry, embedded on the body + frontmatter summary.
+- `raw/` entries are arbitrary-length source documents (full emails, doc imports, transcripts). Section-split with overflow; each chunk vectorised separately. Chunk metadata carries the parent raw-file ID.
+
+Wiki search returns a typed entry. If the agent wants context, it follows `derived_from:` into raw and retrieves the cited chunks. Two queries, not one — but the first one is the "what's relevant" question; the second is the "show me the original" question.
+
+This matches the tiered loading from Part 4. Karpathy + the agentwiki.org common-failure-modes piece both endorse this split.
+
+---
+
+### Q9: Reconciliation surface (the hardest piece)
+
+**Answer (multi-part, Goanna-informed)**: 
+
+The pieces — D1 queue, dashboard panel, MCP merge action — are right. What was missing from my earlier sketch is the **judgment discipline** Goanna codified:
+
+#### 9a. Peer-record vs umbrella rule
+
+When a "duplicate" is detected, the first question isn't "merge or not" — it's "are these the same entity or two related entities?"
+
+- **Peer record** (separate folder) when Jezweb's (or the cortex owner's) service relationship is **independent** — separate domain, separate hosting account, separate support history
+- **Umbrella section** (section inside parent record) when legally distinct but **operationally unified** — shared domain, shared hosting, shared support footprint
+
+Diagnostic: *"Does the cortex owner have two separate service relationships, or one?"*
+
+Cross-link shape: each peer record carries a `related_entities:` field naming the relationship (`"sister Pty Ltd, same primary contact, shared Xero account"`).
+
+#### 9b. ABN-first aggregation (Australian context — adapt for non-AU)
+
+When counting "how many distinct businesses do we work with", count by **ABN, not domain**. Multi-trading-name umbrellas + dormant-ABN-domain patterns + sister-Pty-Ltd structures inflate domain counts.
+
+In reports + dashboards, report both:
+- `distinct_domains:` — raw technical-surface count (for hosting/DNS scope)
+- `distinct_businesses:` — ABN-verified unique entity count (for fleet-size + vertical analysis)
+
+#### 9c. ABR-verify-first discipline
+
+From Goanna's `feedback-abr-verify-first.md`: **never propagate a cluster hypothesis or write a `vertical:` / `groups:` tag without ABR-verification first**. Portfolio listing or invoice body text is a *lead*, not ground truth.
+
+Implementation: curator's extraction pipeline includes an ABR-lookup step for new Org entries (via the `australia_business` MCP tool). Without ABR confirmation, the entry stays at `status: stub` and the `vertical:` field stays empty.
+
+#### 9d. Merge action
+
+When peer-vs-umbrella + ABR confirm a real duplicate (e.g. `orgs/acme-corp` and `orgs/acme-corporation` are the same ABN, same trading name, same domain ownership), the merge:
+1. Moves `wiki_links` from duplicate to primary
+2. Appends duplicate's slug to primary's `aliases: []`
+3. Appends duplicate's `derived_from` to primary's
+4. Sets duplicate's `superseded_by: <primary>` and `status: archived`
+5. Audits the merge with `why:` field
+
+Duplicate entry persists (soft-delete). Future queries for either slug return the primary. Old slug stays in `aliases:` so external references don't break.
+
+This is the genuinely hard piece. The dashboard reconciliation queue is where humans approve — auto-merge only on high-confidence + ABR-verified matches.
+
+---
+
+## Part 6 — Watching-brief promotion (Goanna's "hotness" equivalent)
+
+Goanna has a more deliberate promotion model than OpenHuman's automatic hotness score. From `agents/librarian/facts/fact-finding-watches.md`:
+
+- **n=1 observation** — captured as a "watching brief" in the entity body or in a `findings/` note. Visible but not yet canonical.
+- **n=2-3 confirmed instances** — still watching. Updated note with each new instance.
+- **n≥3 (sometimes n=2 with curator judgment)** — promoted to `wiki/knowledge/<topic>/concept.md` as canonical doctrine
+- **Some patterns promote at n=1** when "upstream-confirmed" (architectural reality, not pattern-matching)
+
+This is curator + librarian judgment, not pure auto-counting. The `relevance_score` we proposed in Part 2 is a *machine* hint that helps prioritise *human* judgment — not a replacement for it.
+
+The combined model for Office Town:
+
+| Signal | Where it lives | Drives |
+|---|---|---|
+| `relevance_score` | `wiki_entries` column, auto-computed from references_in + query_hits + recency + pinned | Worker-side gating: which Inbox entries get Tier-2 LLM extraction; which raw chunks get re-embedded |
+| Watching brief | A `findings/` markdown note in the relevant agent or collection | Curator + librarian judgment: which 1-instance observations get captured + escalated |
+| Promotion to `wiki/knowledge/` | Librarian's deliberate write at n≥3 (or n=1 upstream-confirmed) | Canonical doctrine; reads by all agents on warm-up |
+
+The auto-score makes the system *efficient*. The watching brief discipline keeps it *thoughtful*. They're not the same mechanism; they complement.
+
+---
+
+## Part 7 — Librarian's four modes (inherited from Goanna)
+
+Office Town's librarian should operate in the same four modes Goanna's does (`agents/librarian/CLAUDE.md`):
+
+| Mode | When | What librarian does |
+|---|---|---|
+| **Reactive (1B)** | Inbox has briefs, curator filed findings, user surfaced something | Process inbox, promote findings, write the record |
+| **Bootstrap (1A)** | Inbox empty, but thin records exist in `wiki/contacts/` or `wiki/orgs/` | Deepen the next under-developed record from existing context |
+| **Quiet-cycle hygiene (1C)** | Nothing in bootstrap | Stale audit (records >90d unchanged), broken-link sweep, archive resolved findings, lint passes |
+| **Cascade-refresh (1D)** | `schema_version` bumped on a collection | Walk old-schema records, enrich each to new schema |
+
+The cadence shape (also inherited): main cycle every 30 min always-on, weekly curate cycle (Thursday 14:00), monthly contacts audit. Curator-load coupling: when curator is heavy, fire main cycle more tightly (every 10-15 min) until curator quiets.
+
+When we implement the cron execution loop on Office Town's worker, these modes are the recipes the librarian invokes.
+
+---
+
+## Part 8 — Discipline rules inherited from Goanna
+
+Five rules that have proven load-bearing in Goanna's substrate:
+
+### 1. "A note without links is a bug"
+
+Enforce at write-time via a `PostToolUse` hook or worker-side validation. Orphan notes are how vaults rot. Every wiki entry must either declare relationships in frontmatter OR be a deliberate hub entry (which is itself linked-to from elsewhere).
+
+### 2. Stable slug IDs assigned at first observation, never changed
+
+Once `contact:jeremy-dawes` is observed, that slug is permanent. Rename has 200 backlinks to fix. From research: *"Public links rot. Internal IDs don't. Don't link by URL or filename; link by entity ID."*
+
+### 3. Append, don't edit, for facts with provenance
+
+Decisions, commitments, status changes get *new* dated files OR new entries in a `history:` block — not silent overwrites. Editing in place destroys the audit trail that makes business knowledge useful.
+
+Concretely: a contact's role changes from "primary billing" to "former billing"? Don't overwrite. Add to history with `valid_from`/`valid_until`. Set new entry as current.
+
+### 4. The schema is the most important file in the system
+
+Karpathy: *"You spend an hour iterating with the LLM on schema.md and that hour determines everything else."* Goanna concurs — librarian owns the collection schemas.
+
+For Office Town: each collection has a `wiki/<collection>/CLAUDE.md` declaring its shape. Worker reads it; curator reads it; librarian owns it. When the schema changes, cascade-refresh kicks in.
+
+### 5. Don't ask the agent to do invariant-enforcement
+
+Indexes, link integrity, orphan detection, schema-compliance checks — all deterministic operations done by tooling (the worker, a Workflow), not the agent. The agent is for judgment; the script is for precision. Matches the existing `trust-skills-not-elaborate-code.md` rule.
+
+In Office Town this means:
+- `INDEX.md` and `LOG.md` regenerated by worker cron from D1
+- `wiki_links` derived from frontmatter on every write
+- Orphan + broken-link detection runs nightly (worker scheduled handler)
+- Schema-compliance checked at PUT time, surfaced in dashboard
+
+---
+
+## Part 9 — Updated build sequence
+
+With research-backed answers in hand, the build sequence sharpens:
+
+### Foundation (Session 1)
+
+1. Establish `wiki_collections` schemas for the starter set: `inbox`, `orgs`, `contacts`, `projects`, `decisions`, `knowledge`
+2. Each collection's `CLAUDE.md` declares its schema (kind, required fields, voice, contradiction policy, allowed subfolders)
+3. Build `/api/ingest` (Phase A): accepts `{content, target_collection, target_slug}`, runs Workers AI extractor against the collection's schema, writes via unified write path
+4. Add `wiki/raw/` collection (Karpathy spine) — immutable append-only archive
+
+### Curator + first source (Session 2)
+
+5. Define Curator subagent in `office-town-plugin/recipes/curator.yaml` — system prompt + tool whitelist + default skills
+6. Ship `office-town:curate-inbox` skill (the minimum viable: pulls from one source, stages to Inbox, calls /api/ingest)
+7. Demo: user installs Gmail MCP in their Goose; says "curator, pull this morning's emails"; sees Inbox entries appear with `derived_from:` pointing into `raw/gmail/`
+
+### Provenance + relevance (Session 3)
+
+8. Add `relevance_score` column + sub-signal columns to `wiki_entries`
+9. Add `schema_version`, `status`, `superseded_by`, `valid_from`/`valid_until` to the universal frontmatter
+10. Implement worker-side derivation of `wiki_links` from frontmatter
+11. Ship `office-town:cite-source` skill (adds derived_from to any auto-generated entry)
+
+### Reconciliation (Session 4 — the hard one)
+
+12. Ship `office-town:reconcile-org` skill — Vectorize similarity check + ABN-lookup via `australia_business` MCP + dashboard prompt for peer-vs-umbrella judgment
+13. Build the dashboard reconciliation queue (D1 table + UI panel)
+14. Implement `wiki(action:merge_entries)` MCP action
+
+### Lint + librarian modes (Session 5)
+
+15. Cron execution loop on worker
+16. Lint pass cron job (orphan detection, broken links, schema compliance) running on every ingest cycle
+17. Librarian's 4 modes wired as cron-callable skills
+18. INDEX.md + LOG.md auto-regen from D1
+
+### Cascade + temporal (Session 6)
+
+19. `schema_version` cascade-refresh skill
+20. As-of-date dashboard toggle (temporal lookup via `wiki_audit`)
+
+After Session 6, we have a working minimum-viable cortex with structured ingestion + reconciliation + temporal validity + provenance.
+
+### Sessions 7+
+
+Tier 1 ETL extractors (Xero, Jim2, GitHub, Rocket, Synergy) follow naturally — each is half a session of curator skill + worker-side extractor. Skills bundle expands. Watching-brief patterns start to accumulate.
 
 ---
 
@@ -271,7 +597,7 @@ The roles are stable enough to build against today. The structural fine-tuning h
 - `cortex-pattern-2026-05-28.md` — the why (strategic framing, the moat)
 - `curator-pattern-2026-05-28.md` — the agent-side architecture
 - `structure-shaped-ingestion-2026-05-28.md` — the worker-side write pipeline
-- `openhuman-research-2026-05-28.md` — patterns we're adopting (hotness/relevance, derived_from, content-hash IDs)
+- `openhuman-research-2026-05-28.md` — patterns we're adopting (relevance, derived_from, content-hash IDs)
 - `unified-write-path-2026-05-28.md` — write architecture foundation
-- (pending) `research-wiki-for-agents-2026-05-28.md` — Karpathy + Obsidian-AI community findings
-- (pending) Goanna librarian's brief on hard-won lessons
+- `research-wiki-for-agents-2026-05-28.md` — Karpathy + Obsidian-AI community findings
+- Goanna substrate (read 2026-05-28): `docs/CURATION.md`, `agents/librarian/CLAUDE.md`, `agents/librarian/facts/*.md`
