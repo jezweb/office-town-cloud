@@ -10,6 +10,7 @@ import {
 } from '../auth/dashboard-gate';
 import { renderMarkdownToHtml } from '../publish/service';
 import type { AppContext } from '../types';
+import { loadTownStats, renderTownView } from './town-view';
 
 export const dashboardRoutes = new Hono<AppContext>();
 
@@ -136,69 +137,9 @@ function linkifyValue(key: string, raw: unknown): string {
 
 dashboardRoutes.get('/', async (c) => {
 	const env = c.env;
-
-	const [entriesRes, cronJobsRes, publishedListing] = await Promise.all([
-		env.DB.prepare(
-			'SELECT collection, COUNT(*) AS n FROM wiki_entries GROUP BY collection ORDER BY n DESC'
-		).all<{ collection: string; n: number }>(),
-		env.DB.prepare('SELECT COUNT(*) AS n FROM cron_jobs WHERE enabled = 1').first<{ n: number }>(),
-		env.FILES.list({ prefix: 'published-meta/', limit: 100 }),
-	]);
-
-	const totalEntries = (entriesRes.results ?? []).reduce((s, r) => s + r.n, 0);
-	const collectionBreakdown = (entriesRes.results ?? [])
-		.map(
-			(r) =>
-				`<tr><td><a href="/dashboard/wiki?c=${r.collection}">${r.collection}</a></td><td>${r.n}</td></tr>`
-		)
-		.join('');
-
-	const recent = await env.DB.prepare(
-		'SELECT collection, slug, title, updated_at FROM wiki_entries ORDER BY updated_at DESC LIMIT 6'
-	).all<{ collection: string; slug: string; title: string | null; updated_at: string }>();
-	const recentList = (recent.results ?? [])
-		.map(
-			(r) =>
-				`<li><a href="/dashboard/wiki/${r.collection}/${r.slug}">${r.title ?? r.slug}</a> <span class="muted">in ${r.collection} · ${new Date(r.updated_at).toLocaleString()}</span></li>`
-		)
-		.join('');
-
-	const noEntriesYet = totalEntries === 0;
-	const connectCallout = noEntriesYet
-		? `<div class="card" style="margin-bottom: 1.5rem; background: linear-gradient(180deg, #eff6ff 0%, white 100%); border-color: var(--accent);">
-  <h2 style="margin-top: 0;">First time here? Wire your Goose.</h2>
-  <p style="margin: 0.5rem 0;">Nothing in the wiki yet. To start putting things into Office Town, connect your local Goose to this worker — one paste in a terminal wires all 6 MCPs.</p>
-  <a href="/dashboard/connect" style="display: inline-block; margin-top: 0.5rem; padding: 0.5rem 1rem; background: var(--accent); color: white; border-radius: 6px; text-decoration: none; font-weight: 500;">Get the install script →</a>
-</div>`
-		: '';
-
-	const content = `
-${connectCallout}<h1 style="margin-top: 0;">Town overview</h1>
-<div class="kpi" style="margin: 1rem 0 2rem;">
-  <div><div class="label">Wiki entries</div><div class="value">${totalEntries}</div></div>
-  <div><div class="label">Active routines</div><div class="value">${cronJobsRes?.n ?? 0}</div></div>
-  <div><div class="label">Published pages</div><div class="value">${publishedListing.objects.length}</div></div>
-</div>
-<div class="grid">
-  <div class="card">
-    <h2>Collections</h2>
-    <table>${collectionBreakdown || '<tr><td class="muted">No entries yet</td></tr>'}</table>
-  </div>
-  <div class="card">
-    <h2>Recently updated</h2>
-    <ul style="margin: 0; padding-left: 1.2rem;">${recentList || '<li class="muted">Nothing yet</li>'}</ul>
-  </div>
-</div>
-<p class="muted" style="margin-top: 2rem; font-size: 0.9em;">
-  Running on <code>${new URL(c.req.url).host}</code>.
-  <span style="display: inline-block; margin: 0 0.5rem;">·</span>
-  Want a custom domain like <code>yourbiz.town</code>? <a href="/dashboard/wire-domain">~60 sec in CF dashboard →</a>
-  <span style="display: inline-block; margin: 0 0.5rem;">·</span>
-  Want the wiki on disk? <a href="/dashboard/wire-sync">Install local sync daemon →</a>
-  <span style="display: inline-block; margin: 0 0.5rem;">·</span>
-  Team deployment? <a href="/dashboard/wire-google-signin">Wire Google sign-in (v1.2 prep) →</a>
-</p>`;
-	return c.html(LAYOUT('Office Town - Dashboard', content));
+	const workerHost = new URL(c.req.url).host;
+	const stats = await loadTownStats(env);
+	return c.html(renderTownView(stats, workerHost));
 });
 
 dashboardRoutes.get('/dashboard/wiki', async (c) => {
