@@ -1,5 +1,6 @@
 // Publish service — markdown -> public page at /p/<slug>.
 
+import { Marked, type Tokens } from 'marked';
 import type { Env } from '../types';
 
 export interface PublishInput {
@@ -22,20 +23,6 @@ const PUBLISH_PREFIX = 'published/';
 const META_PREFIX = 'published-meta/';
 
 const SLUG_PATTERN = /^[a-z0-9][a-z0-9-]{0,99}$/;
-const HEADING_PATTERN = /^(#{1,6})\s+(.*)$/;
-const LIST_UL_PATTERN = /^[-*]\s+/;
-const LIST_OL_PATTERN = /^\d+\.\s+/;
-const FENCE_PATTERN = /^```/;
-const QUOTE_PATTERN = /^>\s/;
-const HR_PATTERN = /^-{3,}$|^\*{3,}$/;
-const BLOCK_BREAK_PATTERN = /^(#{1,6}|>\s|[-*]\s+|\d+\.\s+|```|\|)/;
-const LINK_PATTERN = /\[([^\]]+)\]\(([^)]+)\)/g;
-const BOLD_PATTERN = /\*\*([^*]+)\*\*/g;
-const ITALIC_PATTERN = /\*([^*]+)\*/g;
-const CODE_PATTERN = /`([^`]+)`/g;
-const WIKILINK_PATTERN = /\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g;
-const TABLE_ROW_PATTERN = /^\|(.+)\|\s*$/;
-const TABLE_SEPARATOR_PATTERN = /^\|(\s*:?-+:?\s*\|)+\s*$/;
 
 function isValidPublishSlug(slug: string): boolean {
 	return SLUG_PATTERN.test(slug);
@@ -112,14 +99,90 @@ export class PublishService {
 	}
 }
 
+// Render options. `imageBasePath` is prefixed to any image src that
+// isn't already an absolute URL (http/https/data/leading-slash) so that
+// agents can drop binaries into wiki/<col>/<slug>/attachments/ and refer
+// to them as `![alt](attachments/foo.png)` in the markdown — the
+// renderer resolves them to the auth-gated `/dashboard/wiki-files/...`
+// route.
+export interface MarkdownRenderOptions {
+	imageBasePath?: string;
+}
+
+const ABSOLUTE_HREF_PATTERN = /^(https?:\/\/|data:|\/)/i;
+
+// One Marked instance per render — keeps extension state scoped to the
+// call. Marked's image renderer is overridden to apply imageBasePath;
+// the wikilink extension handles `[[slug]]` and `[[slug|Label]]`.
+function buildRenderer(options: MarkdownRenderOptions = {}): Marked {
+	const m = new Marked({ gfm: true, breaks: false, async: false });
+
+	m.use({
+		extensions: [
+			{
+				name: 'wikilink',
+				level: 'inline',
+				start(src: string) {
+					return src.indexOf('[[');
+				},
+				tokenizer(src: string) {
+					const match = /^\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/.exec(src);
+					if (match) {
+						return {
+							type: 'wikilink',
+							raw: match[0],
+							slug: match[1].trim(),
+							label: (match[2] ?? match[1]).trim(),
+						};
+					}
+					return undefined;
+				},
+				renderer(token: Tokens.Generic) {
+					const slug = String(token.slug);
+					const label = String(token.label);
+					const safeSlug = slug.replace(/"/g, '&quot;');
+					const safeLabel = label
+						.replace(/&/g, '&amp;')
+						.replace(/</g, '&lt;')
+						.replace(/>/g, '&gt;');
+					return `<a href="/dashboard/wiki?q=${encodeURIComponent(safeSlug)}" class="wikilink">${safeLabel}</a>`;
+				},
+			},
+		],
+		renderer: {
+			image(token: Tokens.Image) {
+				let href = token.href ?? '';
+				if (options.imageBasePath && !ABSOLUTE_HREF_PATTERN.test(href)) {
+					href = `${options.imageBasePath.replace(/\/$/, '')}/${href.replace(/^\.\//, '')}`;
+				}
+				const safeHref = href.replace(/"/g, '&quot;');
+				const safeAlt = (token.text ?? '').replace(/"/g, '&quot;');
+				const safeTitle = token.title ? ` title="${token.title.replace(/"/g, '&quot;')}"` : '';
+				return `<img src="${safeHref}" alt="${safeAlt}"${safeTitle} loading="lazy" style="max-width: 100%; height: auto;">`;
+			},
+		},
+	});
+
+	return m;
+}
+
 /**
- * Minimal markdown -> HTML renderer. Inline, no external dep. Covers
- * headings, paragraphs, fenced code, lists, links, bold/italic, blockquotes.
+ * Render markdown to body HTML only (no <html>/<head>/<style> wrapper).
+ * Used by the dashboard which has its own LAYOUT.
  */
-export function renderMarkdownToHtml(md: string, title: string): string {
+export function renderMarkdownBody(md: string, options: MarkdownRenderOptions = {}): string {
+	const m = buildRenderer(options);
+	return m.parse(md, { async: false }) as string;
+}
+
+/**
+ * Render markdown to a full standalone HTML page. Used by the public
+ * /p/<slug> publish path.
+ */
+export function renderMarkdownToHtml(md: string, title: string, options: MarkdownRenderOptions = {}): string {
 	const escape = (s: string) =>
 		s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-	const body = renderBlocks(md, escape);
+	const body = renderMarkdownBody(md, options);
 	return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -142,6 +205,10 @@ pre code { background: transparent; padding: 0; }
 blockquote { border-left: 3px solid var(--accent); margin: 1em 0; padding-left: 1em; color: var(--muted); }
 ul, ol { padding-left: 1.5em; }
 hr { border: 0; border-top: 1px solid var(--border); margin: 2em 0; }
+table { border-collapse: collapse; margin: 1em 0; width: 100%; }
+table th, table td { border: 1px solid var(--border); padding: 0.5em 0.75em; text-align: left; }
+table th { background: var(--code); font-weight: 600; }
+img { max-width: 100%; height: auto; border-radius: 6px; }
 footer { max-width: 720px; margin: 1rem auto; color: var(--muted); font-size: 0.85em; text-align: center; }
 </style>
 </head>
@@ -152,139 +219,4 @@ ${body}
 <footer>Published with Office Town Cloud</footer>
 </body>
 </html>`;
-}
-
-function renderBlocks(md: string, escape: (s: string) => string): string {
-	const lines = md.split('\n');
-	const out: string[] = [];
-	let i = 0;
-
-	while (i < lines.length) {
-		const line = lines[i];
-
-		if (FENCE_PATTERN.test(line)) {
-			const lang = line.slice(3).trim();
-			i++;
-			const code: string[] = [];
-			while (i < lines.length && !FENCE_PATTERN.test(lines[i])) {
-				code.push(lines[i]);
-				i++;
-			}
-			i++;
-			out.push(
-				`<pre><code${lang ? ` class="language-${escape(lang)}"` : ''}>${escape(code.join('\n'))}</code></pre>`
-			);
-			continue;
-		}
-
-		const heading = HEADING_PATTERN.exec(line);
-		if (heading) {
-			const level = heading[1].length;
-			out.push(`<h${level}>${renderInline(heading[2], escape)}</h${level}>`);
-			i++;
-			continue;
-		}
-
-		if (QUOTE_PATTERN.test(line)) {
-			const quote: string[] = [];
-			while (i < lines.length && QUOTE_PATTERN.test(lines[i])) {
-				quote.push(lines[i].replace(QUOTE_PATTERN, ''));
-				i++;
-			}
-			out.push(`<blockquote>${renderInline(quote.join(' '), escape)}</blockquote>`);
-			continue;
-		}
-
-		if (LIST_UL_PATTERN.test(line)) {
-			const items: string[] = [];
-			while (i < lines.length && LIST_UL_PATTERN.test(lines[i])) {
-				items.push(`<li>${renderInline(lines[i].replace(LIST_UL_PATTERN, ''), escape)}</li>`);
-				i++;
-			}
-			out.push(`<ul>${items.join('')}</ul>`);
-			continue;
-		}
-
-		if (LIST_OL_PATTERN.test(line)) {
-			const items: string[] = [];
-			while (i < lines.length && LIST_OL_PATTERN.test(lines[i])) {
-				items.push(`<li>${renderInline(lines[i].replace(LIST_OL_PATTERN, ''), escape)}</li>`);
-				i++;
-			}
-			out.push(`<ol>${items.join('')}</ol>`);
-			continue;
-		}
-
-		if (HR_PATTERN.test(line.trim())) {
-			out.push('<hr>');
-			i++;
-			continue;
-		}
-
-		// GFM table: header row matching `^| col | col |$`, then a separator
-		// row matching `^| --- | --- |$`, then any number of body rows.
-		if (TABLE_ROW_PATTERN.test(line) && i + 1 < lines.length && TABLE_SEPARATOR_PATTERN.test(lines[i + 1])) {
-			const headers = splitTableRow(line);
-			i += 2; // skip header + separator
-			const bodyRows: string[][] = [];
-			while (i < lines.length && TABLE_ROW_PATTERN.test(lines[i])) {
-				bodyRows.push(splitTableRow(lines[i]));
-				i++;
-			}
-			const headerCells = headers.map((h) => `<th>${renderInline(h, escape)}</th>`).join('');
-			const bodyHtml = bodyRows
-				.map((row) => {
-					const cells = row.map((c) => `<td>${renderInline(c, escape)}</td>`).join('');
-					return `<tr>${cells}</tr>`;
-				})
-				.join('');
-			out.push(
-				`<table class="md-table"><thead><tr>${headerCells}</tr></thead><tbody>${bodyHtml}</tbody></table>`,
-			);
-			continue;
-		}
-
-		if (line.trim() === '') {
-			i++;
-			continue;
-		}
-
-		const para: string[] = [];
-		while (
-			i < lines.length &&
-			lines[i].trim() !== '' &&
-			!BLOCK_BREAK_PATTERN.test(lines[i])
-		) {
-			para.push(lines[i]);
-			i++;
-		}
-		out.push(`<p>${renderInline(para.join(' '), escape)}</p>`);
-	}
-
-	return out.join('\n');
-}
-
-function renderInline(text: string, escape: (s: string) => string): string {
-	let result = escape(text);
-	result = result.replace(CODE_PATTERN, '<code>$1</code>');
-	result = result.replace(BOLD_PATTERN, '<strong>$1</strong>');
-	result = result.replace(ITALIC_PATTERN, '<em>$1</em>');
-	result = result.replace(LINK_PATTERN, (_, label, href) => {
-		const safeHref = href.replace(/"/g, '&quot;');
-		return `<a href="${safeHref}">${label}</a>`;
-	});
-	// [[wiki-link]] or [[slug|Label]] -> search link to wiki for now
-	result = result.replace(WIKILINK_PATTERN, (_, slug, label) => {
-		const safeSlug = slug.trim().replace(/"/g, '&quot;');
-		const linkLabel = (label ?? slug).trim();
-		return `<a href="/dashboard/wiki?q=${encodeURIComponent(safeSlug)}" class="wikilink">${linkLabel}</a>`;
-	});
-	return result;
-}
-
-// Split a "| col1 | col2 | col3 |" row into ["col1", "col2", "col3"].
-function splitTableRow(line: string): string[] {
-	const matched = line.match(TABLE_ROW_PATTERN);
-	if (!matched) return [];
-	return matched[1].split('|').map((c) => c.trim());
 }

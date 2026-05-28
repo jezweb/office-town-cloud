@@ -28,6 +28,7 @@
     "drizzle-orm": "^0.45.2",
     "hono": "^4.6.0",
     "js-yaml": "^4.1.0",
+    "marked": "^18.0.4",
     "nanoid": "^5.0.0"
   },
   "devDependencies": {

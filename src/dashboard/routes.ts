@@ -8,14 +8,12 @@ import {
 	isClaimed,
 	markClaimed,
 } from '../auth/dashboard-gate';
-import { renderMarkdownToHtml } from '../publish/service';
+import { renderMarkdownBody } from '../publish/service';
 import type { AppContext } from '../types';
 import { loadTownStats, renderTownView } from './town-view';
 import { PROMPT_VARIANTS } from '../setup/prompts';
 
 export const dashboardRoutes = new Hono<AppContext>();
-
-const MAIN_REGEX = /<main>([\s\S]*?)<\/main>/;
 
 const LAYOUT = (title: string, content: string) => `<!DOCTYPE html>
 <html lang="en">
@@ -835,6 +833,38 @@ dashboardRoutes.get('/dashboard/wiki/tree', async (c) => {
 	return c.html(LAYOUT('Wiki tree - Office Town', content));
 });
 
+// Serves arbitrary R2 wiki-folder files (images, PDFs, attachments) at
+// /dashboard/wiki-files/<collection>/<slug>/<rest...> so entries can
+// reference images alongside their canonical markdown. Gated by the
+// dashboard middleware (cookie auth) like everything else under
+// /dashboard/. The route only serves keys under the matching wiki/<col>/<slug>/
+// prefix so it can't be used to fetch other R2 paths.
+dashboardRoutes.get('/dashboard/wiki-files/:collection/:slug/*', async (c) => {
+	const collection = c.req.param('collection');
+	const slug = c.req.param('slug');
+	const folderPrefix = `wiki/${collection}/${slug}/`;
+	const reqPath = c.req.path;
+	const marker = `/dashboard/wiki-files/${collection}/${slug}/`;
+	const idx = reqPath.indexOf(marker);
+	if (idx === -1) return c.notFound();
+	const rest = reqPath.slice(idx + marker.length);
+	if (!rest || rest.includes('..')) return c.notFound();
+
+	const r2Key = `${folderPrefix}${rest}`;
+	const obj = await c.env.WIKI.get(r2Key);
+	if (!obj) return c.notFound();
+
+	const headers = new Headers();
+	if (obj.httpMetadata?.contentType) {
+		headers.set('content-type', obj.httpMetadata.contentType);
+	}
+	if (obj.httpEtag) {
+		headers.set('etag', obj.httpEtag);
+	}
+	headers.set('cache-control', 'private, max-age=300');
+	return new Response(obj.body, { headers });
+});
+
 dashboardRoutes.get('/dashboard/wiki/:collection/:slug', async (c) => {
 	const collection = c.req.param('collection');
 	const slug = c.req.param('slug');
@@ -846,13 +876,15 @@ dashboardRoutes.get('/dashboard/wiki/:collection/:slug', async (c) => {
 	if (!row) return c.html(LAYOUT('Not found', '<h1>Not found</h1>'), 404);
 
 	const frontmatter = JSON.parse(row.frontmatter_json) as Record<string, unknown>;
-	const renderedBody = renderMarkdownToHtml(row.body, row.title ?? row.slug);
 	const fmRows = Object.entries(frontmatter)
 		.map(([k, v]) => `<tr><th>${escapeHtml(k)}</th><td>${linkifyValue(k, v)}</td></tr>`)
 		.join('');
 
-	const bodyMatch = renderedBody.match(MAIN_REGEX);
-	const innerBody = bodyMatch ? bodyMatch[1] : `<pre>${row.body.replace(/</g, '&lt;')}</pre>`;
+	// Render the body. Pass imageBasePath so relative `![alt](attachments/foo.png)`
+	// resolves to the auth-gated wiki-files route under the same entry folder.
+	const innerBody = renderMarkdownBody(row.body, {
+		imageBasePath: `/dashboard/wiki-files/${collection}/${slug}`,
+	});
 
 	// Companion files: list R2 objects under wiki/<collection>/<slug>/
 	// and surface any that aren't the canonical entry (notes/, sessions/,
