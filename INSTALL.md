@@ -8,22 +8,17 @@ Office Town adds **team-shaped capabilities** to your [Goose](https://block.gith
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/jezweb/office-town-cloud)
 
-Click the button. Cloudflare's flow signs you in (no API token required), provisions D1 + R2 + Vectorize + Queue + Workers AI + Images + Email Routing + Containers (for the sandbox MCP) from `wrangler.jsonc`, and prompts you for one required secret:
-
-- **`MCP_BEARER_TOKEN`** — generate via `openssl rand -hex 32`. Keep this; you'll paste it on the next step.
-
-Optional fields:
-
-- `BETTER_AUTH_SECRET` — for dashboard sign-in (`openssl rand -hex 32`)
-- `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` — for dashboard Google auth
+Click the button. Cloudflare's flow signs you in (no API token required), provisions D1 + R2 + Vectorize + Queue + Workers AI + Images + Email Routing + Containers (for the sandbox MCP) from `wrangler.jsonc`. **Zero required secrets** — leave every field blank and click Deploy.
 
 ~2-3 minutes later you'll have a worker URL like `https://office-town-<you>.<account>.workers.dev`. (First deploy is ~30 sec slower than subsequent ones — Cloudflare builds the sandbox container image once and caches it.)
+
+> **Want to pre-set a specific bearer or wire Google sign-in?** Optional secrets you can set in the deploy form OR later via `wrangler secret put`: `MCP_BEARER_TOKEN` (overrides the auto-generated one), `GOOGLE_CLIENT_ID` + `GOOGLE_CLIENT_SECRET` (enables Google sign-in for the dashboard), `BETTER_AUTH_SECRET` (session signing for dashboard sign-in). None are required for the worker to run.
 
 > **Self-deploying via `wrangler deploy` instead of the button?** You'll need Docker running locally for that first deploy — wrangler builds the sandbox container image on your machine and pushes it to Cloudflare's registry. After that, normal deploys reuse the cached image. End-users clicking the button above don't need Docker (Cloudflare's hosted build infra handles it).
 
 ### 2. Open `<your-worker-url>/dashboard/connect`
 
-That page has a form: paste your `MCP_BEARER_TOKEN`, click **Copy install script**, paste into a terminal. The script wires all 6 MCPs into your local Goose installation (`goose mcp add` × 6 + `goose mcp disable memory`) using `goose --version` to detect Goose first. Token never leaves your browser.
+That page already knows the bearer token (auto-generated on first request, prefilled in the form). Click **Copy install script**, paste into a terminal. The script wires all 6 MCPs into your local Goose installation (`goose mcp add` × 6 + `goose mcp disable memory`).
 
 ### 3. Clone the town template
 
@@ -52,7 +47,7 @@ roles + skills + recipes.
 
 I'll provide:
 - My Cloudflare deployment URL (from the Deploy button)
-- My MCP_BEARER_TOKEN (entered in the Cloudflare deploy form)
+- My MCP bearer token (from <my-worker>/dashboard/connect — auto-generated)
 - A town folder path (default: ~/Documents/my-town)
 
 GROUND RULES:

@@ -5,6 +5,7 @@
 
 import type { Context, MiddlewareHandler } from 'hono';
 import type { AppContext } from '../types';
+import { getEffectiveBearer } from './bearer';
 
 const MCP_PATH_PREFIXES = ['/mcp/', '/api/wiki/', '/api/files/', '/api/publish/', '/api/cron/'];
 
@@ -32,10 +33,11 @@ export const authMiddleware: MiddlewareHandler<AppContext> = async (c, next) => 
 	const isMcp = isMcpRequest(c);
 
 	if (isMcp) {
-		const required = c.env.MCP_BEARER_TOKEN;
-		if (!required) {
-			return c.json({ error: 'Server not configured', code: 'config_missing' }, 503);
-		}
+		// getEffectiveBearer always returns a token — either the explicit
+		// wrangler secret, the D1-cached auto-generated one, or a freshly
+		// minted + persisted one. The 503 path is gone — there's no way
+		// to be unconfigured on first request anymore.
+		const required = await getEffectiveBearer(c.env);
 		const provided = extractBearer(c.req.header('authorization') ?? null);
 		if (!provided || !constantTimeEquals(provided, required)) {
 			return c.json({ error: 'Unauthorised', code: 'unauthorised' }, 401);

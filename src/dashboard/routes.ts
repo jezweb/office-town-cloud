@@ -1,6 +1,7 @@
 // Dashboard — server-rendered HTML over wiki/files/cron/published.
 
 import { Hono } from 'hono';
+import { getEffectiveBearer } from '../auth/bearer';
 import { renderMarkdownToHtml } from '../publish/service';
 import type { AppContext } from '../types';
 
@@ -401,9 +402,15 @@ dashboardRoutes.get('/dashboard/connect', async (c) => {
 	const reqUrl = new URL(c.req.url);
 	const defaultWorkerUrl = `${reqUrl.protocol}//${reqUrl.host}`;
 
+	// Prefill the bearer with whatever the worker actually considers
+	// authoritative right now (explicit secret → D1-cached → freshly
+	// generated). Means a brand-new deploy serves a working install
+	// script with one less manual step.
+	const effectiveBearer = await getEffectiveBearer(c.env);
+
 	// Server-side rendered with placeholders the JS replaces on the fly.
-	// The bearer never round-trips through the server — pure browser-side
-	// string assembly.
+	// The bearer is included server-side (the page is privileged), but
+	// the install-script generation is purely browser-side once rendered.
 	const content = `
 <h1 style="margin-top: 0;">Connect your Goose</h1>
 <p class="muted">Wire all 6 Office Town MCPs into your local Goose installation with one paste.</p>
@@ -416,9 +423,9 @@ dashboardRoutes.get('/dashboard/connect', async (c) => {
   </label>
 
   <label style="display: block; margin-bottom: 1rem;">
-    <div style="font-weight: 600; margin-bottom: 0.25rem;">MCP_BEARER_TOKEN</div>
-    <div class="muted" style="font-size: 0.85em; margin-bottom: 0.4rem;">The token you set when deploying (or generate one with <code>openssl rand -hex 32</code>). Never leaves your browser.</div>
-    <input id="bearer" type="text" placeholder="Paste your MCP_BEARER_TOKEN" autocomplete="off" spellcheck="false" style="width: 100%; padding: 0.5rem 0.6rem; border: 1px solid var(--border); border-radius: 6px; font-size: 0.95em; font-family: ui-monospace, SFMono-Regular, monospace;">
+    <div style="font-weight: 600; margin-bottom: 0.25rem;">MCP bearer token</div>
+    <div class="muted" style="font-size: 0.85em; margin-bottom: 0.4rem;">Prefilled with the auto-generated token for this deployment. To rotate, run <code>wrangler secret put MCP_BEARER_TOKEN</code> with a value of your choice — the new value will override this one.</div>
+    <input id="bearer" type="text" value="${effectiveBearer}" autocomplete="off" spellcheck="false" style="width: 100%; padding: 0.5rem 0.6rem; border: 1px solid var(--border); border-radius: 6px; font-size: 0.95em; font-family: ui-monospace, SFMono-Regular, monospace;">
   </label>
 
   <div style="display: flex; gap: 0.75rem; align-items: center; margin-bottom: 0.75rem;">

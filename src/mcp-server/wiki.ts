@@ -33,6 +33,7 @@ import { Hono } from 'hono';
 import type { AppContext, Env } from '../types';
 import { WikiService } from '../wiki/service';
 import { searchWiki } from '../wiki/search';
+import { getEffectiveBearer } from '../auth/bearer';
 
 const app = new Hono<AppContext>();
 
@@ -396,7 +397,7 @@ async function handleRpc(env: Env, req: JsonRpcRequest): Promise<JsonRpcResult> 
 
 app.post('/', async (c) => {
 	const auth = c.req.header('authorization');
-	if (!auth || auth !== `Bearer ${c.env.MCP_BEARER_TOKEN}`) {
+	if (!auth || auth !== `Bearer ${await getEffectiveBearer(c.env)}`) {
 		return c.json({ error: 'Unauthorised' }, 401);
 	}
 	const req = await c.req.json<JsonRpcRequest>();
@@ -406,7 +407,7 @@ app.post('/', async (c) => {
 
 app.get('/sse', async (c) => {
 	const auth = c.req.header('authorization');
-	if (!auth || auth !== `Bearer ${c.env.MCP_BEARER_TOKEN}`) {
+	if (!auth || auth !== `Bearer ${await getEffectiveBearer(c.env)}`) {
 		return c.json({ error: 'Unauthorised' }, 401);
 	}
 	const encoder = new TextEncoder();
