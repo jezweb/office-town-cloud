@@ -33,7 +33,15 @@ Cloudflare provisions everything from `wrangler.jsonc`:
 
 You need Goose installed: https://block.github.io/goose/.
 
-👉 **[Open INSTALL.md](./INSTALL.md)** — paste one prompt into any capable AI agent. It installs the plugin + knowledge pack, runs `goose mcp add` for the 3 MCP servers, disables Goose's Memory extension (the wiki replaces it), clones the town template, runs a smoke test. ~5 min after the button.
+👉 **[Open INSTALL.md](./INSTALL.md)** — paste one prompt into any capable AI agent. It installs the plugin + knowledge pack, runs `goose mcp add` for the 6 MCP servers, disables Goose's Memory extension (the wiki replaces it), clones the town template, runs a smoke test. ~5 min after the button.
+
+### Optional — wire local file sync
+
+Want the wiki + binary attachments on your laptop, editable in Obsidian/VSCode/Finder?
+
+`<your-worker-url>/dashboard/wire-sync` — pick one of: shell one-liner, homebrew, or agent prompt. Installs [officetowd](https://github.com/jezweb/officetowd) — a small Go daemon that bisyncs your local folder against the worker. Same MCP bearer; no R2 token needed. Goanna-style conflict resolution.
+
+See `.jez/artifacts/unified-write-path-2026-05-28.md` for why all writes flow through the worker (audit, frontmatter repair, indexing).
 
 ## The MCP gateway tools — 57 actions across 6 servers
 

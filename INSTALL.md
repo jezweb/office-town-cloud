@@ -49,6 +49,20 @@ Restart Goose, smoke-test: `wiki(action: 'list', collection: 'contacts')` should
 
 That's it — about 5 minutes total.
 
+### 4. (Optional) Wire local sync — wiki on disk in your editor
+
+By default the wiki lives in Cloudflare R2 + the dashboard. To **also** mirror it as files on your laptop (edit in Obsidian/VSCode, drop binaries into Finder, Spotlight search), install the sync daemon:
+
+Open `<your-worker-url>/dashboard/wire-sync` and pick one of three options:
+
+- **Shell one-liner**: `curl -fsSL <your-worker-url>/api/sync/install.sh | bash` (script shown verbatim above the copy button)
+- **Homebrew**: `brew tap jezweb/tap && brew install officetowd && officetowd configure --from-dashboard <your-worker-url> && officetowd start`
+- **Agent prompt**: paste into Claude Code / Goose / Aider — agent walks you through it
+
+The daemon talks to your worker via the MCP bearer (no R2 token needed). Writes flow through the worker so the dashboard + MCPs see the same content the daemon sees. Conflict resolution via `.conflict-<timestamp>` siblings — same Goanna pattern.
+
+> **Why optional**: most Office Town workflows happen via Goose (MCP) + the dashboard. Local file mirror is a nice-to-have for power users who want IDE access. Skip if you don't need it.
+
 ---
 
 ## Fallback path — agent-driven install (if the connect page is unreachable)
