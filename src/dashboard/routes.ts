@@ -1144,7 +1144,11 @@ dashboardRoutes.get('/dashboard/connect', async (c) => {
 
 	const content = `${claimBanner}
 <h1 style="margin-top: 0;">Connect your Goose</h1>
-<p class="muted">Wire all 6 Office Town MCPs into your local Goose. Two paths — pick the one that matches how you use Goose.</p>
+<p class="muted">Wire all 6 Office Town MCPs into your Goose. Both paths use the <code>goose</code> CLI to do the wiring. If you don't have it yet, install once with:</p>
+<pre style="background: var(--code); border: 1px solid var(--border); border-radius: 6px; padding: 0.6rem 0.8rem; font-size: 0.85em; margin: 0.5rem 0 0;">curl -fsSL https://github.com/block/goose/releases/download/stable/download_cli.sh | bash
+<span class="muted"># or on macOS:</span>
+brew install block/tap/goose</pre>
+<p class="muted" style="margin-top: 0.6rem; font-size: 0.9em;">Goose Desktop ships as a GUI app — it doesn't put <code>goose</code> on PATH by itself. After installing the CLI, both paths below work the same way under the hood; pick the one that matches your comfort level.</p>
 
 <div class="card" style="max-width: 800px; margin-top: 1.5rem;">
   <label style="display: block; margin-bottom: 1rem;">
@@ -1165,8 +1169,8 @@ dashboardRoutes.get('/dashboard/connect', async (c) => {
 
 <!-- OPTION A — shell script for the goose CLI -->
 <div class="card" style="max-width: 800px; margin-top: 1.5rem;">
-  <h2 style="margin-top: 0;">Option A — Goose CLI (terminal)</h2>
-  <p style="margin: 0.5rem 0;" class="muted">For users who have the <code>goose</code> command on their PATH. Paste this shell script into your terminal — it runs <code>goose mcp disable memory</code> + <code>goose mcp add</code> × 6. Idempotent, safe to re-run.</p>
+  <h2 style="margin-top: 0;">Option A — Terminal (paste a shell script)</h2>
+  <p style="margin: 0.5rem 0;" class="muted">For users comfortable with a terminal. Paste this script — it runs <code>goose mcp disable memory</code> + <code>goose mcp add</code> × 6. Idempotent, safe to re-run. Restart Goose Desktop afterward if it was open.</p>
 
   <div style="display: flex; gap: 0.75rem; align-items: center; margin: 0.75rem 0;">
     <button id="copy-btn" type="button" onclick="copyScript()" style="padding: 0.5rem 1rem; border: 0; border-radius: 6px; background: var(--accent); color: white; font-size: 0.95em; font-weight: 500; cursor: pointer;">Copy shell script</button>
@@ -1176,10 +1180,10 @@ dashboardRoutes.get('/dashboard/connect', async (c) => {
   <pre id="script" style="background: var(--code); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; font-size: 0.85em; overflow-x: auto; line-height: 1.45; max-height: 360px;"></pre>
 </div>
 
-<!-- OPTION B — agent prompt for Goose Desktop / Server -->
+<!-- OPTION B — agent prompt for Goose Desktop (uses its shell tool) -->
 <div class="card" style="max-width: 800px; margin-top: 1.5rem;">
-  <h2 style="margin-top: 0;">Option B — Goose Desktop (or Goose Server)</h2>
-  <p style="margin: 0.5rem 0;" class="muted">For users who run Goose as a desktop app or server (no terminal needed). Paste this prompt into a fresh Goose chat — the agent uses Goose's built-in <code>manage_extensions</code> tool to wire all 6 MCPs into itself, then smoke-tests.</p>
+  <h2 style="margin-top: 0;">Option B — Goose Desktop (paste a prompt in chat)</h2>
+  <p style="margin: 0.5rem 0;" class="muted">For users who prefer chat over terminal. Paste this prompt into a fresh Goose chat — the agent uses its shell tool to run the same <code>goose mcp add</code> commands, then asks you to restart Goose Desktop. Same end result as Option A.</p>
 
   <div style="display: flex; gap: 0.75rem; align-items: center; margin: 0.75rem 0;">
     <button id="copy-prompt-btn" type="button" onclick="copyPrompt()" style="padding: 0.5rem 1rem; border: 0; border-radius: 6px; background: var(--accent); color: white; font-size: 0.95em; font-weight: 500; cursor: pointer;">Copy agent prompt</button>
@@ -1258,60 +1262,58 @@ function generateAgentPrompt() {
   const bearerSafe = bearer || 'YOUR_MCP_BEARER_TOKEN';
 
   return [
-    "You are the agent inside my Goose Desktop (or Goose Server). I want you to",
-    "add 6 Office Town MCP servers to yourself using Goose's built-in extension",
-    "manager. Office Town is a Cloudflare-hosted backend; the wiki MCP also",
-    "replaces Goose's built-in Memory extension.",
+    "You are the agent inside my Goose Desktop. I want you to add 6 Office Town",
+    "MCP servers to my Goose config by running 'goose mcp add' via your shell",
+    "tool. Goose Desktop and the Goose CLI share the same config at",
+    "~/.config/goose/config.yaml — the CLI edits, Desktop reads. After the CLI",
+    "writes new extensions, I'll restart Goose Desktop so it picks them up.",
+    "",
+    "Office Town is a Cloudflare-hosted backend; its wiki MCP also replaces",
+    "Goose's built-in Memory extension.",
     "",
     "Worker URL:  " + urlSafe,
     "MCP bearer:  " + bearerSafe,
     "",
-    "Use your native extension-management tool — the one called something like",
-    "'manage_extensions' or 'Manage Extensions' in your toolset. Do NOT try to",
-    "run a 'goose' binary in the shell; it isn't there. Do NOT search for it.",
+    "PREREQUISITE: the 'goose' CLI must be on PATH. If the first command below",
+    "fails with 'command not found', stop and tell me to run one of these in my",
+    "terminal:",
+    "  curl -fsSL https://github.com/block/goose/releases/download/stable/download_cli.sh | bash",
+    "  # macOS alternative:",
+    "  brew install block/tap/goose",
+    "Then I'll come back and you can resume from step 1.",
     "",
     "GROUND RULES:",
-    "- Tell me what you're about to do before running it.",
+    "- Tell me what you're about to run before running it.",
     "- Don't echo the bearer back where it could be logged.",
-    "- This only touches Goose's local config — nothing on Cloudflare.",
+    "- These commands only touch ~/.config/goose/config.yaml — no Cloudflare changes.",
     "",
-    "WHAT TO ADD (6 extensions, all streamable_http, same Authorization header):",
+    "STEPS (run each via your shell tool):",
     "",
-    "  name: office-town-wiki      url: " + urlSafe + "/mcp/wiki",
-    "  name: office-town-files     url: " + urlSafe + "/mcp/files",
-    "  name: office-town-email     url: " + urlSafe + "/mcp/email",
-    "  name: office-town-cron      url: " + urlSafe + "/mcp/cron",
-    "  name: office-town-voice     url: " + urlSafe + "/mcp/voice",
-    "  name: office-town-sandbox   url: " + urlSafe + "/mcp/sandbox",
+    "1. Disable Goose's built-in Memory extension (the wiki MCP replaces it):",
+    "     goose mcp disable memory",
     "",
-    "  type / transport:  streamable_http",
-    "  headers:           Authorization: Bearer " + bearerSafe,
+    "2. Add all 6 Office Town MCPs. Same bearer for all six:",
+    "     for name in wiki files email cron voice sandbox; do",
+    "       goose mcp add office-town-$name \\\\",
+    "         --transport streamable_http \\\\",
+    "         --url " + urlSafe + "/mcp/$name \\\\",
+    '         --header "Authorization: Bearer ' + bearerSafe + '"',
+    "     done",
     "",
-    "STEPS:",
+    "3. Verify all 6 wrote into the config:",
+    "     goose mcp list",
+    "   Should include office-town-{wiki,files,email,cron,voice,sandbox}.",
     "",
-    "1. Disable Goose's built-in Memory extension (the Office Town wiki MCP",
-    "   replaces it):",
-    "     manage_extensions(action: 'disable', extension_name: 'memory')",
+    "4. Tell me to restart Goose Desktop so it reloads the config and the new",
+    "   extensions become available in chat. Wait for me to confirm I've",
+    "   restarted before proceeding.",
     "",
-    "2. Add all 6 extensions above. Roughly (exact argument shape depends on",
-    "   your tool's schema — read it first):",
-    "     manage_extensions(action: 'add', extension: {",
-    "       name: 'office-town-wiki',",
-    "       type: 'streamable_http',",
-    "       url: '" + urlSafe + "/mcp/wiki',",
-    '       headers: { Authorization: "Bearer ' + bearerSafe + '" }',
-    "     })",
-    "   Repeat for files, email, cron, voice, sandbox.",
-    "",
-    "3. List your extensions and confirm all 6 office-town-* entries are present",
-    "   and enabled.",
-    "",
-    "4. Smoke test:",
+    "5. After I confirm the restart, smoke-test in a fresh chat by calling:",
     "     wiki(action: 'list', collection: 'contacts')",
     "   Empty result is fine on a new install — we just want a clean response,",
     "   not a connection error.",
     "",
-    "5. Report back: what added cleanly, the smoke-test result, anything weird.",
+    "6. Report back: what added cleanly, the smoke-test result, anything weird.",
     "",
     "CONSTRAINTS:",
     "- Don't touch Cloudflare or run wrangler from this prompt — the deploy is done.",
