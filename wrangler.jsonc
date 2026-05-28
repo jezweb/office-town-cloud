@@ -35,6 +35,14 @@
 		}
 	],
 
+	// IMPORTANT: When deploying via the "Deploy to Cloudflare" button,
+	// the form will ask you to fill in two Vectorize fields manually:
+	//     Dimensions: 768
+	//     Metric:     cosine
+	// These match Workers AI's @cf/baai/bge-base-en-v1.5 embedding model.
+	// The wrangler.jsonc schema explicitly forbids these as inline fields
+	// (additionalProperties: false on vectorize bindings) so they can't
+	// be pre-filled from this config.
 	"vectorize": [
 		{ "binding": "VECTOR_INDEX", "index_name": "office-town-vec" }
 	],

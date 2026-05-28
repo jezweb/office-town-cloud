@@ -8,7 +8,18 @@ Office Town adds **team-shaped capabilities** to your [Goose](https://block.gith
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/jezweb/office-town-cloud)
 
-Click the button. Cloudflare's flow signs you in (no API token required), provisions D1 + R2 + Vectorize + Queue + Workers AI + Images + Email Routing + Containers (for the sandbox MCP) from `wrangler.jsonc`. **Zero required secrets** — leave every field blank and click Deploy.
+Click the button. Cloudflare's flow signs you in (no API token required), provisions D1 + R2 + Vectorize + Queue + Workers AI + Images + Email Routing + Containers (for the sandbox MCP) from `wrangler.jsonc`.
+
+**Two fields you must fill in** (Cloudflare's form leaves them blank):
+
+| Field | Value |
+|---|---|
+| Vectorize **Dimensions** | `768` |
+| Vectorize **Metric** | `cosine` |
+
+These match Workers AI's `@cf/baai/bge-base-en-v1.5` embedding model that the wiki uses. The Cloudflare deploy form can't read these from `wrangler.jsonc` (the schema doesn't allow create-time params on Vectorize bindings — verified against wrangler 4.95 config schema), so they need to be entered by hand.
+
+**Everything else can stay blank** — leave the 4 secret fields empty, the worker auto-generates the bearer on first request.
 
 ~2-3 minutes later you'll have a worker URL like `https://office-town-<you>.<account>.workers.dev`. (First deploy is ~30 sec slower than subsequent ones — Cloudflare builds the sandbox container image once and caches it.)
 

@@ -16,7 +16,16 @@ Cloudflare provisions everything from `wrangler.jsonc`:
 - **Images** — resize / format-convert / strip-EXIF
 - **Email Routing** — outbound `send_email` binding + inbound `email()` handler (writes inbound to wiki/research/)
 
-The deploy form asks for **`MCP_BEARER_TOKEN`** (`openssl rand -hex 32`). Optional: `BETTER_AUTH_SECRET` + Google OAuth for the dashboard.
+**Two fields the deploy form asks for** — fill these in:
+
+| Field | Value |
+|---|---|
+| Vectorize **Dimensions** | `768` |
+| Vectorize **Metric** | `cosine` |
+
+(These match Workers AI's `bge-base-en-v1.5` embedding model. Cloudflare's deploy-button schema doesn't currently allow pre-filling these from `wrangler.jsonc`.)
+
+**Everything else can stay blank** — `MCP_BEARER_TOKEN` auto-generates on first request. Optional fields (`BETTER_AUTH_SECRET`, `GOOGLE_CLIENT_ID/SECRET`) are post-deploy opt-ins for dashboard sign-in.
 
 ~2 min, returns `https://office-town-<you>.<account>.workers.dev`.
 
