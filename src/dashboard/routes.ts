@@ -1089,6 +1089,185 @@ function hasValidSession(cookieHeader: string | null, expected: string): boolean
 	return false;
 }
 
+// Public one-liner installer. Curl-pipes a bash script that bootstraps the
+// goose CLI if missing, disables Goose's built-in Memory, then runs
+// `goose mcp add` × 6 with values from WORKER_URL + MCP_BEARER env vars.
+//
+// The script holds no secrets — the bearer comes from the user's shell
+// invocation, never via the URL. Bearer-in-URL would land in worker
+// access logs + browser history; env-var-on-the-command-line stays in
+// the user's shell history only.
+dashboardRoutes.get('/connect.sh', async () => {
+	const script = `#!/usr/bin/env bash
+# Office Town — one-line installer.
+#
+# Run with:
+#   curl -fsSL <worker>/connect.sh | WORKER_URL='https://<worker>' MCP_BEARER='<token>' bash
+#
+# What this does (default):
+#   1. Bootstraps the goose CLI (brew on macOS, curl-installer otherwise) if missing
+#   2. Disables Goose's built-in Memory extension (wiki MCP replaces it)
+#   3. Adds 6 office-town-* MCPs to ~/.config/goose/config.yaml via 'goose mcp add'
+#
+# Optional add-on (with WITH_SYNC=1):
+#   4. Installs the officetowd sync daemon binary
+#   5. Prints the two-command finish for officetowd (configure + start)
+#
+# Env vars:
+#   WORKER_URL   (required) — your Office Town worker URL
+#   MCP_BEARER   (required) — the dashboard / MCP bearer token
+#   WITH_SYNC=1  (optional) — also install the officetowd sync daemon
+
+set -euo pipefail
+
+if [ -z "\${WORKER_URL:-}" ] || [ -z "\${MCP_BEARER:-}" ]; then
+  cat >&2 <<'USAGE'
+Office Town: missing required env vars.
+
+Run as:
+  curl -fsSL <worker>/connect.sh | WORKER_URL='https://<worker>' MCP_BEARER='<token>' bash
+
+The dashboard "Connect" page gives you a pre-filled one-liner.
+USAGE
+  exit 1
+fi
+
+WORKER_URL="\${WORKER_URL%/}"
+
+echo "→ Office Town installer"
+echo "  worker: $WORKER_URL"
+echo ""
+
+# ---- Stage 1: Goose CLI ----------------------------------------------------
+# Goose Desktop ships as a GUI app and doesn't put the CLI on PATH by itself.
+# Bootstrap the CLI if it isn't there.
+if ! command -v goose >/dev/null 2>&1; then
+  echo "→ Goose CLI not found on PATH. Installing..."
+  if command -v brew >/dev/null 2>&1; then
+    brew install block/tap/goose
+  else
+    curl -fsSL https://github.com/block/goose/releases/download/stable/download_cli.sh | bash
+  fi
+  hash -r 2>/dev/null || true
+  if ! command -v goose >/dev/null 2>&1; then
+    echo "" >&2
+    echo "Goose installed, but its bin dir isn't on PATH for this shell." >&2
+    echo "Open a fresh terminal (so PATH refreshes) and re-run this installer." >&2
+    exit 1
+  fi
+fi
+echo "→ Goose: $(goose --version 2>/dev/null || echo 'version unknown')"
+echo ""
+
+# ---- Stage 2: Wire the 6 MCPs ---------------------------------------------
+# Office Town's wiki MCP replaces Goose's built-in Memory extension with
+# persistent R2-backed storage + semantic search.
+echo "→ Disabling Goose built-in Memory extension (wiki MCP replaces it)..."
+goose mcp disable memory 2>/dev/null || true
+
+AUTH_HEADER="Authorization: Bearer $MCP_BEARER"
+for name in wiki files email cron voice sandbox; do
+  echo "→ Adding office-town-$name..."
+  goose mcp add "office-town-$name" \\
+    --transport streamable_http \\
+    --url "$WORKER_URL/mcp/$name" \\
+    --header "$AUTH_HEADER"
+done
+echo ""
+echo "✓ All 6 Office Town MCPs wired into Goose."
+echo ""
+
+# ---- Stage 3: officetowd sync daemon (opt-in) -----------------------------
+# Skipped by default. Set WITH_SYNC=1 to also install the local sync daemon.
+if [ "\${WITH_SYNC:-0}" != "1" ]; then
+  echo "→ Skipping officetowd sync daemon (set WITH_SYNC=1 to install)."
+else
+  echo "→ Installing officetowd sync daemon..."
+
+  case "$(uname -s)" in
+    Darwin) OS=darwin ;;
+    Linux)  OS=linux ;;
+    *)
+      echo "  ! Unsupported OS for officetowd: $(uname -s). Skipping daemon install."
+      OS=""
+      ;;
+  esac
+  case "$(uname -m)" in
+    arm64|aarch64) ARCH=arm64 ;;
+    x86_64|amd64)  ARCH=amd64 ;;
+    *)
+      echo "  ! Unsupported arch for officetowd: $(uname -m). Skipping daemon install."
+      ARCH=""
+      ;;
+  esac
+
+  if [ -n "$OS" ] && [ -n "$ARCH" ]; then
+    DAEMON_REPO="jezweb/officetowd"
+    LATEST_TAG=$(curl -fsSL "https://api.github.com/repos/$DAEMON_REPO/releases/latest" \\
+      | grep -E '"tag_name"' | head -1 | sed -E 's/.*"tag_name": *"([^"]+)".*/\\1/')
+
+    if [ -z "$LATEST_TAG" ]; then
+      echo "  ! Could not resolve officetowd latest release. Skipping daemon install."
+    else
+      ASSET="officetowd-\${OS}-\${ARCH}.tar.gz"
+      URL="https://github.com/$DAEMON_REPO/releases/download/$LATEST_TAG/$ASSET"
+
+      INSTALL_DIR_DEFAULT="/usr/local/bin"
+      LOCAL_BIN="$HOME/.local/bin"
+      if [ -w "$INSTALL_DIR_DEFAULT" ]; then
+        INSTALL_DIR="$INSTALL_DIR_DEFAULT"
+        SUDO=""
+      elif sudo -n true 2>/dev/null; then
+        INSTALL_DIR="$INSTALL_DIR_DEFAULT"
+        SUDO=sudo
+      else
+        mkdir -p "$LOCAL_BIN"
+        INSTALL_DIR="$LOCAL_BIN"
+        SUDO=""
+        case ":$PATH:" in
+          *":$LOCAL_BIN:"*) ;;
+          *) echo "  ! $LOCAL_BIN not on PATH. Add: export PATH=\\"\\$HOME/.local/bin:\\$PATH\\"" ;;
+        esac
+      fi
+
+      TMP=$(mktemp -d)
+      trap "rm -rf $TMP" EXIT
+      echo "  Downloading $ASSET ($LATEST_TAG)..."
+      if curl -fsSL "$URL" -o "$TMP/officetowd.tar.gz"; then
+        tar -xzf "$TMP/officetowd.tar.gz" -C "$TMP"
+        \${SUDO:-} install -m 0755 "$TMP/officetowd" "$INSTALL_DIR/officetowd"
+        echo "  ✓ Installed officetowd to $INSTALL_DIR/officetowd"
+        echo ""
+        echo "  Finish setup with:"
+        echo "    officetowd configure --from-dashboard $WORKER_URL"
+        echo "    officetowd start"
+      else
+        echo "  ! Download failed from $URL — skipping daemon install."
+      fi
+    fi
+  fi
+fi
+echo ""
+
+# ---- Finish ---------------------------------------------------------------
+echo "Done. Next:"
+echo "  • Restart Goose Desktop (if it was open) so the config reloads."
+echo "  • In a fresh Goose chat, try:  list contacts in the wiki"
+echo "  • Verify the MCP wiring:       goose mcp list"
+if [ "\${WITH_SYNC:-0}" = "1" ]; then
+  echo "  • Configure officetowd:        officetowd configure --from-dashboard $WORKER_URL"
+fi
+`;
+
+	return new Response(script, {
+		headers: {
+			'content-type': 'text/x-shellscript; charset=utf-8',
+			'cache-control': 'no-store',
+			'content-disposition': 'inline; filename="connect.sh"',
+		},
+	});
+});
+
 dashboardRoutes.get('/dashboard/connect', async (c) => {
 	const reqUrl = new URL(c.req.url);
 	const defaultWorkerUrl = `${reqUrl.protocol}//${reqUrl.host}`;
@@ -1144,11 +1323,7 @@ dashboardRoutes.get('/dashboard/connect', async (c) => {
 
 	const content = `${claimBanner}
 <h1 style="margin-top: 0;">Connect your Goose</h1>
-<p class="muted">Wire all 6 Office Town MCPs into your Goose. Both paths use the <code>goose</code> CLI to do the wiring. If you don't have it yet, install once with:</p>
-<pre style="background: var(--code); border: 1px solid var(--border); border-radius: 6px; padding: 0.6rem 0.8rem; font-size: 0.85em; margin: 0.5rem 0 0;">curl -fsSL https://github.com/block/goose/releases/download/stable/download_cli.sh | bash
-<span class="muted"># or on macOS:</span>
-brew install block/tap/goose</pre>
-<p class="muted" style="margin-top: 0.6rem; font-size: 0.9em;">Goose Desktop ships as a GUI app — it doesn't put <code>goose</code> on PATH by itself. After installing the CLI, both paths below work the same way under the hood; pick the one that matches your comfort level.</p>
+<p class="muted">One line in your terminal wires all 6 Office Town MCPs into Goose. If the <code>goose</code> CLI isn't installed yet, the script will bootstrap it for you.</p>
 
 <div class="card" style="max-width: 800px; margin-top: 1.5rem;">
   <label style="display: block; margin-bottom: 1rem;">
@@ -1167,35 +1342,44 @@ brew install block/tap/goose</pre>
   </label>
 </div>
 
-<!-- OPTION A — shell script for the goose CLI -->
 <div class="card" style="max-width: 800px; margin-top: 1.5rem;">
-  <h2 style="margin-top: 0;">Option A — Terminal (paste a shell script)</h2>
-  <p style="margin: 0.5rem 0;" class="muted">For users comfortable with a terminal. Paste this script — it runs <code>goose mcp disable memory</code> + <code>goose mcp add</code> × 6. Idempotent, safe to re-run. Restart Goose Desktop afterward if it was open.</p>
+  <h2 style="margin-top: 0;">Run this in your terminal</h2>
+  <p style="margin: 0.5rem 0;" class="muted">Open Terminal (macOS / Linux) or WSL (Windows) and paste this single line. It bootstraps Goose CLI if missing, then wires the 6 MCPs.</p>
+
+  <label style="display: flex; gap: 0.5rem; align-items: flex-start; margin: 0.75rem 0; padding: 0.6rem 0.8rem; background: var(--code); border: 1px solid var(--border); border-radius: 6px; cursor: pointer;">
+    <input id="with-sync" type="checkbox" style="margin-top: 0.2rem;">
+    <span>
+      <strong style="font-size: 0.95em;">Also install the local sync daemon (officetowd)</strong>
+      <span class="muted" style="display: block; font-size: 0.85em; margin-top: 0.15rem;">
+        Mirrors your wiki + files to a folder on this Mac/Linux/WSL host so you can edit in Obsidian, VSCode, Typora, or any editor. Skip if you'll only edit via the AI agent.
+      </span>
+    </span>
+  </label>
 
   <div style="display: flex; gap: 0.75rem; align-items: center; margin: 0.75rem 0;">
-    <button id="copy-btn" type="button" onclick="copyScript()" style="padding: 0.5rem 1rem; border: 0; border-radius: 6px; background: var(--accent); color: white; font-size: 0.95em; font-weight: 500; cursor: pointer;">Copy shell script</button>
+    <button id="copy-btn" type="button" onclick="copyOneliner()" style="padding: 0.5rem 1rem; border: 0; border-radius: 6px; background: var(--accent); color: white; font-size: 0.95em; font-weight: 500; cursor: pointer;">Copy one-liner</button>
     <span id="copy-status" class="muted" style="font-size: 0.85em;"></span>
   </div>
 
-  <pre id="script" style="background: var(--code); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; font-size: 0.85em; overflow-x: auto; line-height: 1.45; max-height: 360px;"></pre>
-</div>
+  <pre id="oneliner" style="background: var(--code); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; font-size: 0.85em; overflow-x: auto; line-height: 1.45; white-space: pre-wrap; word-break: break-all;"></pre>
 
-<!-- OPTION B — agent prompt for Goose Desktop (uses its shell tool) -->
-<div class="card" style="max-width: 800px; margin-top: 1.5rem;">
-  <h2 style="margin-top: 0;">Option B — Goose Desktop (paste a prompt in chat)</h2>
-  <p style="margin: 0.5rem 0;" class="muted">For users who prefer chat over terminal. Paste this prompt into a fresh Goose chat — the agent uses its shell tool to run the same <code>goose mcp add</code> commands, then asks you to restart Goose Desktop. Same end result as Option A.</p>
+  <p class="muted" style="font-size: 0.85em; margin-top: 0.75rem;">Restart Goose Desktop afterward (if it was open) so it picks up the new extensions. Then in a fresh chat, try <code>list contacts in the wiki</code> to confirm.</p>
 
-  <div style="display: flex; gap: 0.75rem; align-items: center; margin: 0.75rem 0;">
-    <button id="copy-prompt-btn" type="button" onclick="copyPrompt()" style="padding: 0.5rem 1rem; border: 0; border-radius: 6px; background: var(--accent); color: white; font-size: 0.95em; font-weight: 500; cursor: pointer;">Copy agent prompt</button>
-    <span id="copy-prompt-status" class="muted" style="font-size: 0.85em;"></span>
-  </div>
-
-  <pre id="agent-prompt" style="background: var(--code); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; font-size: 0.85em; overflow-x: auto; line-height: 1.45; max-height: 500px; white-space: pre-wrap; word-break: break-word;"></pre>
+  <details style="margin-top: 1rem; font-size: 0.9em;">
+    <summary style="cursor: pointer; color: var(--accent);">What does the script do?</summary>
+    <ol style="margin-top: 0.6rem; padding-left: 1.25rem;">
+      <li>Checks for the <code>goose</code> CLI; installs it via Homebrew (macOS) or the official curl-installer (Linux) if missing.</li>
+      <li>Disables Goose's built-in Memory extension — the Office Town wiki MCP replaces it with persistent R2-backed storage.</li>
+      <li>Runs <code>goose mcp add</code> six times — once per MCP (wiki, files, email, cron, voice, sandbox), all pointed at this worker with the bearer above.</li>
+      <li><em>If sync is enabled above:</em> downloads the <code>officetowd</code> binary for your OS + arch and prints the two-command finish (<code>officetowd configure</code> → <code>officetowd start</code>).</li>
+    </ol>
+    <p style="margin-top: 0.6rem;">Inspect the full script source at <a href="/connect.sh" target="_blank"><code>/connect.sh</code></a>. The bearer never appears in the URL — it stays in your shell's env vars / history only.</p>
+  </details>
 </div>
 
 <div class="card" style="max-width: 800px; margin-top: 1.5rem;">
   <h2>What gets installed</h2>
-  <p class="muted" style="font-size: 0.9em; margin: 0.25rem 0 0.75rem;">Both options above do the same thing — these are the 6 MCP servers that get wired into your Goose. Each one points at this worker; auth uses the bearer above.</p>
+  <p class="muted" style="font-size: 0.9em; margin: 0.25rem 0 0.75rem;">The six MCP servers wired into your Goose. Each points at this worker; all share the bearer above.</p>
   <table style="margin-top: 0.5rem;">
     <thead><tr><th>MCP</th><th>Endpoint</th><th>What it does</th></tr></thead>
     <tbody>
@@ -1210,145 +1394,48 @@ brew install block/tap/goose</pre>
 </div>
 
 <script>
-const MCPS = ['wiki', 'files', 'email', 'cron', 'voice', 'sandbox'];
-
-function escapeShell(s) {
-  // single-quote, escape embedded singles via the close-escape-reopen pattern
-  return "'" + s.replace(/'/g, "'\\\\''") + "'";
+function shSingleQuote(s) {
+  // single-quote, escape embedded singles via close-escape-reopen
+  return "'" + String(s).replace(/'/g, "'\\\\''") + "'";
 }
 
-function generateScript() {
+function generateOneliner() {
   const url = document.getElementById('worker-url').value.replace(/\\/+$/, '');
   const bearer = document.getElementById('bearer').value.trim();
+  const withSync = document.getElementById('with-sync').checked;
   const urlSafe = url || 'https://YOUR-WORKER-URL.workers.dev';
   const bearerSafe = bearer || 'YOUR_MCP_BEARER_TOKEN';
 
-  const lines = [
-    "#!/usr/bin/env bash",
-    "# Office Town — wire all 6 MCPs into the local Goose installation.",
-    "# Generated from " + window.location.href,
-    "set -euo pipefail",
-    "",
-    "WORKER_URL=" + escapeShell(urlSafe),
-    "BEARER=" + escapeShell(bearerSafe),
-    'AUTH_HEADER="Authorization: Bearer $BEARER"',
-    "",
-    "echo 'Disabling Goose built-in Memory — wiki MCP replaces it.'",
-    "goose mcp disable memory 2>/dev/null || true",
-    "",
-  ];
-
-  for (const name of MCPS) {
-    lines.push("echo 'Adding office-town-" + name + " (" + name + " MCP)...'");
-    lines.push("goose mcp add office-town-" + name + " \\\\");
-    lines.push("  --transport streamable_http \\\\");
-    lines.push('  --url "$WORKER_URL/mcp/' + name + '" \\\\');
-    lines.push('  --header "$AUTH_HEADER"');
-    lines.push("");
-  }
-
-  lines.push("echo ''");
-  lines.push("echo '✓ All 6 Office Town MCPs wired into Goose.'");
-  lines.push("echo '  Run: goose mcp list — to verify.'");
-  lines.push("echo '  Then restart Goose Desktop or start a fresh CLI session.'");
-
-  return lines.join("\\n");
+  return 'curl -fsSL ' + shSingleQuote(urlSafe + '/connect.sh') +
+    ' | WORKER_URL=' + shSingleQuote(urlSafe) +
+    ' MCP_BEARER=' + shSingleQuote(bearerSafe) +
+    (withSync ? ' WITH_SYNC=1' : '') +
+    ' bash';
 }
 
-function generateAgentPrompt() {
-  const url = document.getElementById('worker-url').value.replace(/\\/+$/, '');
-  const bearer = document.getElementById('bearer').value.trim();
-  const urlSafe = url || 'https://YOUR-WORKER-URL.workers.dev';
-  const bearerSafe = bearer || 'YOUR_MCP_BEARER_TOKEN';
-
-  return [
-    "You are the agent inside my Goose Desktop. I want you to add 6 Office Town",
-    "MCP servers to my Goose config by running 'goose mcp add' via your shell",
-    "tool. Goose Desktop and the Goose CLI share the same config at",
-    "~/.config/goose/config.yaml — the CLI edits, Desktop reads. After the CLI",
-    "writes new extensions, I'll restart Goose Desktop so it picks them up.",
-    "",
-    "Office Town is a Cloudflare-hosted backend; its wiki MCP also replaces",
-    "Goose's built-in Memory extension.",
-    "",
-    "Worker URL:  " + urlSafe,
-    "MCP bearer:  " + bearerSafe,
-    "",
-    "PREREQUISITE: the 'goose' CLI must be on PATH. If the first command below",
-    "fails with 'command not found', stop and tell me to run one of these in my",
-    "terminal:",
-    "  curl -fsSL https://github.com/block/goose/releases/download/stable/download_cli.sh | bash",
-    "  # macOS alternative:",
-    "  brew install block/tap/goose",
-    "Then I'll come back and you can resume from step 1.",
-    "",
-    "GROUND RULES:",
-    "- Tell me what you're about to run before running it.",
-    "- Don't echo the bearer back where it could be logged.",
-    "- These commands only touch ~/.config/goose/config.yaml — no Cloudflare changes.",
-    "",
-    "STEPS (run each via your shell tool):",
-    "",
-    "1. Disable Goose's built-in Memory extension (the wiki MCP replaces it):",
-    "     goose mcp disable memory",
-    "",
-    "2. Add all 6 Office Town MCPs. Same bearer for all six:",
-    "     for name in wiki files email cron voice sandbox; do",
-    "       goose mcp add office-town-$name \\\\",
-    "         --transport streamable_http \\\\",
-    "         --url " + urlSafe + "/mcp/$name \\\\",
-    '         --header "Authorization: Bearer ' + bearerSafe + '"',
-    "     done",
-    "",
-    "3. Verify all 6 wrote into the config:",
-    "     goose mcp list",
-    "   Should include office-town-{wiki,files,email,cron,voice,sandbox}.",
-    "",
-    "4. Tell me to restart Goose Desktop so it reloads the config and the new",
-    "   extensions become available in chat. Wait for me to confirm I've",
-    "   restarted before proceeding.",
-    "",
-    "5. After I confirm the restart, smoke-test in a fresh chat by calling:",
-    "     wiki(action: 'list', collection: 'contacts')",
-    "   Empty result is fine on a new install — we just want a clean response,",
-    "   not a connection error.",
-    "",
-    "6. Report back: what added cleanly, the smoke-test result, anything weird.",
-    "",
-    "CONSTRAINTS:",
-    "- Don't touch Cloudflare or run wrangler from this prompt — the deploy is done.",
-    "- All 6 MCPs use streamable_http transport with the same Authorization header.",
-  ].join("\\n");
+function refreshOneliner() {
+  document.getElementById('oneliner').textContent = generateOneliner();
 }
 
-function refreshScript() {
-  document.getElementById('script').textContent = generateScript();
-  document.getElementById('agent-prompt').textContent = generateAgentPrompt();
+function copyOneliner() {
+  const text = generateOneliner();
+  const status = document.getElementById('copy-status');
+  const btn = document.getElementById('copy-btn');
+  navigator.clipboard.writeText(text).then(() => {
+    status.textContent = '✓ Copied — paste into terminal';
+    status.style.color = 'var(--green)';
+    btn.style.background = 'var(--green)';
+    setTimeout(() => { status.textContent = ''; btn.style.background = 'var(--accent)'; }, 2500);
+  }).catch((err) => {
+    status.textContent = 'Copy failed: ' + err.message;
+    status.style.color = 'var(--red)';
+  });
 }
 
-function makeCopier(buttonId, statusId, generator, successMsg) {
-  return function() {
-    const text = generator();
-    const status = document.getElementById(statusId);
-    const btn = document.getElementById(buttonId);
-    navigator.clipboard.writeText(text).then(() => {
-      status.textContent = successMsg;
-      status.style.color = 'var(--green)';
-      btn.style.background = 'var(--green)';
-      setTimeout(() => { status.textContent = ''; btn.style.background = 'var(--accent)'; }, 2500);
-    }).catch((err) => {
-      status.textContent = 'Copy failed: ' + err.message;
-      status.style.color = 'var(--red)';
-    });
-  };
-}
-
-const copyScript = makeCopier('copy-btn', 'copy-status', generateScript, '✓ Copied — paste into terminal');
-const copyPrompt = makeCopier('copy-prompt-btn', 'copy-prompt-status', generateAgentPrompt, '✓ Copied — paste into your AI agent');
-
-document.getElementById('worker-url').addEventListener('input', refreshScript);
-document.getElementById('bearer').addEventListener('input', refreshScript);
-refreshScript();
+document.getElementById('worker-url').addEventListener('input', refreshOneliner);
+document.getElementById('bearer').addEventListener('input', refreshOneliner);
+document.getElementById('with-sync').addEventListener('change', refreshOneliner);
+refreshOneliner();
 </script>`;
 	return c.html(LAYOUT('Connect your Goose - Office Town', content));
 });
