@@ -11,8 +11,12 @@
 //   delete          — Remove a file
 //   share           — Create signed URL (mode: temp = 7d signed | public = permanent at /p/<slug>)
 //   revoke          — Invalidate a share / unpublish a public page
-//   convert         — Any-doc → markdown via env.AI.toMarkdown
-//                     (PDF, DOCX, XLSX, PPTX, HTML, image-OCR, audio-transcribe)
+//   convert         — File → markdown, routed by type:
+//                       images → multimodal description (Gemma 4 / Kimi)
+//                       video  → frame sequence + audio transcript
+//                       audio  → Whisper transcript
+//                       PDF / DOCX / XLSX / HTML → env.AI.toMarkdown
+//                     (PPTX + some exotic types are NOT supported by toMarkdown.)
 //   transform_image — Resize/crop/format-convert via Cloudflare Images binding
 //   publish         — Render markdown to HTML, expose at /p/<slug> (sugar over share mode=public)
 //   unpublish       — Remove a public page (sugar over revoke)
@@ -172,6 +176,7 @@ const IMAGE_MODELS: Record<string, string> = {
 
 const IMAGE_EXT = /\.(jpe?g|png|gif|webp|bmp|tiff?|heic|heif|avif)$/i;
 const VIDEO_EXT = /\.(mp4|mov|m4v|webm|mkv|avi|mpe?g|3gp)$/i;
+const AUDIO_EXT = /\.(mp3|m4a|wav|aac|ogg|oga|opus|flac|aiff?|wma)$/i;
 
 function isImageInput(filename: string, contentType: string): boolean {
 	return contentType.startsWith('image/') || IMAGE_EXT.test(filename);
@@ -179,6 +184,10 @@ function isImageInput(filename: string, contentType: string): boolean {
 
 function isVideoInput(filename: string, contentType: string): boolean {
 	return contentType.startsWith('video/') || VIDEO_EXT.test(filename);
+}
+
+function isAudioInput(filename: string, contentType: string): boolean {
+	return contentType.startsWith('audio/') || AUDIO_EXT.test(filename);
 }
 
 const IMAGE_SYSTEM_PROMPT = `You describe images so they become searchable, useful context in a knowledge base. Look at the image and write concise markdown covering, only where applicable:
@@ -257,10 +266,11 @@ function visionSafeContentType(filename: string, contentType: string): string | 
 }
 
 // Transcode non-vision-safe image bytes to JPEG via Cloudflare Images so the
-// model can decode them. iPhone photos are HEIC by default — the most common
-// "dump your photos" input. CF Images ingests HEIC/HEIF natively; for formats
-// it can't ingest (TIFF, BMP) the transcode throws and we fall back to the
-// original bytes (best effort — the model may still cope, or report unreadable).
+// model can decode them. iPhone photos are HEIC; CF Images decodes SOME HEIC
+// but not all ("features which are not supported"), and can't ingest TIFF/BMP.
+// When a format the model can't read also fails to transcode, throw a clear,
+// actionable error rather than passing undecodable bytes to the model (which
+// returns a cryptic "cannot identify image file").
 async function normaliseImageForVision(
 	env: Env,
 	bytes: ArrayBuffer,
@@ -269,14 +279,35 @@ async function normaliseImageForVision(
 ): Promise<{ bytes: ArrayBuffer; contentType: string }> {
 	const safe = visionSafeContentType(filename, contentType);
 	if (safe) return { bytes, contentType: safe };
+	// Format the model can't read directly — must transcode.
 	try {
 		const result = await env.IMAGES.input(new Response(bytes).body!).output({ format: 'image/jpeg' } as never);
 		const out = await new Response(result.image()).arrayBuffer();
 		if (out.byteLength > 0) return { bytes: out, contentType: 'image/jpeg' };
+		throw new Error('transcode produced empty output');
 	} catch (err) {
 		console.error(JSON.stringify({ event: 'vision_normalise_error', filename, error: String(err) }));
+		throw new Error(
+			`Couldn't decode ${filename} for description. HEIC/HEIF and some exotic image formats aren't reliably decodable in the cloud. On a Mac, re-save it as JPEG or PNG (Preview → File → Export) and convert that instead.`,
+		);
 	}
-	return { bytes, contentType: contentType.startsWith('image/') ? contentType : 'image/jpeg' };
+}
+
+// Transcribe audio bytes with Whisper. Returns the raw transcript text, or ''
+// if there's no speech. Used for standalone audio files AND the audio track of
+// a video. toMarkdown does NOT transcribe audio (it rejects mp3/wav/m4a as
+// "Unsupported file type"), so audio must route here.
+async function whisperText(env: Env, bytes: ArrayBuffer): Promise<string> {
+	const tr = (await env.AI.run('@cf/openai/whisper' as never, {
+		audio: [...new Uint8Array(bytes)],
+	} as never)) as { text?: string };
+	return tr?.text?.trim() || '';
+}
+
+async function transcribeAudio(env: Env, bytes: ArrayBuffer): Promise<string> {
+	const text = await whisperText(env, bytes);
+	if (!text) return '_(no speech detected in this audio)_';
+	return `## Transcript\n\n${text}`;
 }
 
 async function describeImage(
@@ -336,10 +367,7 @@ async function describeVideo(
 			if (!resp.ok) return null;
 			const ab = await resp.arrayBuffer();
 			if (ab.byteLength === 0) return null;
-			const tr = (await env.AI.run('@cf/openai/whisper' as never, {
-				audio: [...new Uint8Array(ab)],
-			} as never)) as { text?: string };
-			return tr?.text?.trim() || null;
+			return (await whisperText(env, ab)) || null;
 		} catch (err) {
 			console.error(JSON.stringify({ event: 'video_audio_error', error: String(err) }));
 			return null;
@@ -494,20 +522,22 @@ async function handleAction(env: Env, args: Record<string, unknown>): Promise<un
 			);
 			const isImage = isImageInput(filename, contentType);
 			const isVideo = !isImage && isVideoInput(filename, contentType);
-			const kind = isImage ? 'img' : isVideo ? 'video' : 'md';
+			const isAudio = !isImage && !isVideo && isAudioInput(filename, contentType);
+			const kind = isImage ? 'img' : isVideo ? 'video' : isAudio ? 'audio' : 'md';
 			const model = (args.model as string | undefined) ?? 'gemma4';
 			const hint = args.hint as string | undefined;
 
 			// Cache by content hash + variant. Re-converting the same bytes (a
 			// re-sync, a cross-session re-run) returns the stored markdown for
 			// free. Variant captures the inputs that change the output: model +
-			// hint for images/video; just 'md' for toMarkdown.
+			// hint for images/video; just the kind for audio (Whisper) and
+			// toMarkdown (deterministic).
 			const contentHash = await sha256Hex(bytes);
-			const cacheKey = kind === 'md'
-				? `${contentHash}|md`
+			const cacheKey = kind === 'md' || kind === 'audio'
+				? `${contentHash}|${kind}`
 				: `${contentHash}|${kind}|${model}|${hint ?? ''}`;
 
-			type ConvertHandler = 'image-description' | 'video-description' | 'to-markdown';
+			type ConvertHandler = 'image-description' | 'video-description' | 'audio-transcription' | 'to-markdown';
 			let markdown: string;
 			let mimeType: string;
 			let handler: ConvertHandler;
@@ -533,10 +563,21 @@ async function handleAction(env: Env, args: Record<string, unknown>): Promise<un
 				markdown = await describeVideo(env, bytes, hint, model);
 				mimeType = contentType.startsWith('video/') ? contentType : 'video/mp4';
 				handler = 'video-description';
+			} else if (isAudio) {
+				markdown = await transcribeAudio(env, bytes);
+				mimeType = contentType.startsWith('audio/') ? contentType : 'audio/mpeg';
+				handler = 'audio-transcription';
 			} else {
 				const blob = new Blob([bytes], { type: contentType });
 				const result = await env.AI.toMarkdown({ name: filename, blob });
 				if (result.format === 'error') {
+					// toMarkdown rejects PPTX and some exotic formats as "Unsupported
+					// file type". Give a recoverable hint rather than a raw error.
+					if (/unsupported file type/i.test(result.error ?? '')) {
+						throw new Error(
+							`Can't convert ${filename} directly (this format isn't supported). Export it to PDF and convert that instead.`,
+						);
+					}
 					throw new Error(`Conversion failed for ${filename}: ${result.error}`);
 				}
 				markdown = result.data;
