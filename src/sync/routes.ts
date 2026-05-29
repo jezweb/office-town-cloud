@@ -635,4 +635,44 @@ app.get('/credentials', async (c) => {
 	});
 });
 
+// POST /api/sync/heartbeat — officetowd reports after each sync pass so the
+// cortex knows the daemon is alive and when it last synced. Body: { machine,
+// version, stats }. The server stamps the time (don't trust the client clock).
+// This is what makes a silently-dead sync daemon visible instead of leaving the
+// user wondering why their files never reach the agent.
+app.post('/heartbeat', async (c) => {
+	let body: { machine?: string; version?: string; stats?: unknown } = {};
+	try {
+		body = await c.req.json();
+	} catch {
+		// tolerate an empty/garbled body — still record the ping
+	}
+	const record = {
+		machine: typeof body.machine === 'string' ? body.machine.slice(0, 100) : 'unknown',
+		version: typeof body.version === 'string' ? body.version.slice(0, 40) : 'unknown',
+		stats: body.stats ?? null,
+		at: new Date().toISOString(),
+	};
+	await c.env.DB.prepare(`INSERT OR REPLACE INTO worker_config (key, value) VALUES ('sync_heartbeat', ?)`)
+		.bind(JSON.stringify(record))
+		.run();
+	return c.json({ ok: true, recorded_at: record.at });
+});
+
+// GET /api/sync/heartbeat — last heartbeat + computed freshness. Used by the
+// installer's post-sync check, the dashboard, and the agent answering "is my
+// sync working?".
+app.get('/heartbeat', async (c) => {
+	const row = await c.env.DB.prepare(`SELECT value FROM worker_config WHERE key = 'sync_heartbeat'`).first<{
+		value: string;
+	}>();
+	if (!row?.value) {
+		return c.json({ seen: false, message: 'No sync daemon has reported yet.' });
+	}
+	const hb = JSON.parse(row.value) as { machine: string; version: string; stats: unknown; at: string };
+	const ageMinutes = Math.round((Date.now() - new Date(hb.at).getTime()) / 60000);
+	const stale = ageMinutes > 15; // daemon syncs ~every 60s; >15 min idle = likely down
+	return c.json({ seen: true, ...hb, age_minutes: ageMinutes, stale, healthy: !stale });
+});
+
 export const syncRoutes = app;

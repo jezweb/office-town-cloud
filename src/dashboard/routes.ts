@@ -1466,6 +1466,14 @@ else
   echo "  ! Only $VERIFY_OK/$VERIFY_TOTAL tools responded."
   echo "    Double-check the worker URL + token on $WORKER_URL/dashboard/connect, then re-run."
 fi
+# Confirm the first sync reached the worker (the daemon heartbeats after a sync).
+if [ "\${WITHOUT_SYNC:-0}" != "1" ]; then
+  if curl -fsSL "$WORKER_URL/api/sync/heartbeat" -H "Authorization: Bearer $MCP_BEARER" 2>/dev/null | grep -q '"seen":true'; then
+    echo "  ✓ Sync confirmed — your cortex folder is connected to the cloud."
+  else
+    echo "  · Sync will confirm itself shortly after the daemon's first pass."
+  fi
+fi
 echo ""
 
 # ---- Finish ---------------------------------------------------------------
