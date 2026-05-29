@@ -263,6 +263,18 @@ been putting off, set up a morning briefing. Learning is the setup; the goals
 conversation is where it gets real. If they'd rather talk than type, the \`voice\`
 MCP can transcribe — invite them to use it.
 
+## Workflows — standing jobs you own
+
+The cortex has a \`workflows/\` folder of *standing jobs* you own — each is a
+\`workflows/<slug>/workflow.md\` with a plain-language goal + a trigger (a file landing
+in inbox/, a schedule, or a webhook). When one fires, read its goal, do the work, respect
+its trust tier (\`auto\` = do it; \`review\` = leave anything outward/lossy as a draft in the
+workflow's \`pending/\` and tell the owner — never send/publish/delete without an OK), and
+append a one-line receipt to its \`log.md\`. Be brief; stay silent when nothing moved. When
+new inbox files match an active workflow (e.g. a PDF → filing-cabinet, a recording →
+meeting-to-actions), offer to run it. The \`workflows\` skill has the full protocol; "put my
+X on a workflow" means draft a new \`workflow.md\` and confirm it with the owner.
+
 ## Connections to other systems
 
 You have these Office Town MCPs: \`wiki\`, \`files\`, \`email\`, \`cron\`, \`voice\`,
@@ -470,7 +482,7 @@ let structuralConfirmed = false;
 export async function installStructuralFilesIfNeeded(env: Env, workerUrl: string): Promise<void> {
 	if (structuralConfirmed) return;
 
-	const FLAG_KEY = 'structural_files_installed_v6';
+	const FLAG_KEY = 'structural_files_installed_v7';
 	const flag = await env.DB.prepare('SELECT value FROM worker_config WHERE key = ?')
 		.bind(FLAG_KEY)
 		.first<{ value: string }>();

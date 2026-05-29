@@ -33,7 +33,7 @@ Cloudflare provisions everything from `wrangler.jsonc`:
 
 You need Goose installed: https://block.github.io/goose/.
 
-👉 **[Open INSTALL.md](./INSTALL.md)** — paste one prompt into any capable AI agent. It installs the plugin + knowledge pack, runs `goose mcp add` for the 6 MCP servers, disables Goose's Memory extension (the wiki replaces it), clones the town template, runs a smoke test. ~5 min after the button.
+👉 **The one-line installer** (`<your-worker-url>/connect.sh`) bootstraps the Goose CLI if needed, wires the 6 MCP servers into `~/.config/goose/config.yaml` (Goose has no non-interactive `mcp add`, so we edit the config directly), installs the plugin (roles + skills + the workflows runner), sets up `officetowd` with a stable device id + persistent background sync, verifies all 6 tools respond, and opens your cortex folder. ~5 min after the button. The dashboard's **Connect** page gives you the pre-filled command.
 
 ### Optional — wire local file sync
 
@@ -84,15 +84,26 @@ Every mutation requires `why:` per the audit design contract.
 
 Inbound is auto-filed by the worker's `email()` handler at `wiki/research/`.
 
+## Workflows — the standing jobs your cortex owns
+
+A **Workflow** is the core unit Office Town ships: a standing responsibility the cortex owns. You turn it on once; it fires on a **trigger** (a file landing in inbox/, a schedule, or an inbound **webhook**), does the work end to end with the agent's judgement, and reports back in a one-line receipt — never extra work for you.
+
+Each is plain markdown in the cortex at `workflows/<slug>/workflow.md` (frontmatter = the contract: trigger, owner, trust; body = the goal in plain language), with `log.md` (receipts) and `pending/` (drafts awaiting your OK). Five ship seeded: **filing-cabinet**, **ask-my-cortex**, **meeting-to-actions**, **morning-brief**, **relationship-keeper**.
+
+- **Trust tiers** — `auto` (file/organise silently), `review` (drafts to `pending/`, you approve — anything outward/lossy), `ask`. Nothing irreversible without a yes.
+- **Two runtimes** — *local* (the Goose agent, with all your connectors, when your machine is up) and a *cloud bridge*: an inbound webhook (`POST /api/triggers/:id`, per-source secret) enqueues a **job** for a device; the `officetowd` daemon polls, claims it, and runs the workflow locally via headless Goose. So a Stripe payment or a form submit can fire a workflow.
+- **Devices** — each connected machine has an identity (`devices` table); timezone/region come free from the connection (`request.cf`), so the daemon stays a minimal courier. `/dashboard/workflows` shows every workflow + connected devices with sync freshness.
+
 ## Architecture
 
 Single Worker. Single R2 substrate bucket. Designed filesystem-friendly so v1.1's `officetowd` daemon (Go-lang Goanna-style bisync) can mirror it locally.
 
 | Surface | Routes |
 |---|---|
-| HTTP API (bearer-gated) | `/api/wiki/*`, `/api/files/*`, `/api/publish/*`, `/api/cron/*` |
-| MCP gateways (JSON-RPC over streamable-HTTP) | `POST /mcp/{wiki,files,email}` + `GET /mcp/*/sse` |
-| Dashboard (HTML) | `/`, `/dashboard/*` |
+| HTTP API (bearer-gated) | `/api/wiki/*`, `/api/files/*`, `/api/publish/*`, `/api/cron/*`, `/api/sync/*`, `/api/workflows/*`, `/api/jobs/*` |
+| MCP gateways (JSON-RPC over streamable-HTTP) | `POST /mcp/{wiki,files,email,cron,voice,sandbox}` + `GET /mcp/*/sse` |
+| Inbound webhooks (per-source secret, public) | `POST /api/triggers/:id` → enqueues a workflow job |
+| Dashboard (HTML) | `/`, `/dashboard/*` (incl. `/dashboard/workflows`) |
 | Public reader | `/p/<slug>`, `/s/<token>` |
 | Health | `/health` |
 | Cron + queue consumer + inbound email | exported handlers alongside `fetch` |
