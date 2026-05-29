@@ -1276,6 +1276,7 @@ PLUGIN_OUT=$(goose plugin install https://github.com/jezweb/office-town-plugin 2
 if echo "$PLUGIN_OUT" | grep -qiE "installed|already"; then
   echo "  ✓ Plugin ready."
 else
+  # shellcheck disable=SC2001  # sed indent of multi-line output is clearest here
   echo "$PLUGIN_OUT" | sed 's/^/    /'
   echo "  ! Plugin install reported an issue — retry later with:"
   echo "    goose plugin install https://github.com/jezweb/office-town-plugin"
@@ -1288,6 +1289,7 @@ echo ""
 # dashboard web view still works).
 SYNC_FOLDER="\${SYNC_FOLDER:-$HOME/OfficeTown}"
 # Expand a leading ~/ if the caller passed one.
+# shellcheck disable=SC2088  # literal ~/ match is intentional — we expand it by hand
 case "$SYNC_FOLDER" in
   "~/"*) SYNC_FOLDER="$HOME/\${SYNC_FOLDER#~/}" ;;
 esac
@@ -1329,7 +1331,7 @@ else
         else mkdir -p "$LOCAL_BIN"; DEST="$LOCAL_BIN"; SUDO="";
           case ":$PATH:" in *":$LOCAL_BIN:"*) ;; *) export PATH="$LOCAL_BIN:$PATH" ;; esac
         fi
-        TMP=$(mktemp -d); trap "rm -rf $TMP" EXIT
+        TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
         echo "  Downloading officetowd $LATEST_TAG ($OS/$ARCH)..."
         if curl -fsSL "$URL" -o "$TMP/officetowd.tar.gz"; then
           tar -xzf "$TMP/officetowd.tar.gz" -C "$TMP"
