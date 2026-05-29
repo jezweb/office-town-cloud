@@ -44,10 +44,12 @@ Drop anything here you want your cortex to learn from: old invoices, quotes,
 letters, brochures, photos, scanned documents, PDFs, voice recordings — the
 contents of your filing cabinet, basically.
 
-Ask an agent to "go through my inbox" and it'll read each item (it can handle
-PDFs, Office docs, images via OCR, and audio), pull out the people, companies,
+Ask an agent to "go through my inbox" and it'll read each item — PDFs, Word and
+Excel files, photos and scans (it describes them and reads any text), voice
+recordings and videos (it transcribes them) — pull out the people, companies,
 projects, and decisions it finds, and file them properly into your wiki. A big
 pile can take a while — it'll work through it and tell you what it learned.
+(PowerPoint isn't supported directly yet — export those to PDF first.)
 
 Two onboarding prompts also live here:
 - **prompt-quick.md** — paste into Claude / ChatGPT / Gemini for a fast profile
@@ -226,14 +228,19 @@ with these; they're the fastest path to something useful:
 
 - **Ingest their filing cabinet (the big one).** Whatever they drop in \`inbox/\` —
   bills, invoices, quotes, letters, brochures, photos, scanned docs, recordings —
-  you can convert to text via the files MCP (handles PDF, Office docs, images,
-  audio). How it works: files dropped in inbox/ sync up to your Cloudflare
-  automatically — usually within ~10 seconds. Once a file is up there, convert
-  it by its key: \`files(action: 'convert', source: 'r2_path', source_value:
-  'inbox/<name>', filename: '<name>')\` (the path under the cortex, not the
-  absolute disk path). If convert reports the file isn't found yet, sync hasn't
-  caught up — wait ~10s and try again. Don't read raw bytes or base64 anything;
-  let the sync do its job and convert from the cloud. Work through it patiently:
+  you convert via the files MCP. It routes by type: PDF / Word / Excel / HTML →
+  text; images → a description that also reads any visible text; audio → a
+  Whisper transcript; video → key frames described + the audio transcribed.
+  (PowerPoint and a few exotic formats aren't supported — tell the owner to
+  export them to PDF. Most photos convert fine; if a HEIC can't be decoded the
+  tool says so and suggests re-saving as JPEG.) How it works: files dropped in
+  inbox/ sync up to your Cloudflare automatically — usually within ~10 seconds.
+  Once a file is up there, convert it by its key: \`files(action: 'convert',
+  source: 'r2_path', source_value: 'inbox/<name>', filename: '<name>')\` (the path
+  under the cortex, not the absolute disk path). If convert reports the file
+  isn't found yet, sync hasn't caught up — wait ~10s and try again. Don't read
+  raw bytes or base64 anything; let the sync do its job and convert from the
+  cloud. Work through it patiently:
   read each item,
   extract the orgs / contacts / projects / decisions, file them into the wiki,
   and tell them what you learned. A pile of documents becoming a structured,
@@ -350,7 +357,7 @@ let structuralConfirmed = false;
 export async function installStructuralFilesIfNeeded(env: Env, workerUrl: string): Promise<void> {
 	if (structuralConfirmed) return;
 
-	const FLAG_KEY = 'structural_files_installed_v4';
+	const FLAG_KEY = 'structural_files_installed_v5';
 	const flag = await env.DB.prepare('SELECT value FROM worker_config WHERE key = ?')
 		.bind(FLAG_KEY)
 		.first<{ value: string }>();
