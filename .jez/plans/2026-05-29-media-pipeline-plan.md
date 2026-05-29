@@ -99,7 +99,9 @@ agent files as the entry body.
   one call, so it can replace OCR for images entirely — collapse to one image
   path rather than OCR-then-maybe-describe. Confirm in a quick bake-off.
 
-### Phase B — result cache (D1)  *(makes the whole inbox flow economical)*
+### Phase B — result cache (D1)  ✅ SHIPPED 2026-05-29
+Live: convert_cache keyed by sha256(bytes)+variant(model+hint). Verified 6s miss -> 0s hit. Below is the original spec.
+
 `sha256(bytes)` → cache row (`hash`, `kind`, `result_markdown`, `created`).
 `extract` checks cache first → `cached: true`. Re-syncs and cross-session
 re-runs become free. Small table, big payoff.
