@@ -106,7 +106,22 @@ Live: convert_cache keyed by sha256(bytes)+variant(model+hint). Verified 6s miss
 `extract` checks cache first → `cached: true`. Re-syncs and cross-session
 re-runs become free. Small table, big payoff.
 
-### Phase C — async jobs for audio + video  *(bigger; video can be its own milestone)*
+### Phase C — audio + video  ✅ VIDEO v1 SHIPPED 2026-05-29
+Live: MEDIA binding enabled (env.MEDIA, open beta). convert handles video —
+extracts a frame (gemma4 description) + audio track (whisper transcript),
+combined, cached, sidecar-saved. Verified on a real mp4.
+
+REMAINING in Phase C:
+- **Spritesheet for full temporal coverage** — gemma4 handles ~1min / 60 frames,
+  so a spritesheet (grid of frames) in one vision call beats the single frame.
+  Pending: confirm the binding's spritesheet param shape (rows/cols/interval).
+- **Async jobs for long media** — current path is synchronous in the convert
+  request; fine for short clips, will time out on long video. Jobs table +
+  poll action when needed.
+- **Standalone audio files** (mp3/m4a/wav) currently route to toMarkdown; could
+  route to whisper directly for consistency.
+
+Original spec below.
 - Jobs table (`job_id`, `status`, `result`, timestamps). `extract` returns a
   `job_id` for slow media; a `poll` action with `wait` blocks ≤ a cap.
 - Audio: `toMarkdown` already transcribes — wire it through the async path for
