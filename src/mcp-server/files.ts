@@ -63,6 +63,8 @@ const TOOLS = {
 			"Read actions: download, list",
 			"Write actions: upload, delete, share, revoke, convert, transform_image, publish, unpublish",
 			"",
+			"To READ/understand a file's contents (PDF, image, audio, video, PPTX, etc.), use convert — it returns readable text/description. download returns raw bytes (base64) you usually can't read; use it only when you need the bytes themselves.",
+			"",
 			"Substrate bucket holds wiki entries (markdown) AND files (binaries) AND shares AND published pages.",
 			"For binaries that belong to a specific wiki entity, use wiki(action:attach) instead — that puts them in the entity's folder.",
 		].join('\n'),
