@@ -227,6 +227,11 @@ function bucketForKey(env: Env, key: string): R2Bucket {
 	return key.startsWith('wiki/') ? env.WIKI : env.FILES;
 }
 
+async function sha256Hex(bytes: ArrayBuffer): Promise<string> {
+	const buf = await crypto.subtle.digest('SHA-256', bytes);
+	return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
 async function handleAction(env: Env, args: Record<string, unknown>): Promise<unknown> {
 	const action = args.action as FilesAction;
 	if (!VALID_ACTIONS.includes(action)) {
@@ -336,20 +341,43 @@ async function handleAction(env: Env, args: Record<string, unknown>): Promise<un
 				args.mime_type as string | undefined,
 			);
 			const filename = args.filename as string;
+			const isImage = isImageInput(filename, contentType);
+			const model = (args.model as string | undefined) ?? 'gemma4';
+			const hint = args.hint as string | undefined;
 
-			// Images → multimodal description (reads visible text AND describes).
-			// Everything else → toMarkdown (PDF/Office/HTML/audio).
+			// Cache by content hash + variant. Re-converting the same bytes (a
+			// re-sync, a cross-session re-run) returns the stored markdown for
+			// free. Variant captures the inputs that change the output: model +
+			// hint for images; just 'md' for toMarkdown.
+			const contentHash = await sha256Hex(bytes);
+			const cacheKey = isImage
+				? `${contentHash}|img|${model}|${hint ?? ''}`
+				: `${contentHash}|md`;
+
 			let markdown: string;
 			let mimeType: string;
 			let handler: 'image-description' | 'to-markdown';
 			let tokens: number | undefined;
-			if (isImageInput(filename, contentType)) {
+			let cached = false;
+
+			const hit = await env.DB.prepare(
+				'SELECT handler, mime_type, markdown FROM convert_cache WHERE cache_key = ?',
+			)
+				.bind(cacheKey)
+				.first<{ handler: string; mime_type: string | null; markdown: string }>();
+
+			if (hit) {
+				markdown = hit.markdown;
+				mimeType = hit.mime_type ?? contentType;
+				handler = hit.handler as 'image-description' | 'to-markdown';
+				cached = true;
+			} else if (isImage) {
 				markdown = await describeImage(
 					env,
 					bytes,
 					contentType.startsWith('image/') ? contentType : 'image/jpeg',
-					args.hint as string | undefined,
-					(args.model as string | undefined) ?? 'gemma4',
+					hint,
+					model,
 				);
 				mimeType = contentType;
 				handler = 'image-description';
@@ -363,6 +391,14 @@ async function handleAction(env: Env, args: Record<string, unknown>): Promise<un
 				mimeType = result.mimeType;
 				tokens = result.tokens;
 				handler = 'to-markdown';
+			}
+
+			if (!cached) {
+				await env.DB.prepare(
+					'INSERT OR REPLACE INTO convert_cache (cache_key, handler, mime_type, markdown) VALUES (?, ?, ?, ?)',
+				)
+					.bind(cacheKey, handler, mimeType, markdown)
+					.run();
 			}
 
 			// Persist the converted markdown as a sidecar next to the original.
@@ -389,6 +425,7 @@ async function handleAction(env: Env, args: Record<string, unknown>): Promise<un
 				filename,
 				mime_type: mimeType,
 				handler,
+				cached,
 				markdown,
 				...(tokens ? { tokens } : {}),
 				...(savedAt ? { saved_to: savedAt } : {}),

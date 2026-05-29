@@ -188,6 +188,16 @@ const STATEMENTS: string[] = [
 		value      TEXT NOT NULL,
 		created_at TEXT NOT NULL DEFAULT (datetime('now'))
 	)`,
+	// Caches file-conversion output keyed by content hash + variant (model +
+	// hint for images, or 'md' for toMarkdown). officetowd re-syncs and agents
+	// re-run across sessions; this makes re-converting the same bytes free.
+	`CREATE TABLE IF NOT EXISTS convert_cache (
+		cache_key  TEXT PRIMARY KEY,
+		handler    TEXT NOT NULL,
+		mime_type  TEXT,
+		markdown   TEXT NOT NULL,
+		created_at TEXT NOT NULL DEFAULT (datetime('now'))
+	)`,
 ];
 
 // Per-isolate memo. Once schema is confirmed once, no further probes.
