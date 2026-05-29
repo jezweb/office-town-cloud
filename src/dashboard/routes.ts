@@ -1147,14 +1147,37 @@ if ! command -v goose >/dev/null 2>&1; then
   if command -v brew >/dev/null 2>&1; then
     brew install block/tap/goose
   else
-    curl -fsSL https://github.com/block/goose/releases/download/stable/download_cli.sh | bash
+    # The curl installer drops goose in ~/.local/bin and does NOT configure
+    # (we skip its interactive setup); we wire the config ourselves below.
+    curl -fsSL https://github.com/block/goose/releases/download/stable/download_cli.sh | CONFIGURE=false bash
   fi
   hash -r 2>/dev/null || true
+  # The curl installer's bin dir (~/.local/bin) often isn't on PATH for this
+  # shell yet. Add the known install locations so the rest of the installer can
+  # use goose now, instead of dead-ending the user at "open a fresh terminal".
+  if ! command -v goose >/dev/null 2>&1; then
+    for d in "$HOME/.local/bin" "/opt/homebrew/bin" "/usr/local/bin"; do
+      if [ -x "$d/goose" ]; then
+        case ":$PATH:" in *":$d:"*) ;; *) export PATH="$d:$PATH" ;; esac
+      fi
+    done
+    hash -r 2>/dev/null || true
+  fi
   if ! command -v goose >/dev/null 2>&1; then
     echo "" >&2
-    echo "Goose installed, but its bin dir isn't on PATH for this shell." >&2
-    echo "Open a fresh terminal (so PATH refreshes) and re-run this installer." >&2
+    echo "Goose was installed but I couldn't locate it on PATH." >&2
+    echo "Add its bin dir (usually ~/.local/bin) to your PATH, then re-run this installer." >&2
     exit 1
+  fi
+  # Persist ~/.local/bin to the shell profile so future terminals find goose too.
+  GOOSE_DIR=$(dirname "$(command -v goose)")
+  if [ "$GOOSE_DIR" = "$HOME/.local/bin" ]; then
+    for rc in "$HOME/.zshrc" "$HOME/.bashrc" "$HOME/.profile"; do
+      if [ -f "$rc" ] && ! grep -q '.local/bin' "$rc" 2>/dev/null; then
+        # shellcheck disable=SC2016  # write $HOME/$PATH literally — they expand when the rc is sourced
+        printf '\\nexport PATH="$HOME/.local/bin:$PATH"\\n' >> "$rc"
+      fi
+    done
   fi
 fi
 echo "→ Goose: $(goose --version 2>/dev/null || echo 'version unknown')"
@@ -1272,14 +1295,35 @@ echo ""
 # the town standing orders, and the session-start hook. Without it the agent
 # has the MCPs but none of the team behaviour.
 echo "→ Installing the Office Town plugin (roles, skills, recipes, hooks)..."
-PLUGIN_OUT=$(goose plugin install https://github.com/jezweb/office-town-plugin 2>&1 || true)
-if echo "$PLUGIN_OUT" | grep -qiE "installed|already"; then
-  echo "  ✓ Plugin ready."
+# 'goose plugin install' clones over git, so git must be present. On a fresh
+# Mac without Xcode CLT it isn't — try to install it, else skip with a clear
+# note (the 6 MCPs above already work; the plugin only adds team behaviour).
+if ! command -v git >/dev/null 2>&1; then
+  echo "  git not found — needed to fetch the plugin. Trying to install it..."
+  if command -v brew >/dev/null 2>&1; then
+    brew install git >/dev/null 2>&1 || true
+  elif command -v apt-get >/dev/null 2>&1; then
+    { sudo apt-get install -y git || apt-get install -y git; } >/dev/null 2>&1 || true
+  fi
+  hash -r 2>/dev/null || true
+fi
+if ! command -v git >/dev/null 2>&1; then
+  echo "  ! git isn't installed, so the plugin was skipped. Your 6 MCPs are wired"
+  echo "    and work now — the plugin just adds the team roles/skills/recipes."
+  echo "    Install git, then run the plugin step:"
+  echo "      macOS:  xcode-select --install"
+  echo "      Linux:  sudo apt install git   (or your distro's package)"
+  echo "      then:   goose plugin install https://github.com/jezweb/office-town-plugin"
 else
-  # shellcheck disable=SC2001  # sed indent of multi-line output is clearest here
-  echo "$PLUGIN_OUT" | sed 's/^/    /'
-  echo "  ! Plugin install reported an issue — retry later with:"
-  echo "    goose plugin install https://github.com/jezweb/office-town-plugin"
+  PLUGIN_OUT=$(goose plugin install https://github.com/jezweb/office-town-plugin 2>&1 || true)
+  if echo "$PLUGIN_OUT" | grep -qiE "installed|already"; then
+    echo "  ✓ Plugin ready."
+  else
+    # shellcheck disable=SC2001  # sed indent of multi-line output is clearest here
+    echo "$PLUGIN_OUT" | sed 's/^/    /'
+    echo "  ! Plugin install reported an issue — retry later with:"
+    echo "    goose plugin install https://github.com/jezweb/office-town-plugin"
+  fi
 fi
 echo ""
 
