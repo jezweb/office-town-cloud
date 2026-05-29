@@ -1,12 +1,14 @@
 // Files service — thin wrapper over R2 FILES bucket with shareable signed URLs.
 //
-// Files go in `office-town-files`. The FILES bucket is the agent's working
-// drive — upload/download/list/share/extract. The WIKI bucket is reserved
-// for wiki entries; never mix them.
+// Keys are RAW (no forced prefix) so upload/download/list/delete operate on the
+// same namespace as officetowd sync, the structural seed, and files(convert):
+// `inbox/quote.pdf`, `attachments/...`, `AGENTS.md`, etc. (An earlier design
+// forced a `files/` prefix here, which made download/list invisible to the
+// synced cortex — an agent asking to read inbox/foo.pdf got "Not found".)
+// The WIKI bucket is reserved for wiki entries; never mix them.
 
 import type { Env } from '../types';
 
-const FILES_PREFIX = 'files/';
 const SHARE_PREFIX = 'shares/';
 
 export interface FileUploadInput {
@@ -33,8 +35,7 @@ export interface ShareLink {
 }
 
 function normalisePath(path: string): string {
-	const trimmed = path.replace(/^\/+/, '').replace(/\.\.\//g, '');
-	return `${FILES_PREFIX}${trimmed}`;
+	return path.replace(/^\/+/, '').replace(/\.\.\//g, '');
 }
 
 function nanoid(len = 16): string {
@@ -95,15 +96,17 @@ export class FilesService {
 	}
 
 	async list(prefix = ''): Promise<FileMetadata[]> {
-		const r2Prefix = normalisePath(prefix === '' ? '' : prefix + '/');
+		const r2Prefix = prefix === '' ? '' : normalisePath(prefix.endsWith('/') ? prefix : prefix + '/');
 		const listing = await this.env.FILES.list({ prefix: r2Prefix, limit: 1000 });
-		return listing.objects.map((obj) => ({
-			path: obj.key.slice(FILES_PREFIX.length),
-			size: obj.size,
-			content_type: obj.httpMetadata?.contentType ?? 'application/octet-stream',
-			uploaded_at: obj.uploaded.toISOString(),
-			etag: obj.etag,
-		}));
+		return listing.objects
+			.filter((obj) => !obj.key.startsWith(SHARE_PREFIX)) // hide internal share records
+			.map((obj) => ({
+				path: obj.key,
+				size: obj.size,
+				content_type: obj.httpMetadata?.contentType ?? 'application/octet-stream',
+				uploaded_at: obj.uploaded.toISOString(),
+				etag: obj.etag,
+			}));
 	}
 
 	async delete(path: string): Promise<void> {

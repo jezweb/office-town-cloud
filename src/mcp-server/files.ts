@@ -89,7 +89,7 @@ const TOOLS = {
 				// as a sidecar next to the original by default (for r2_path sources).
 				source: { type: 'string', enum: ['url', 'r2_path', 'base64'], description: 'Where the source file lives. Prefer r2_path — inbox/ and cortex files sync to R2 automatically (~10s); convert by key, e.g. inbox/quote.pdf' },
 				source_value: { type: 'string', description: 'R2 key (e.g. inbox/quote.pdf), URL, or base64 bytes' },
-				filename: { type: 'string', description: 'Original filename incl. extension' },
+				filename: { type: 'string', description: 'Original filename incl. extension. Optional for r2_path/url (derived from the key/URL); required only for base64.' },
 				mime_type: { type: 'string', description: 'Optional MIME hint' },
 				hint: { type: 'string', description: 'Optional steer for image description, e.g. "focus on invoice numbers and totals"' },
 				model: { type: 'string', enum: ['gemma4', 'kimi'], description: 'Image model: gemma4 (fast, default) or kimi (slower, better for dense/complex docs)' },
@@ -502,12 +502,22 @@ async function handleAction(env: Env, args: Record<string, unknown>): Promise<un
 		}
 
 		case 'convert': {
-			if (!args.source || !args.source_value || !args.filename) {
-				throw new Error('convert requires source + source_value + filename');
+			if (!args.source || !args.source_value) {
+				throw new Error('convert requires source + source_value');
 			}
 			const sourceKind = args.source as string;
 			const sourceValue = args.source_value as string;
-			const filename = args.filename as string;
+			// filename drives type detection + toMarkdown's name. Derive it from
+			// the key/URL basename when omitted (an r2_path like inbox/quote.pdf
+			// already carries the name) so agents don't have to repeat it; only
+			// base64 sources truly need it given.
+			let filename = ((args.filename as string | undefined) ?? '').trim();
+			if (!filename && (sourceKind === 'r2_path' || sourceKind === 'url')) {
+				filename = sourceValue.split(/[?#]/)[0]!.split('/').filter(Boolean).pop() ?? '';
+			}
+			if (!filename) {
+				throw new Error('convert needs filename for base64 sources (to detect the type) — add filename: "<name.ext>".');
+			}
 			// Cap input size to survive the 128MB isolate. Video streams through
 			// Media Transformations (100MB input cap, no full base64); images/docs
 			// get base64-encoded (~1.33x) so stay well under at 40MB.
