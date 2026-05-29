@@ -112,9 +112,11 @@ extracts a frame (gemma4 description) + audio track (whisper transcript),
 combined, cached, sidecar-saved. Verified on a real mp4.
 
 REMAINING in Phase C:
-- **Spritesheet for full temporal coverage** — gemma4 handles ~1min / 60 frames,
-  so a spritesheet (grid of frames) in one vision call beats the single frame.
-  Pending: confirm the binding's spritesheet param shape (rows/cols/interval).
+- ~~Spritesheet~~ DONE BETTER: video now passes individual full-res frames as
+  an ordered sequence (Gemma 4's native multimodal way — interleaved frames,
+  images before text), not a spritesheet. Each frame legible. Confirmed CF
+  Workers AI gemma-4 accepts multi-image content arrays. Frames sampled at
+  [0,4,8..56]s (up to 11 for a 60s clip); past-end timestamps skipped.
 - **Async jobs for long media** — current path is synchronous in the convert
   request; fine for short clips, will time out on long video. Jobs table +
   poll action when needed.
