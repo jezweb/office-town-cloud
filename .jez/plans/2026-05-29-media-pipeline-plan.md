@@ -127,25 +127,40 @@ discards it (convert → extract entities → move original to `inbox/_processed
 markdown thrown away). Fix: persist **both** the original and its converted
 markdown, and treat extraction as a third, separate layer.
 
+**The sidecar rule is location-agnostic:** the converted markdown lives next to
+the original, *wherever the original is*. `<any-dir>/<name>.<ext>` →
+`<any-dir>/<name>.md`. A file can be anywhere in the cortex — dropped in
+`inbox/`, placed by the user directly in `wiki/projects/foo/`, a folder of
+scanned contracts under `files/`, or anything they point the agent at. Don't
+assume `attachments/`.
+
 Two outputs per document, three artifacts:
 
 | Artifact | Where |
 |---|---|
-| Original file (PDF/image/audio) — source of truth | `wiki/<col>/<slug>/attachments/<name>.<ext>` if it belongs to an entity, else `files/archive/<name>.<ext>` |
-| Converted markdown — the readable doc (sidecar) | same folder, `<name>.md` next to the original |
+| Original file (PDF/image/audio) — source of truth | wherever it already is, or wherever the agent files it |
+| Converted markdown — the readable doc (sidecar) | **always** beside the original: same dir, `<name>.md` |
 | Extracted entities — structured knowledge | wiki entries (orgs/contacts/projects/decisions) |
 
-This reuses the **companion-files pattern** already built into the dashboard
-entry view, so a document attached to an entity shows up under it. Benefits:
+`attachments/` and `files/archive/` are just *conventions for where the agent
+files things it's actively organising* — when a document clearly belongs to an
+entity, the agent moves it (+ sidecar) into that entity's `attachments/` so it
+shows in the dashboard companion-files view and links from the entry. But
+conversion + sidecar work on **any** file in **any** folder, including ones the
+human dropped directly while editing locally. The agent leaves a file where the
+owner put it unless there's a reason to move it.
+
+Benefits:
 - The document's content stays readable as markdown without re-converting.
 - The original is preserved (audits, "show me the actual invoice").
 - Re-reading later never re-runs OCR/vision (separate from the D1 compute-cache).
+- Works for the human-first workflow: someone organising files in Finder/Obsidian
+  gets readable sidecars next to whatever they filed, without an agent involved.
 
-Recipe change: processing moves each document to its **real home** (the entity's
-`attachments/` or `files/archive/`) with the `.md` sidecar — not an
-`inbox/_processed/` limbo — so the inbox genuinely clears. The `convert` action
-already supports `save_to_files`; the pipeline just needs to use it (saving the
-sidecar) and the recipe needs to place the original + link it from the entry.
+Implementation: `convert` already supports `save_to_files` — the sidecar path is
+just `dirname(key) + '/' + basename + '.md'`, computed from the original's key.
+The recipe uses it for inbox processing; the same action serves "convert this
+file I pointed you at, wherever it lives".
 
 ## Trigger model (unchanged from earlier decision)
 
