@@ -200,56 +200,25 @@ const STATEMENTS: string[] = [
 	)`,
 ];
 
-// Per-isolate memo. Once schema is confirmed once, no further probes.
+// Bump whenever a table/index/trigger is ADDED to STATEMENTS. An existing
+// deployment stores its applied version in worker_config; when this constant
+// is higher, ensureSchema replays the (idempotent) statement array so the new
+// objects get created. Without this, the "worker_config exists" sentinel alone
+// would conflate "schema exists" with "schema is current" and silently skip
+// every table added after the first deploy (e.g. convert_cache).
+const SCHEMA_VERSION = 2;
+
+// Per-isolate memo. Once schema is confirmed at the current version, no
+// further probes.
 let schemaConfirmed = false;
 
-/**
- * Ensures the D1 schema exists. Cheap when present (single sqlite_master
- * probe + memo), thorough when fresh (full schema apply). Idempotent —
- * safe to call repeatedly.
- */
-export async function ensureSchema(env: Env): Promise<void> {
-	if (schemaConfirmed) return;
-
-	let probeResult: { name?: string } | null = null;
-	try {
-		probeResult = await env.DB.prepare(
-			`SELECT name FROM sqlite_master WHERE type='table' AND name='worker_config'`,
-		).first<{ name: string }>();
-	} catch (err) {
-		// If even the probe throws, log + continue to the apply path; the
-		// apply will surface a more specific error if D1 is genuinely
-		// unusable.
-		console.error(
-			JSON.stringify({
-				event: 'bootstrap_probe_error',
-				error: err instanceof Error ? err.message : String(err),
-			}),
-		);
-	}
-
-	if (probeResult?.name === 'worker_config') {
-		schemaConfirmed = true;
-		return;
-	}
-
-	console.log(
-		JSON.stringify({
-			event: 'bootstrap_apply_schema',
-			statement_count: STATEMENTS.length,
-			reason: 'worker_config table missing — applying initial schema',
-		}),
-	);
-
-	// Run each statement separately. D1's prepare() doesn't split on
-	// newlines so multi-line CREATE TRIGGER / VIRTUAL TABLE statements
-	// work correctly.
-	//
-	// We don't use db.batch() because batch() wraps everything in a
-	// transaction, and D1 transactions don't support DDL on the same
-	// table as DML in the same transaction (the INSERT INTO
-	// wiki_collections wants the table to already exist as a committed
-	// schema object). Sequential prepare().run() works.
+// Run each statement separately. D1's prepare() doesn't split on newlines so
+// multi-line CREATE TRIGGER / VIRTUAL TABLE statements work correctly. We
+// don't use db.batch() because batch() wraps everything in a transaction, and
+// D1 won't run DDL + dependent DML (the INSERT INTO wiki_collections) in one
+// transaction. Sequential prepare().run() works. Every statement is
+// idempotent (IF NOT EXISTS / OR IGNORE), so replaying on upgrade is safe.
+async function applyStatements(env: Env): Promise<void> {
 	for (let i = 0; i < STATEMENTS.length; i++) {
 		try {
 			await env.DB.prepare(STATEMENTS[i]).run();
@@ -263,30 +232,83 @@ export async function ensureSchema(env: Env): Promise<void> {
 				}),
 			);
 			throw new Error(
-				`D1 schema bootstrap failed at statement ${i}: ${
-					err instanceof Error ? err.message : String(err)
-				}`,
+				`D1 schema bootstrap failed at statement ${i}: ${err instanceof Error ? err.message : String(err)}`,
 			);
 		}
 	}
+	await env.DB.prepare(
+		`INSERT OR REPLACE INTO worker_config (key, value, created_at) VALUES ('schema_version', ?, datetime('now'))`,
+	)
+		.bind(String(SCHEMA_VERSION))
+		.run();
+}
 
-	// Confirm the apply landed.
-	const after = await env.DB.prepare(
-		`SELECT name FROM sqlite_master WHERE type='table' AND name='worker_config'`,
-	).first<{ name: string }>();
-	if (after?.name !== 'worker_config') {
-		throw new Error(
-			'D1 schema bootstrap failed: worker_config still missing after apply',
+/**
+ * Ensures the D1 schema exists AND is at the current version. Cheap when
+ * current (probe + version read + memo), thorough when fresh or upgrading
+ * (full idempotent statement replay). Safe to call repeatedly.
+ */
+export async function ensureSchema(env: Env): Promise<void> {
+	if (schemaConfirmed) return;
+
+	let probeResult: { name?: string } | null = null;
+	try {
+		probeResult = await env.DB.prepare(
+			`SELECT name FROM sqlite_master WHERE type='table' AND name='worker_config'`,
+		).first<{ name: string }>();
+	} catch (err) {
+		// If even the probe throws, log + continue to the apply path; the
+		// apply will surface a more specific error if D1 is genuinely unusable.
+		console.error(
+			JSON.stringify({
+				event: 'bootstrap_probe_error',
+				error: err instanceof Error ? err.message : String(err),
+			}),
 		);
+	}
+
+	if (probeResult?.name === 'worker_config') {
+		// Schema exists — check whether newer code added tables since it was applied.
+		let storedVersion = 0;
+		try {
+			const row = await env.DB.prepare(
+				`SELECT value FROM worker_config WHERE key = 'schema_version'`,
+			).first<{ value: string }>();
+			storedVersion = row ? Number(row.value) || 0 : 0;
+		} catch {
+			storedVersion = 0; // pre-versioning deploy — treat as oldest
+		}
+
+		if (storedVersion >= SCHEMA_VERSION) {
+			schemaConfirmed = true;
+			return;
+		}
+
+		console.log(
+			JSON.stringify({ event: 'bootstrap_upgrade_schema', from: storedVersion, to: SCHEMA_VERSION }),
+		);
+		await applyStatements(env);
+		schemaConfirmed = true;
+		return;
 	}
 
 	console.log(
 		JSON.stringify({
-			event: 'bootstrap_complete',
+			event: 'bootstrap_apply_schema',
 			statement_count: STATEMENTS.length,
+			reason: 'worker_config table missing — applying initial schema',
 		}),
 	);
+	await applyStatements(env);
 
+	const after = await env.DB.prepare(
+		`SELECT name FROM sqlite_master WHERE type='table' AND name='worker_config'`,
+	).first<{ name: string }>();
+	if (after?.name !== 'worker_config') {
+		throw new Error('D1 schema bootstrap failed: worker_config still missing after apply');
+	}
+
+	console.log(JSON.stringify({ event: 'bootstrap_complete', statement_count: STATEMENTS.length }));
 	schemaConfirmed = true;
 }
 
