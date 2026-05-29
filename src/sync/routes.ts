@@ -455,21 +455,51 @@ app.delete('/object/*', async (c) => {
 // Returns: { objects: [{key, etag, size, last_modified}], truncated }
 app.get('/list', async (c) => {
 	const prefix = c.req.query('prefix') ?? '';
-	const bucketName = c.req.query('bucket') ?? (prefix.startsWith('wiki/') ? 'wiki' : 'files');
+	const explicitBucket = c.req.query('bucket');
 	const limit = Math.min(Number.parseInt(c.req.query('limit') ?? '1000', 10) || 1000, 1000);
 	const cursor = c.req.query('cursor');
 
-	const bucket = bucketName === 'wiki' ? c.env.WIKI : c.env.FILES;
-	const res = await bucket.list({ prefix, limit, cursor });
+	const mapObj = (o: R2Object) => ({
+		key: o.key,
+		etag: o.etag.replace(/^"|"$/g, ''),
+		size: o.size,
+		last_modified: o.uploaded.toISOString(),
+	});
+
+	// Explicit bucket → single-bucket paginated listing (dashboard tree uses this).
+	if (explicitBucket === 'wiki' || explicitBucket === 'files') {
+		const bucket = explicitBucket === 'wiki' ? c.env.WIKI : c.env.FILES;
+		const res = await bucket.list({ prefix, limit, cursor });
+		return c.json({
+			objects: res.objects.map(mapObj),
+			truncated: res.truncated,
+			cursor: res.truncated ? res.cursor : null,
+		});
+	}
+
+	// No bucket specified → "the whole town". officetowd syncs with prefix=''
+	// and no bucket; it expects every cortex object across both buckets. Walk
+	// each bucket fully (internally paginated) and merge. Cortexes are small;
+	// if a single bucket ever exceeds the per-call cap we paginate through it.
+	const collectAll = async (bucket: R2Bucket): Promise<R2Object[]> => {
+		const out: R2Object[] = [];
+		let cur: string | undefined;
+		for (let i = 0; i < 50; i++) {
+			const page = await bucket.list({ prefix, limit: 1000, cursor: cur });
+			out.push(...page.objects);
+			if (!page.truncated) break;
+			cur = page.cursor;
+		}
+		return out;
+	};
+	const [wikiObjs, fileObjs] = await Promise.all([
+		collectAll(c.env.WIKI),
+		collectAll(c.env.FILES),
+	]);
 	return c.json({
-		objects: res.objects.map((o) => ({
-			key: o.key,
-			etag: o.etag.replace(/^"|"$/g, ''),
-			size: o.size,
-			last_modified: o.uploaded.toISOString(),
-		})),
-		truncated: res.truncated,
-		cursor: res.truncated ? res.cursor : null,
+		objects: [...wikiObjs, ...fileObjs].map(mapObj),
+		truncated: false,
+		cursor: null,
 	});
 });
 

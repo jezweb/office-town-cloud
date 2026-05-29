@@ -1104,19 +1104,20 @@ dashboardRoutes.get('/connect.sh', async () => {
 # Run with:
 #   curl -fsSL <worker>/connect.sh | WORKER_URL='https://<worker>' MCP_BEARER='<token>' bash
 #
-# What this does (default):
+# What this does:
 #   1. Bootstraps the goose CLI (brew on macOS, curl-installer otherwise) if missing
 #   2. Disables Goose's built-in Memory extension (wiki MCP replaces it)
-#   3. Adds 6 office-town-* MCPs to ~/.config/goose/config.yaml via 'goose mcp add'
-#
-# Optional add-on (with WITH_SYNC=1):
-#   4. Installs the officetowd sync daemon binary
-#   5. Prints the two-command finish for officetowd (configure + start)
+#   3. Wires 6 office-town-* MCPs into ~/.config/goose/config.yaml
+#   4. Installs the office-town-plugin (4 roles + skills + recipes + hooks)
+#   5. Installs the officetowd sync daemon + creates ~/OfficeTown/ + first sync,
+#      so your cortex is a real folder on disk you can open and edit
+#   6. Opens the folder so you can see it
 #
 # Env vars:
-#   WORKER_URL   (required) — your Office Town worker URL
-#   MCP_BEARER   (required) — the dashboard / MCP bearer token
-#   WITH_SYNC=1  (optional) — also install the officetowd sync daemon
+#   WORKER_URL     (required) — your Office Town worker URL
+#   MCP_BEARER     (required) — the dashboard / MCP bearer token
+#   WITHOUT_SYNC=1 (optional) — skip the local folder + sync daemon (AI access only)
+#   SYNC_FOLDER    (optional) — where the cortex folder lives (default: ~/OfficeTown)
 
 set -euo pipefail
 
@@ -1260,85 +1261,131 @@ echo ""
 echo "✓ Goose config updated."
 echo ""
 
-# ---- Stage 3: officetowd sync daemon (opt-in) -----------------------------
-# Skipped by default. Set WITH_SYNC=1 to also install the local sync daemon.
-if [ "\${WITH_SYNC:-0}" != "1" ]; then
-  echo "→ Skipping officetowd sync daemon (set WITH_SYNC=1 to install)."
+# ---- Stage 2.5: Office Town plugin (roles + skills + recipes + hooks) ------
+# The plugin gives the 4 roles (boss/librarian/worker/scout), their skills,
+# the town standing orders, and the session-start hook. Without it the agent
+# has the MCPs but none of the team behaviour.
+echo "→ Installing the Office Town plugin (roles, skills, recipes, hooks)..."
+if goose plugin install https://github.com/jezweb/office-town-plugin 2>&1; then
+  echo "  ✓ Plugin installed."
 else
-  echo "→ Installing officetowd sync daemon..."
+  echo "  ! Plugin install reported an issue — you can retry later with:"
+  echo "    goose plugin install https://github.com/jezweb/office-town-plugin"
+fi
+echo ""
+
+# ---- Stage 3: local cortex folder + sync daemon (default on) --------------
+# Your cortex becomes a real folder on disk (default ~/OfficeTown) that mirrors
+# R2 both ways. Skip with WITHOUT_SYNC=1 if you only want AI access (the
+# dashboard web view still works).
+SYNC_FOLDER="\${SYNC_FOLDER:-$HOME/OfficeTown}"
+# Expand a leading ~/ if the caller passed one.
+case "$SYNC_FOLDER" in
+  "~/"*) SYNC_FOLDER="$HOME/\${SYNC_FOLDER#~/}" ;;
+esac
+
+if [ "\${WITHOUT_SYNC:-0}" = "1" ]; then
+  echo "→ Skipping local folder + sync (WITHOUT_SYNC=1). Use the dashboard web view:"
+  echo "    $WORKER_URL/dashboard"
+else
+  echo "→ Setting up your cortex folder at $SYNC_FOLDER ..."
 
   case "$(uname -s)" in
     Darwin) OS=darwin ;;
     Linux)  OS=linux ;;
-    *)
-      echo "  ! Unsupported OS for officetowd: $(uname -s). Skipping daemon install."
-      OS=""
-      ;;
+    *) OS="" ;;
   esac
   case "$(uname -m)" in
     arm64|aarch64) ARCH=arm64 ;;
     x86_64|amd64)  ARCH=amd64 ;;
-    *)
-      echo "  ! Unsupported arch for officetowd: $(uname -m). Skipping daemon install."
-      ARCH=""
-      ;;
+    *) ARCH="" ;;
   esac
 
-  if [ -n "$OS" ] && [ -n "$ARCH" ]; then
-    DAEMON_REPO="jezweb/officetowd"
-    LATEST_TAG=$(curl -fsSL "https://api.github.com/repos/$DAEMON_REPO/releases/latest" \\
-      | grep -E '"tag_name"' | head -1 | sed -E 's/.*"tag_name": *"([^"]+)".*/\\1/')
-
-    if [ -z "$LATEST_TAG" ]; then
-      echo "  ! Could not resolve officetowd latest release. Skipping daemon install."
+  if [ -z "$OS" ] || [ -z "$ARCH" ]; then
+    echo "  ! Unsupported platform ($(uname -s)/$(uname -m)) for the sync daemon."
+    echo "    Your cortex still works via the dashboard: $WORKER_URL/dashboard"
+  else
+    # Install the officetowd binary if not already present.
+    if ! command -v officetowd >/dev/null 2>&1; then
+      DAEMON_REPO="jezweb/officetowd"
+      LATEST_TAG=$(curl -fsSL "https://api.github.com/repos/$DAEMON_REPO/releases/latest" \\
+        | grep -E '"tag_name"' | head -1 | sed -E 's/.*"tag_name": *"([^"]+)".*/\\1/')
+      if [ -z "$LATEST_TAG" ]; then
+        echo "  ! Could not resolve officetowd latest release — skipping sync setup."
+      else
+        ASSET="officetowd-\${OS}-\${ARCH}.tar.gz"
+        URL="https://github.com/$DAEMON_REPO/releases/download/$LATEST_TAG/$ASSET"
+        LOCAL_BIN="$HOME/.local/bin"
+        if [ -w "/usr/local/bin" ]; then DEST="/usr/local/bin"; SUDO="";
+        elif sudo -n true 2>/dev/null; then DEST="/usr/local/bin"; SUDO=sudo;
+        else mkdir -p "$LOCAL_BIN"; DEST="$LOCAL_BIN"; SUDO="";
+          case ":$PATH:" in *":$LOCAL_BIN:"*) ;; *) export PATH="$LOCAL_BIN:$PATH" ;; esac
+        fi
+        TMP=$(mktemp -d); trap "rm -rf $TMP" EXIT
+        echo "  Downloading officetowd $LATEST_TAG ($OS/$ARCH)..."
+        if curl -fsSL "$URL" -o "$TMP/officetowd.tar.gz"; then
+          tar -xzf "$TMP/officetowd.tar.gz" -C "$TMP"
+          \${SUDO:-} install -m 0755 "$TMP/officetowd" "$DEST/officetowd"
+          hash -r 2>/dev/null || true
+          echo "  ✓ Installed officetowd to $DEST/officetowd"
+        else
+          echo "  ! Download failed — skipping sync setup."
+        fi
+      fi
     else
-      ASSET="officetowd-\${OS}-\${ARCH}.tar.gz"
-      URL="https://github.com/$DAEMON_REPO/releases/download/$LATEST_TAG/$ASSET"
+      echo "  ✓ officetowd already installed."
+    fi
 
-      INSTALL_DIR_DEFAULT="/usr/local/bin"
-      LOCAL_BIN="$HOME/.local/bin"
-      if [ -w "$INSTALL_DIR_DEFAULT" ]; then
-        INSTALL_DIR="$INSTALL_DIR_DEFAULT"
-        SUDO=""
-      elif sudo -n true 2>/dev/null; then
-        INSTALL_DIR="$INSTALL_DIR_DEFAULT"
-        SUDO=sudo
-      else
-        mkdir -p "$LOCAL_BIN"
-        INSTALL_DIR="$LOCAL_BIN"
-        SUDO=""
-        case ":$PATH:" in
-          *":$LOCAL_BIN:"*) ;;
-          *) echo "  ! $LOCAL_BIN not on PATH. Add: export PATH=\\"\\$HOME/.local/bin:\\$PATH\\"" ;;
-        esac
-      fi
-
-      TMP=$(mktemp -d)
-      trap "rm -rf $TMP" EXIT
-      echo "  Downloading $ASSET ($LATEST_TAG)..."
-      if curl -fsSL "$URL" -o "$TMP/officetowd.tar.gz"; then
-        tar -xzf "$TMP/officetowd.tar.gz" -C "$TMP"
-        \${SUDO:-} install -m 0755 "$TMP/officetowd" "$INSTALL_DIR/officetowd"
-        echo "  ✓ Installed officetowd to $INSTALL_DIR/officetowd"
-        echo ""
-        echo "  Finish setup with:"
-        echo "    officetowd configure --from-dashboard $WORKER_URL"
-        echo "    officetowd start"
-      else
-        echo "  ! Download failed from $URL — skipping daemon install."
-      fi
+    if command -v officetowd >/dev/null 2>&1; then
+      # Write the daemon config directly (configure is interactive-only).
+      # prefix empty = sync the whole town (wiki + files + AGENTS.md + inbox).
+      mkdir -p "$SYNC_FOLDER" "$HOME/.officetowd"
+      WORKER_URL="$WORKER_URL" MCP_BEARER="$MCP_BEARER" SYNC_FOLDER="$SYNC_FOLDER" $PY <<'PYEOF'
+import os, pathlib
+home = pathlib.Path.home()
+cfg = home / '.officetowd' / 'config.yaml'
+lines = [
+    f"worker_url: {os.environ['WORKER_URL'].rstrip('/')}",
+    f"bearer: {os.environ['MCP_BEARER']}",
+    f"local_dir: {os.environ['SYNC_FOLDER']}",
+    "prefix: ''",
+    "interval_seconds: 60",
+    "",
+]
+cfg.write_text("\\n".join(lines))
+cfg.chmod(0o600)
+print(f"  ✓ Wrote {cfg} (mode 0600)")
+PYEOF
+      echo "  Pulling your cortex down to $SYNC_FOLDER ..."
+      officetowd sync 2>&1 | sed 's/^/    /' || echo "  ! First sync had an issue — run 'officetowd sync' to retry."
+      echo "  ✓ Cortex folder ready."
+      echo ""
+      echo "  To keep it syncing in the background, run:  officetowd start"
     fi
   fi
 fi
 echo ""
 
 # ---- Finish ---------------------------------------------------------------
-echo "Done. Next:"
-echo "  • Restart Goose Desktop (if it was open) so the config reloads."
-echo "  • In a fresh Goose chat, try:  list contacts in the wiki"
-echo "  • Verify the MCP wiring:       goose mcp list"
-if [ "\${WITH_SYNC:-0}" = "1" ]; then
-  echo "  • Configure officetowd:        officetowd configure --from-dashboard $WORKER_URL"
+echo "════════════════════════════════════════════════════════════"
+echo "✓ Office Town is set up."
+echo ""
+echo "DO THIS NEXT:"
+echo "  1. Quit and reopen Goose Desktop (so it loads the new extensions)."
+echo "  2. In a fresh Goose chat, just say:  hi"
+echo "     An agent will welcome you and show you where to start."
+echo ""
+if [ "\${WITHOUT_SYNC:-0}" != "1" ]; then
+  echo "Your cortex folder: $SYNC_FOLDER  (opening it now)"
+fi
+echo "Web dashboard:      $WORKER_URL/dashboard"
+echo "════════════════════════════════════════════════════════════"
+
+# Open the folder so the user can see their cortex.
+if [ "\${WITHOUT_SYNC:-0}" != "1" ] && [ -d "$SYNC_FOLDER" ]; then
+  if command -v open >/dev/null 2>&1; then open "$SYNC_FOLDER" 2>/dev/null || true
+  elif command -v xdg-open >/dev/null 2>&1; then xdg-open "$SYNC_FOLDER" 2>/dev/null || true
+  fi
 fi
 `;
 
@@ -1522,14 +1569,14 @@ dashboardRoutes.get('/dashboard/connect', async (c) => {
 
 <div class="card" style="max-width: 800px; margin-top: 1.5rem;">
   <h2 style="margin-top: 0;">Run this in your terminal</h2>
-  <p style="margin: 0.5rem 0;" class="muted">Open Terminal (macOS / Linux) or WSL (Windows) and paste this single line. It bootstraps Goose CLI if missing, then wires the 6 MCPs.</p>
+  <p style="margin: 0.5rem 0;" class="muted">Open Terminal (macOS / Linux) or WSL (Windows) and paste this single line. It installs Goose CLI + the plugin if needed, wires the 6 MCPs, and sets up your cortex folder.</p>
 
   <label style="display: flex; gap: 0.5rem; align-items: flex-start; margin: 0.75rem 0; padding: 0.6rem 0.8rem; background: var(--code); border: 1px solid var(--border); border-radius: 6px; cursor: pointer;">
-    <input id="with-sync" type="checkbox" style="margin-top: 0.2rem;">
+    <input id="with-sync" type="checkbox" checked style="margin-top: 0.2rem;">
     <span>
-      <strong style="font-size: 0.95em;">Also install the local sync daemon (officetowd)</strong>
+      <strong style="font-size: 0.95em;">Create a local cortex folder (recommended)</strong>
       <span class="muted" style="display: block; font-size: 0.85em; margin-top: 0.15rem;">
-        Mirrors your wiki + files to a folder on this Mac/Linux/WSL host so you can edit in Obsidian, VSCode, Typora, or any editor. Skip if you'll only edit via the AI agent.
+        Installs the sync daemon and creates <code>~/OfficeTown/</code> — your whole cortex as real files you can open and edit in Obsidian, VSCode, Finder, anything. Untick for AI access only (you'll still have the web dashboard).
       </span>
     </span>
   </label>
@@ -1587,13 +1634,14 @@ function generateOneliner() {
   const url = document.getElementById('worker-url').value.replace(/\\/+$/, '');
   const bearer = document.getElementById('bearer').value.trim();
   const withSync = document.getElementById('with-sync').checked;
+  // Sync is default-on; the script opts OUT with WITHOUT_SYNC=1 when unchecked.
   const urlSafe = url || 'https://YOUR-WORKER-URL.workers.dev';
   const bearerSafe = bearer || 'YOUR_MCP_BEARER_TOKEN';
 
   return 'curl -fsSL ' + shSingleQuote(urlSafe + '/connect.sh') +
     ' | WORKER_URL=' + shSingleQuote(urlSafe) +
     ' MCP_BEARER=' + shSingleQuote(bearerSafe) +
-    (withSync ? ' WITH_SYNC=1' : '') +
+    (withSync ? '' : ' WITHOUT_SYNC=1') +
     ' bash';
 }
 
