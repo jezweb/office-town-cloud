@@ -1266,10 +1266,12 @@ echo ""
 # the town standing orders, and the session-start hook. Without it the agent
 # has the MCPs but none of the team behaviour.
 echo "→ Installing the Office Town plugin (roles, skills, recipes, hooks)..."
-if goose plugin install https://github.com/jezweb/office-town-plugin 2>&1; then
-  echo "  ✓ Plugin installed."
+PLUGIN_OUT=$(goose plugin install https://github.com/jezweb/office-town-plugin 2>&1 || true)
+if echo "$PLUGIN_OUT" | grep -qiE "installed|already"; then
+  echo "  ✓ Plugin ready."
 else
-  echo "  ! Plugin install reported an issue — you can retry later with:"
+  echo "$PLUGIN_OUT" | sed 's/^/    /'
+  echo "  ! Plugin install reported an issue — retry later with:"
   echo "    goose plugin install https://github.com/jezweb/office-town-plugin"
 fi
 echo ""
