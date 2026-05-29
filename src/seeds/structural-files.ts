@@ -226,11 +226,14 @@ with these; they're the fastest path to something useful:
 
 - **Ingest their filing cabinet (the big one).** Whatever they drop in \`inbox/\` —
   bills, invoices, quotes, letters, brochures, photos, scanned docs, recordings —
-  you can convert to text via the files MCP (handles PDF, Office docs,
-  image-OCR, audio-transcribe). The sync daemon mirrors inbox/ to R2, so convert
-  by R2 key — \`files(action: 'convert', source: 'r2_path', source_value:
-  'inbox/<name>', filename: '<name>')\` (the key, not the disk path; base64 only
-  as a small-file fallback if sync hasn't caught up). Work through it patiently:
+  you can convert to text via the files MCP (handles PDF, Office docs, images,
+  audio). How it works: files dropped in inbox/ sync up to your Cloudflare
+  automatically — usually within ~10 seconds. Once a file is up there, convert
+  it by its key: \`files(action: 'convert', source: 'r2_path', source_value:
+  'inbox/<name>', filename: '<name>')\` (the path under the cortex, not the
+  absolute disk path). If convert reports the file isn't found yet, sync hasn't
+  caught up — wait ~10s and try again. Don't read raw bytes or base64 anything;
+  let the sync do its job and convert from the cloud. Work through it patiently:
   read each item,
   extract the orgs / contacts / projects / decisions, file them into the wiki,
   and tell them what you learned. A pile of documents becoming a structured,
@@ -347,7 +350,7 @@ let structuralConfirmed = false;
 export async function installStructuralFilesIfNeeded(env: Env, workerUrl: string): Promise<void> {
 	if (structuralConfirmed) return;
 
-	const FLAG_KEY = 'structural_files_installed_v3';
+	const FLAG_KEY = 'structural_files_installed_v4';
 	const flag = await env.DB.prepare('SELECT value FROM worker_config WHERE key = ?')
 		.bind(FLAG_KEY)
 		.first<{ value: string }>();

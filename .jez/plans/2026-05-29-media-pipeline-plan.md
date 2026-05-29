@@ -56,10 +56,12 @@ base64` (r2_path reads `env.FILES.get(key)`).
 4. **No async** for slow media — a long audio/video would block or time out.
 5. **No auto-routing** — caller picks the path; fine, but a single `extract`
    that just-does-the-right-thing is friendlier for the agent.
-6. **base64-through-MCP is awkward** — proven dogfooding: the agent tried
+6. **Agents must never base64** — proven dogfooding: the agent tried
    `$(base64 -i file)` as an MCP arg (no shell expansion) and choked on the
-   blob. Since inbox auto-syncs to R2, `r2_path` with key `inbox/<name>` is the
-   clean path; base64 is only a small/unsynced fallback.
+   blob. The model to teach agents: files dropped in inbox/ sync to R2
+   automatically (~10s); convert by `r2_path` key `inbox/<name>` from the cloud;
+   if not-found, wait and retry. No base64, no raw-byte reads, no shelling out —
+   patience + the sync. (Guidance already corrected in AGENTS.md seed + recipe.)
 
 ---
 
@@ -75,18 +77,23 @@ self-contained, so in-worker is simpler.
 
 ## Plan, in value order
 
-### Phase A — vision description for images  *(highest value, lowest risk)*
+### Phase A — image description via a capable multimodal LLM  *(highest value, lowest risk)*
 The real parity gap. When `extract` (or `convert`) receives an image, run a
-vision model via the chat-completions `image_url` path with a
+**general multimodal LLM** via the chat-completions `image_url` path with a
 search-oriented prompt: subject, any visible text, document-vs-photo, key
-details, suggested tags. Optional `hint`. Returns a descriptive markdown the
+details, suggested tags. Optional `hint`. Returns descriptive markdown the
 agent files as the entry body.
-- Model: verify current best for description-that-also-captures-text against
-  `~/.claude/rules/workers-ai-gotchas.md` (candidates: Llama 4 Scout, Gemma 4
-  26B, Kimi). Mirror Goanna's fast/complex split (`model` param).
-- Keep `toMarkdown` for clearly-textual docs; route images to vision. (Verify
-  whether one vision call can replace OCR entirely — it usually captures
-  visible text too, which would simplify to one path.)
+- **Do NOT use the dedicated vision-specific models** (llama-3.2-vision, LLaVA,
+  uform) — they're weak. Use general multimodal chat models, mirroring Goanna's
+  fast/complex split via a `model` param: **Gemma 4** (`@cf/google/gemma-4-26b-a4b-it`,
+  fast default) and **Kimi 2.6** (`@cf/moonshotai/kimi-k2.6`, complex / document
+  understanding). Qwen 3.x multimodal is a candidate too. Verify the exact live
+  `@cf/` IDs + vision capability at build time (per workers-ai-gotchas: the
+  `capabilities.vision` flag is stale for several — trust the docs/bake-off, not
+  the flag).
+- A capable multimodal model captures visible text *and* describes the image in
+  one call, so it can replace OCR for images entirely — collapse to one image
+  path rather than OCR-then-maybe-describe. Confirm in a quick bake-off.
 
 ### Phase B — result cache (D1)  *(makes the whole inbox flow economical)*
 `sha256(bytes)` → cache row (`hash`, `kind`, `result_markdown`, `created`).
@@ -130,8 +137,9 @@ core — keeps the zero-friction install intact.
 
 1. **Media Transformations** on the office-town account/plan — available? (gates
    Phase C video). If not, video defers to the optional Python pack.
-2. **One vision call vs OCR+vision** — if a vision model reliably captures
-   visible text too, collapse to a single image path. Needs a quick bake-off.
+2. ~~One vision call vs OCR+vision~~ — RESOLVED: use one multimodal-LLM call
+   (captures text + describes). No dedicated vision models. Bake off Gemma 4 vs
+   Kimi 2.6 for quality/speed only.
 3. **Cache scope** — content-hash only, or also invalidate on model change?
    (Re-extract if we upgrade the vision model and want better descriptions.)
 
