@@ -1211,8 +1211,19 @@ if ! $PY -c "import yaml" 2>/dev/null; then
   fi
 fi
 
+# ---- Device identity ------------------------------------------------------
+# Mint a stable device id ONCE; both the Goose config below and officetowd
+# (Stage 3) read the same ~/.officetowd/device_id, so the agent's MCP calls and
+# the daemon's syncs share one machine identity (for multi-machine + provenance).
+mkdir -p "$HOME/.officetowd"
+if [ ! -s "$HOME/.officetowd/device_id" ]; then
+  NEWID=$(uuidgen 2>/dev/null | tr '[:upper:]' '[:lower:]' || cat /proc/sys/kernel/random/uuid 2>/dev/null || $PY -c 'import uuid; print(uuid.uuid4())' 2>/dev/null || true)
+  if [ -n "$NEWID" ]; then printf '%s\\n' "$NEWID" > "$HOME/.officetowd/device_id"; chmod 600 "$HOME/.officetowd/device_id"; fi
+fi
+DEVICE_ID=$(cat "$HOME/.officetowd/device_id" 2>/dev/null || echo "")
+
 echo "→ Editing ~/.config/goose/config.yaml — wiring 6 MCPs, disabling built-in Memory..."
-WORKER_URL="$WORKER_URL" MCP_BEARER="$MCP_BEARER" $PY <<'PYEOF'
+WORKER_URL="$WORKER_URL" MCP_BEARER="$MCP_BEARER" DEVICE_ID="$DEVICE_ID" $PY <<'PYEOF'
 import os
 import pathlib
 import yaml
@@ -1220,6 +1231,10 @@ import yaml
 config_path = pathlib.Path.home() / '.config' / 'goose' / 'config.yaml'
 worker_url = os.environ['WORKER_URL'].rstrip('/')
 bearer = os.environ['MCP_BEARER']
+device = os.environ.get('DEVICE_ID', '').strip()
+headers = {'Authorization': f'Bearer {bearer}'}
+if device:
+    headers['X-Office-Town-Device'] = device
 
 config_path.parent.mkdir(parents=True, exist_ok=True)
 if config_path.exists():
@@ -1244,7 +1259,7 @@ if is_dict_shape:
             'name': f'office-town-{name}',
             'type': 'streamable_http',
             'uri': f'{worker_url}/mcp/{name}',
-            'headers': {'Authorization': f'Bearer {bearer}'},
+            'headers': dict(headers),
             'timeout': 300,
             'enabled': True,
             'bundled': None,
@@ -1267,7 +1282,7 @@ else:
             'name': f'office-town-{name}',
             'type': 'streamable_http',
             'uri': f'{worker_url}/mcp/{name}',
-            'headers': {'Authorization': f'Bearer {bearer}'},
+            'headers': dict(headers),
             'timeout': 300,
             'enabled': True,
             'bundled': None,

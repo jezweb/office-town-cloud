@@ -28,6 +28,7 @@ import type { AppContext, Env } from '../types';
 import { FilesService } from '../files/service';
 import { PublishService } from '../publish/service';
 import { getEffectiveBearer } from '../auth/bearer';
+import { captureMcpInitialize } from '../identity';
 
 const app = new Hono<AppContext>();
 
@@ -958,6 +959,7 @@ app.post('/', async (c) => {
 		return c.json({ error: 'Unauthorised' }, 401);
 	}
 	const req = await c.req.json<JsonRpcRequest>();
+	await captureMcpInitialize(c, req);
 	const result = await handleRpc(c.env, req);
 	return c.json(result);
 });

@@ -62,3 +62,18 @@ export async function touchDevice(c: Context<AppContext>, t: DeviceTouch): Promi
 export function deviceIdFrom(c: Context<AppContext>): string | undefined {
 	return c.req.header('x-office-town-device') || undefined;
 }
+
+// Capture goose_version onto the device on an MCP `initialize` (the agent's MCP
+// calls carry the same device id the daemon uses — the installer wires it into
+// the Goose headers). Doesn't set `kind` (a machine runs both daemon + agent;
+// they share one device row). Safe to call on every request.
+export async function captureMcpInitialize(
+	c: Context<AppContext>,
+	req: { method?: string; params?: unknown },
+): Promise<void> {
+	if (req?.method !== 'initialize') return;
+	const deviceId = deviceIdFrom(c);
+	if (!deviceId) return;
+	const ci = (req.params as { clientInfo?: { version?: string } } | undefined)?.clientInfo;
+	await touchDevice(c, { deviceId, gooseVersion: typeof ci?.version === 'string' ? ci.version : undefined });
+}
