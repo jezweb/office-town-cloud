@@ -196,34 +196,45 @@ function coerceModelText(result: unknown): string {
 	return '';
 }
 
+// Core multimodal call. Takes one or more image data URLs (a single still, or
+// an ordered sequence of video frames — Gemma 4 processes video as interleaved
+// frames) and returns the model's description. Images go BEFORE the text, per
+// Gemma's guidance for multimodal prompts.
+async function runVision(
+	env: Env,
+	modelKey: string,
+	imageDataUrls: string[],
+	userText: string,
+	systemPrompt: string,
+): Promise<string> {
+	const modelId = IMAGE_MODELS[modelKey] ?? IMAGE_MODELS.gemma4;
+	const content = [
+		...imageDataUrls.map((url) => ({ type: 'image_url', image_url: { url } })),
+		{ type: 'text', text: userText },
+	];
+	const result = await env.AI.run(modelId as never, {
+		messages: [
+			{ role: 'system', content: systemPrompt },
+			{ role: 'user', content },
+		],
+		max_tokens: 1024,
+	} as never);
+	const text = coerceModelText(result).trim();
+	if (!text) throw new Error(`Model ${modelId} returned no description`);
+	return text;
+}
+
 async function describeImage(
 	env: Env,
 	bytes: ArrayBuffer,
 	contentType: string,
 	hint: string | undefined,
 	modelKey: string,
+	userIntro = 'Describe this image for a knowledge base.',
 ): Promise<string> {
-	const modelId = IMAGE_MODELS[modelKey] ?? IMAGE_MODELS.gemma4;
 	const dataUrl = `data:${contentType};base64,${arrayBufferToBase64(bytes)}`;
-	const userText = hint
-		? `Describe this image for a knowledge base. Focus: ${hint}`
-		: 'Describe this image for a knowledge base.';
-	const result = await env.AI.run(modelId as never, {
-		messages: [
-			{ role: 'system', content: IMAGE_SYSTEM_PROMPT },
-			{
-				role: 'user',
-				content: [
-					{ type: 'text', text: userText },
-					{ type: 'image_url', image_url: { url: dataUrl } },
-				],
-			},
-		],
-		max_tokens: 1024,
-	} as never);
-	const text = coerceModelText(result).trim();
-	if (!text) throw new Error(`Image model ${modelId} returned no description`);
-	return text;
+	const userText = hint ? `${userIntro} Focus: ${hint}` : userIntro;
+	return runVision(env, modelKey, [dataUrl], userText, IMAGE_SYSTEM_PROMPT);
 }
 
 // Video understanding via Media Transformations (env.MEDIA) — frames + audio
@@ -237,41 +248,63 @@ async function describeVideo(
 	hint: string | undefined,
 	modelKey: string,
 ): Promise<string> {
-	const parts: string[] = [];
+	const VIDEO_INTRO =
+		'These images are still frames sampled in time order across a single video (early frames first). Read them as a sequence: describe what happens across the clip, note scene or subject changes, and transcribe any visible text. Treat them as one video, not separate images.';
 
-	// Visual: extract a frame and describe it.
-	try {
-		const frameResp = await env.MEDIA.input(new Response(bytes).body!)
-			.transform({ width: 720 })
-			.output({ mode: 'frame', time: '1s', format: 'jpg' })
-			.response();
-		if (frameResp.ok) {
-			const frameBytes = await frameResp.arrayBuffer();
-			const visual = await describeImage(env, frameBytes, 'image/jpeg', hint, modelKey);
-			parts.push(`## Visual\n\n${visual}`);
+	// Extract individual full-res frames at evenly-spaced timestamps and pass
+	// them as an ordered sequence — Gemma 4 processes video natively this way
+	// (interleaved frames, up to ~60 at 1fps), which keeps each frame legible.
+	// Timestamps past the clip's end fail and are skipped, so a short clip just
+	// yields fewer frames. Frame + audio extraction run in parallel.
+	const FRAME_TIMES = ['0s', '4s', '8s', '12s', '16s', '20s', '26s', '32s', '40s', '48s', '56s'];
+
+	const extractFrame = async (time: string): Promise<string | null> => {
+		try {
+			const resp = await env.MEDIA.input(new Response(bytes).body!)
+				.transform({ width: 768 })
+				.output({ mode: 'frame', time, format: 'jpg' })
+				.response();
+			if (!resp.ok) return null;
+			const fb = await resp.arrayBuffer();
+			if (fb.byteLength === 0) return null;
+			return `data:image/jpeg;base64,${arrayBufferToBase64(fb)}`;
+		} catch {
+			return null;
 		}
-	} catch (err) {
-		console.error(JSON.stringify({ event: 'video_frame_error', error: String(err) }));
-	}
+	};
 
-	// Audio: extract the track and transcribe with Whisper.
-	try {
-		const audioResp = await env.MEDIA.input(new Response(bytes).body!)
-			.output({ mode: 'audio' })
-			.response();
-		if (audioResp.ok) {
-			const audioBytes = await audioResp.arrayBuffer();
+	const extractAudioTranscript = async (): Promise<string | null> => {
+		try {
+			const resp = await env.MEDIA.input(new Response(bytes).body!).output({ mode: 'audio' }).response();
+			if (!resp.ok) return null;
+			const ab = await resp.arrayBuffer();
+			if (ab.byteLength === 0) return null;
 			const tr = (await env.AI.run('@cf/openai/whisper' as never, {
-				audio: [...new Uint8Array(audioBytes)],
+				audio: [...new Uint8Array(ab)],
 			} as never)) as { text?: string };
-			if (tr?.text?.trim()) parts.push(`## Transcript\n\n${tr.text.trim()}`);
+			return tr?.text?.trim() || null;
+		} catch (err) {
+			console.error(JSON.stringify({ event: 'video_audio_error', error: String(err) }));
+			return null;
 		}
-	} catch (err) {
-		console.error(JSON.stringify({ event: 'video_audio_error', error: String(err) }));
+	};
+
+	const [frameResults, transcript] = await Promise.all([
+		Promise.all(FRAME_TIMES.map(extractFrame)),
+		extractAudioTranscript(),
+	]);
+	const frames = frameResults.filter((f): f is string => f !== null);
+
+	const parts: string[] = [];
+	if (frames.length > 0) {
+		const userText = hint ? `${VIDEO_INTRO} Focus: ${hint}` : VIDEO_INTRO;
+		const visual = await runVision(env, modelKey, frames, userText, IMAGE_SYSTEM_PROMPT);
+		parts.push(`## Visual (${frames.length} frames)\n\n${visual}`);
 	}
+	if (transcript) parts.push(`## Transcript\n\n${transcript}`);
 
 	if (parts.length === 0) {
-		throw new Error('Could not extract a frame or audio from this video');
+		throw new Error('Could not extract frames or audio from this video');
 	}
 	return parts.join('\n\n');
 }
