@@ -226,8 +226,11 @@ with these; they're the fastest path to something useful:
 
 - **Ingest their filing cabinet (the big one).** Whatever they drop in \`inbox/\` —
   bills, invoices, quotes, letters, brochures, photos, scanned docs, recordings —
-  you can convert to text via \`files(action: 'convert')\` (handles PDF, Office
-  docs, image-OCR, audio-transcribe). Work through it patiently: read each item,
+  you can convert to text via the files MCP (handles PDF, Office docs,
+  image-OCR, audio-transcribe). Inbox files are local and may not be in R2
+  yet, so read the file and pass it as base64: \`files(action: 'convert',
+  source: 'base64', source_value: '<base64>', filename: '<name>')\`. Work
+  through it patiently: read each item,
   extract the orgs / contacts / projects / decisions, file them into the wiki,
   and tell them what you learned. A pile of documents becoming a structured,
   searchable business cortex is the thing that makes someone go "oh." It can take
@@ -343,7 +346,7 @@ let structuralConfirmed = false;
 export async function installStructuralFilesIfNeeded(env: Env, workerUrl: string): Promise<void> {
 	if (structuralConfirmed) return;
 
-	const FLAG_KEY = 'structural_files_installed_v1';
+	const FLAG_KEY = 'structural_files_installed_v2';
 	const flag = await env.DB.prepare('SELECT value FROM worker_config WHERE key = ?')
 		.bind(FLAG_KEY)
 		.first<{ value: string }>();
