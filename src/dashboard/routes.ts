@@ -1446,6 +1446,28 @@ PYEOF
 fi
 echo ""
 
+# ---- Verify the wiring actually works -------------------------------------
+# Ping each MCP with the token we just configured. A 200 confirms the worker is
+# reachable AND the token is correct AND the route is alive — so the user gets a
+# definitive "it works" instead of finding out via a confusing failure when they
+# first say "hi".
+echo "→ Verifying your tools respond..."
+VERIFY_OK=0; VERIFY_TOTAL=0
+for mcp in wiki files email cron voice sandbox; do
+  VERIFY_TOTAL=$((VERIFY_TOTAL + 1))
+  CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$WORKER_URL/mcp/$mcp" \\
+    -H "Authorization: Bearer $MCP_BEARER" -H 'Content-Type: application/json' \\
+    --data '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' 2>/dev/null || echo "000")
+  if [ "$CODE" = "200" ]; then VERIFY_OK=$((VERIFY_OK + 1)); else echo "  ! /mcp/$mcp returned $CODE"; fi
+done
+if [ "$VERIFY_OK" = "$VERIFY_TOTAL" ]; then
+  echo "  ✓ All $VERIFY_TOTAL tools are responding."
+else
+  echo "  ! Only $VERIFY_OK/$VERIFY_TOTAL tools responded."
+  echo "    Double-check the worker URL + token on $WORKER_URL/dashboard/connect, then re-run."
+fi
+echo ""
+
 # ---- Finish ---------------------------------------------------------------
 echo "════════════════════════════════════════════════════════════"
 echo "✓ Office Town is set up."
