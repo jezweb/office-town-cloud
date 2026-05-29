@@ -154,9 +154,14 @@ const IMAGE_MODELS: Record<string, string> = {
 };
 
 const IMAGE_EXT = /\.(jpe?g|png|gif|webp|bmp|tiff?|heic|heif|avif)$/i;
+const VIDEO_EXT = /\.(mp4|mov|m4v|webm|mkv|avi|mpe?g|3gp)$/i;
 
 function isImageInput(filename: string, contentType: string): boolean {
 	return contentType.startsWith('image/') || IMAGE_EXT.test(filename);
+}
+
+function isVideoInput(filename: string, contentType: string): boolean {
+	return contentType.startsWith('video/') || VIDEO_EXT.test(filename);
 }
 
 const IMAGE_SYSTEM_PROMPT = `You describe images so they become searchable, useful context in a knowledge base. Look at the image and write concise markdown covering, only where applicable:
@@ -219,6 +224,56 @@ async function describeImage(
 	const text = coerceModelText(result).trim();
 	if (!text) throw new Error(`Image model ${modelId} returned no description`);
 	return text;
+}
+
+// Video understanding via Media Transformations (env.MEDIA) — frames + audio
+// extracted server-side, no ffmpeg. v1: one representative frame described by
+// the multimodal model + the audio track transcribed by Whisper, combined.
+// Enhancement (gemma4 handles ~1min / 60 frames): a spritesheet for full
+// temporal coverage in one vision call — see the media-pipeline plan.
+async function describeVideo(
+	env: Env,
+	bytes: ArrayBuffer,
+	hint: string | undefined,
+	modelKey: string,
+): Promise<string> {
+	const parts: string[] = [];
+
+	// Visual: extract a frame and describe it.
+	try {
+		const frameResp = await env.MEDIA.input(new Response(bytes).body!)
+			.transform({ width: 720 })
+			.output({ mode: 'frame', time: '1s', format: 'jpg' })
+			.response();
+		if (frameResp.ok) {
+			const frameBytes = await frameResp.arrayBuffer();
+			const visual = await describeImage(env, frameBytes, 'image/jpeg', hint, modelKey);
+			parts.push(`## Visual\n\n${visual}`);
+		}
+	} catch (err) {
+		console.error(JSON.stringify({ event: 'video_frame_error', error: String(err) }));
+	}
+
+	// Audio: extract the track and transcribe with Whisper.
+	try {
+		const audioResp = await env.MEDIA.input(new Response(bytes).body!)
+			.output({ mode: 'audio' })
+			.response();
+		if (audioResp.ok) {
+			const audioBytes = await audioResp.arrayBuffer();
+			const tr = (await env.AI.run('@cf/openai/whisper' as never, {
+				audio: [...new Uint8Array(audioBytes)],
+			} as never)) as { text?: string };
+			if (tr?.text?.trim()) parts.push(`## Transcript\n\n${tr.text.trim()}`);
+		}
+	} catch (err) {
+		console.error(JSON.stringify({ event: 'video_audio_error', error: String(err) }));
+	}
+
+	if (parts.length === 0) {
+		throw new Error('Could not extract a frame or audio from this video');
+	}
+	return parts.join('\n\n');
 }
 
 // Pick the R2 bucket for a key the same way the sync API does: wiki/ → WIKI,
@@ -342,21 +397,24 @@ async function handleAction(env: Env, args: Record<string, unknown>): Promise<un
 			);
 			const filename = args.filename as string;
 			const isImage = isImageInput(filename, contentType);
+			const isVideo = !isImage && isVideoInput(filename, contentType);
+			const kind = isImage ? 'img' : isVideo ? 'video' : 'md';
 			const model = (args.model as string | undefined) ?? 'gemma4';
 			const hint = args.hint as string | undefined;
 
 			// Cache by content hash + variant. Re-converting the same bytes (a
 			// re-sync, a cross-session re-run) returns the stored markdown for
 			// free. Variant captures the inputs that change the output: model +
-			// hint for images; just 'md' for toMarkdown.
+			// hint for images/video; just 'md' for toMarkdown.
 			const contentHash = await sha256Hex(bytes);
-			const cacheKey = isImage
-				? `${contentHash}|img|${model}|${hint ?? ''}`
-				: `${contentHash}|md`;
+			const cacheKey = kind === 'md'
+				? `${contentHash}|md`
+				: `${contentHash}|${kind}|${model}|${hint ?? ''}`;
 
+			type ConvertHandler = 'image-description' | 'video-description' | 'to-markdown';
 			let markdown: string;
 			let mimeType: string;
-			let handler: 'image-description' | 'to-markdown';
+			let handler: ConvertHandler;
 			let tokens: number | undefined;
 			let cached = false;
 
@@ -369,7 +427,7 @@ async function handleAction(env: Env, args: Record<string, unknown>): Promise<un
 			if (hit) {
 				markdown = hit.markdown;
 				mimeType = hit.mime_type ?? contentType;
-				handler = hit.handler as 'image-description' | 'to-markdown';
+				handler = hit.handler as ConvertHandler;
 				cached = true;
 			} else if (isImage) {
 				markdown = await describeImage(
@@ -381,6 +439,10 @@ async function handleAction(env: Env, args: Record<string, unknown>): Promise<un
 				);
 				mimeType = contentType;
 				handler = 'image-description';
+			} else if (isVideo) {
+				markdown = await describeVideo(env, bytes, hint, model);
+				mimeType = contentType.startsWith('video/') ? contentType : 'video/mp4';
+				handler = 'video-description';
 			} else {
 				const blob = new Blob([bytes], { type: contentType });
 				const result = await env.AI.toMarkdown({ name: filename, blob });

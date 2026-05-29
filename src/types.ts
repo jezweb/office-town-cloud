@@ -28,6 +28,18 @@ export interface Env {
 	// Cloudflare Images (for files MCP transform_image tool)
 	IMAGES: ImagesBinding;
 
+	// Media Transformations — video frame + audio extraction (files MCP convert,
+	// video handler). Public open beta. Typed loosely; the binding's fluent API
+	// (input().transform().output().response()) isn't in the ambient types yet.
+	MEDIA: {
+		input(stream: ReadableStream<Uint8Array>): {
+			transform(opts?: { width?: number; height?: number; fit?: string }): {
+				output(opts: Record<string, unknown>): { response(): Promise<Response> };
+			};
+			output(opts: Record<string, unknown>): { response(): Promise<Response> };
+		};
+	};
+
 	// Outbound email via Cloudflare Email Routing — no API key needed.
 	// Recipients must be verified destinations on the user's Email Routing setup.
 	SEND_EMAIL: SendEmail;
