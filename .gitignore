@@ -7,8 +7,6 @@ dist/
 .env
 .env.local
 
-.jez/screenshots/
-.jez/**/*.png
-.jez/**/*.jpg
-.jez/**/*.mov
-.jez/**/*.mp4
+# .jez/ is local-only working space (plans, audits, scripts, screenshots).
+# This is a PUBLIC repo — keep the whole tree off GitHub.
+.jez/
