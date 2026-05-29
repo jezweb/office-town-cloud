@@ -355,9 +355,12 @@ trigger (a file landing in your inbox, a time of day, an external webhook), does
 end to end, and reports back in a line. You stay in command — review what it drafts,
 pause or change any of them — without being in the loop for every run.
 
-Each lives in its own folder: \`workflows/<name>/workflow.md\` is the definition (it's a
-goal in plain language, not a script — edit it freely), \`log.md\` is the running receipt
-of what it has moved, and \`pending/\` holds anything waiting for your OK.
+Each lives in its own folder:
+- \`recipe.yaml\` — the job itself, a standard **Goose recipe** (the goal is plain language
+  in its \`instructions:\`). Runnable on its own with \`goose run --recipe\`.
+- \`trigger.yaml\` — Office Town's thin layer: when it fires (\`on: inbox|schedule|webhook\`),
+  who owns it, and its trust level (\`auto\` / \`review\` / \`ask\`).
+- \`log.md\` — the running receipt of what it has moved. \`pending/\` — drafts awaiting your OK.
 
 These starters are here to use or change:
 - **filing-cabinet** — drop receipts / invoices / docs in inbox/, they get read + filed.
@@ -366,95 +369,121 @@ These starters are here to use or change:
 - **morning-brief** *(off)* — a short daily brief of what needs you. Turn it on when ready.
 - **relationship-keeper** *(off)* — keeps contacts current; suggests who to reach out to.
 
-Add one by asking an agent ("put my X on a workflow") or copy a folder and edit its
-workflow.md. Pause one by setting \`status: paused\` in its frontmatter.
+Add one by asking an agent ("put my X on a workflow"). Pause one by setting
+\`status: paused\` in its \`trigger.yaml\`.
 `;
 
-// Starter Workflows. The body is the GOAL in plain language (the agent reasons from it,
-// it is NOT a step script); the frontmatter is the contract (trigger, owner, trust).
-const STARTER_WORKFLOWS: Record<string, string> = {
-	'filing-cabinet': `---
-name: Filing cabinet
-slug: filing-cabinet
-status: active
-owner: worker
-trust: auto
-trigger: { on: inbox, match: "*.{pdf,jpg,jpeg,png,heic,docx,xlsx}" }
-report: receipt
----
-When a receipt, invoice, contract, or scanned document lands in inbox/, convert it
-(files convert by r2_path — never base64; wait ~10s if it hasn't synced yet), pull out
-who / what / when / how much (vendor, amount, date, any reference number), and file it:
-create or update the relevant org / contact / project in the wiki and link the document
-to it. Move the original (and its .md sidecar) into that entity's attachments/. Only
-surface a one-line note if something genuinely needs me — a duplicate, an amount over
-$2,000, a missing tax field, or an org you can't confidently match. Otherwise file it
-quietly and append one line to this workflow's log.md: what you filed and where.
+// Starter Workflows = a Goose recipe (the agentic goal, no `extensions` block so it inherits
+// the session's configured office-town MCPs) + a thin trigger.yaml (Office Town's layer:
+// trigger + trust + owner + status). We shape the recipe primitive rather than invent a format.
+const STARTER_WORKFLOWS: Record<string, { recipe: string; trigger: string }> = {
+	'filing-cabinet': {
+		recipe: `version: "1.0.0"
+title: Filing cabinet
+description: Read receipts/invoices/docs dropped in inbox and file them into the wiki.
+instructions: |
+  Use ONLY your office-town MCP tools (the cortex is in the cloud, not local files).
+  For each unfiled document in inbox/ (or the one named in the payload): convert it with
+  files(action: convert, source: r2_path) — never base64; wait ~10s if it hasn't synced.
+  Pull out who / what / when / how much (vendor, amount, date, any reference number) and
+  file it: create or update the relevant org / contact / project in the wiki and link the
+  document to it. Only surface a one-line note if something genuinely needs the owner — a
+  duplicate, an amount over $2,000, a missing tax field, or an org you can't confidently
+  match. Otherwise file it quietly and append one line to workflows/filing-cabinet/log.md:
+  what you filed and where.
 `,
-	'ask-my-cortex': `---
-name: Ask my cortex
-slug: ask-my-cortex
-status: active
-owner: librarian
+		trigger: `on: inbox
+match: "*.{pdf,jpg,jpeg,png,heic,docx,xlsx}"
 trust: auto
-trigger: { on: demand }
+owner: worker
+status: active
+report: receipt
+`,
+	},
+	'ask-my-cortex': {
+		recipe: `version: "1.0.0"
+title: Ask my cortex
+description: Answer a question about the owner's own world from the wiki, with citations.
+parameters:
+  - key: question
+    input_type: string
+    requirement: optional
+    description: The question to answer from the cortex.
+    default: ""
+instructions: |
+  Answer the owner's question ({{ question }}) about their own world from the wiki — not
+  from guesswork — using ONLY your office-town MCP tools. Search the relevant collections,
+  read the entries, give a brief direct answer, and CITE the entries you used
+  (collection/slug) so it's checkable. If the cortex doesn't hold the answer, say so plainly
+  rather than inventing one. Accuracy and brevity over completeness.
+`,
+		trigger: `on: demand
+trust: auto
+owner: librarian
+status: active
 report: answer
----
-When the owner asks about their own world ("what did I decide about X?", "what's
-outstanding with Acme?", "who did I meet at the conference?"), answer from the wiki — not
-from guesswork. Search the relevant collections, read the entries, give a brief, direct
-answer, and CITE the entries you used (collection/slug) so it's checkable. If the cortex
-doesn't hold the answer, say so plainly rather than inventing one. Accuracy and brevity
-over completeness.
 `,
-	'meeting-to-actions': `---
-name: Meeting to actions
-slug: meeting-to-actions
-status: active
+	},
+	'meeting-to-actions': {
+		recipe: `version: "1.0.0"
+title: Meeting to actions
+description: Turn a meeting recording into filed decisions + tasks and a drafted follow-up.
+instructions: |
+  Use ONLY your office-town MCP tools. Convert the meeting recording (audio or video) in
+  inbox/ with files(action: convert, source: r2_path) → a transcript (for video the key
+  frames too). Then: log each decision to the decisions collection (who, why, date); create
+  tasks for the action items (owner + due date where stated, linked to the project + people);
+  update the contacts who were there. Finally, DRAFT a follow-up email summarising outcomes +
+  next steps and save it to workflows/meeting-to-actions/pending/ for the owner to review and
+  send — NEVER send it yourself. Append one line to workflows/meeting-to-actions/log.md: what
+  you filed + that a draft is waiting.
+`,
+		trigger: `on: inbox
+match: "*.{mp3,m4a,wav,mp4,mov,webm}"
+trust: review
 owner: worker
-trust: review
-trigger: { on: inbox, match: "*.{mp3,m4a,wav,mp4,mov,webm}" }
+status: active
 report: receipt
----
-When a meeting recording (audio or video) lands in inbox/, convert it (files convert by
-r2_path → a transcript; for video the key frames too). Then: log each decision to the
-decisions collection (who, why, date); create tasks for the action items (with an owner
-and due date where stated, linked to the project and the people); update the contacts who
-were there. Finally, DRAFT a follow-up email summarising outcomes + next steps and leave
-it in this workflow's pending/ for the owner to review and send — never send it yourself.
-Append one line to log.md: what you filed + that a draft is waiting.
 `,
-	'morning-brief': `---
-name: Morning brief
-slug: morning-brief
-status: paused
-owner: boss
+	},
+	'morning-brief': {
+		recipe: `version: "1.0.0"
+title: Morning brief
+description: A short daily brief of what needs the owner's attention.
+instructions: |
+  Use ONLY your office-town MCP tools. Produce a short brief — no more than five things, each
+  worth the owner's attention: decisions waiting on them, drafts ready to send, tasks
+  slipping, anything new the cortex learned, today's commitments. Ruthlessly concise — if
+  there's nothing worth saying, say almost nothing. A brief, not a second inbox. Pull from
+  tasks, decisions, recent wiki changes, and any pending/ items other workflows have left.
+`,
+		trigger: `on: schedule
+cron: "0 7 * * *"
 trust: auto
-trigger: { on: schedule, cron: "0 7 * * *" }
-report: brief
----
-Once a day, produce a short brief for the owner — no more than five things, each worth
-their attention: decisions waiting on them, drafts ready to send, tasks slipping, anything
-new the cortex learned overnight, today's commitments. Ruthlessly concise — if there's
-nothing worth saying, say almost nothing. This is a brief, not a second inbox. Pull from
-tasks, decisions, recent wiki changes, and any pending/ items other workflows have left.
-(Starts paused — the owner turns it on when they want the daily rhythm.)
-`,
-	'relationship-keeper': `---
-name: Relationship keeper
-slug: relationship-keeper
+owner: boss
 status: paused
-owner: librarian
-trust: review
-trigger: { on: schedule, cron: "0 8 * * 1" }
-report: receipt
----
-Keep the contacts collection alive without the owner doing data entry. From recent
-meetings, emails, and filed documents, update each contact's last-interaction and a line
-on what's current with them. Once a week, surface — don't act on — a short list of people
-who've gone quiet that the owner might want to reach out to, with a one-line suggested
-reason, as a pending/ note for review. Never message anyone automatically. (Starts paused.)
+report: brief
 `,
+	},
+	'relationship-keeper': {
+		recipe: `version: "1.0.0"
+title: Relationship keeper
+description: Keep contacts current and suggest who to reach out to — no manual data entry.
+instructions: |
+  Use ONLY your office-town MCP tools. From recent meetings, emails, and filed documents,
+  update each contact's last-interaction and a line on what's current with them. Then surface
+  — don't act on — a short list of people who've gone quiet that the owner might want to reach
+  out to, with a one-line suggested reason, saved to workflows/relationship-keeper/pending/
+  for review. NEVER message anyone automatically. Append one line to the workflow's log.md.
+`,
+		trigger: `on: schedule
+cron: "0 8 * * 1"
+trust: review
+owner: librarian
+status: paused
+report: receipt
+`,
+	},
 };
 
 // Build the full set of structural files for a given worker URL.
@@ -470,8 +499,9 @@ export function buildStructuralFiles(workerUrl: string): StructuralFile[] {
 	for (const [collection, intro] of Object.entries(COLLECTION_INTROS)) {
 		files.push({ key: `wiki/${collection}/_intro.md`, content: intro });
 	}
-	for (const [slug, content] of Object.entries(STARTER_WORKFLOWS)) {
-		files.push({ key: `workflows/${slug}/workflow.md`, content });
+	for (const [slug, wf] of Object.entries(STARTER_WORKFLOWS)) {
+		files.push({ key: `workflows/${slug}/recipe.yaml`, content: wf.recipe });
+		files.push({ key: `workflows/${slug}/trigger.yaml`, content: wf.trigger });
 	}
 	return files;
 }
@@ -482,7 +512,7 @@ let structuralConfirmed = false;
 export async function installStructuralFilesIfNeeded(env: Env, workerUrl: string): Promise<void> {
 	if (structuralConfirmed) return;
 
-	const FLAG_KEY = 'structural_files_installed_v7';
+	const FLAG_KEY = 'structural_files_installed_v8';
 	const flag = await env.DB.prepare('SELECT value FROM worker_config WHERE key = ?')
 		.bind(FLAG_KEY)
 		.first<{ value: string }>();

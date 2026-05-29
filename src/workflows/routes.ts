@@ -25,34 +25,46 @@ async function sha256Hex(s: string): Promise<string> {
 	return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-function parseFrontmatter(md: string): Record<string, unknown> {
-	if (!md.startsWith('---')) return {};
-	const end = md.indexOf('\n---', 3);
-	if (end < 0) return {};
+function loadYaml(text: string): Record<string, unknown> {
 	try {
-		return (yaml.load(md.slice(3, end)) as Record<string, unknown>) ?? {};
+		return (yaml.load(text) as Record<string, unknown>) ?? {};
 	} catch {
 		return {};
 	}
 }
 
-// GET /api/workflows/list — workflow defs parsed from R2, with each one's last receipt.
+// GET /api/workflows/list — workflow defs (recipe.yaml + trigger.yaml) from R2, each with its
+// last receipt. A workflow is a Goose recipe (the goal) + a thin trigger.yaml (our layer).
 workflowsRoutes.get('/list', async (c) => {
 	const listing = await c.env.FILES.list({ prefix: 'workflows/', limit: 1000 });
 	const out: Array<Record<string, unknown>> = [];
 	for (const obj of listing.objects) {
-		if (!obj.key.endsWith('/workflow.md')) continue;
-		const slug = obj.key.slice('workflows/'.length, -'/workflow.md'.length);
-		const o = await c.env.FILES.get(obj.key);
-		if (!o) continue;
-		const fm = parseFrontmatter(await o.text());
+		if (!obj.key.endsWith('/recipe.yaml')) continue;
+		const slug = obj.key.slice('workflows/'.length, -'/recipe.yaml'.length);
+		const recipeObj = await c.env.FILES.get(obj.key);
+		if (!recipeObj) continue;
+		const recipe = loadYaml(await recipeObj.text());
+		const trigObj = await c.env.FILES.get(`workflows/${slug}/trigger.yaml`);
+		const trig = trigObj ? loadYaml(await trigObj.text()) : {};
 		let lastReceipt: string | null = null;
 		const log = await c.env.FILES.get(`workflows/${slug}/log.md`);
 		if (log) {
 			const lines = (await log.text()).trim().split('\n').filter(Boolean);
 			lastReceipt = lines[lines.length - 1] ?? null;
 		}
-		out.push({ slug, ...fm, last_receipt: lastReceipt });
+		out.push({
+			slug,
+			name: recipe.title ?? slug,
+			description: recipe.description ?? '',
+			on: trig.on ?? 'demand',
+			match: trig.match ?? null,
+			cron: trig.cron ?? null,
+			trust: trig.trust ?? 'review',
+			owner: trig.owner ?? null,
+			status: trig.status ?? 'active',
+			report: trig.report ?? null,
+			last_receipt: lastReceipt,
+		});
 	}
 	return c.json({ workflows: out });
 });

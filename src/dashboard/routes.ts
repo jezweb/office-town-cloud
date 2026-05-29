@@ -973,41 +973,35 @@ dashboardRoutes.get('/dashboard/workflows', async (c) => {
 	const listing = await c.env.FILES.list({ prefix: 'workflows/', limit: 1000 });
 	type Wf = { slug: string; name: string; status: string; trust: string; owner: string; trigger: string; receipt: string | null };
 	const wf: Wf[] = [];
-	for (const obj of listing.objects) {
-		if (!obj.key.endsWith('/workflow.md')) continue;
-		const slug = obj.key.slice('workflows/'.length, -'/workflow.md'.length);
-		const o = await c.env.FILES.get(obj.key);
-		if (!o) continue;
-		let fm: Record<string, unknown> = {};
+	const loadYaml = (t: string): Record<string, unknown> => {
 		try {
-			const t = await o.text();
-			if (t.startsWith('---')) {
-				const e = t.indexOf('\n---', 3);
-				if (e > 0) fm = (yaml.load(t.slice(3, e)) as Record<string, unknown>) ?? {};
-			}
+			return (yaml.load(t) as Record<string, unknown>) ?? {};
 		} catch {
-			/* leave fm empty */
+			return {};
 		}
+	};
+	for (const obj of listing.objects) {
+		if (!obj.key.endsWith('/recipe.yaml')) continue;
+		const slug = obj.key.slice('workflows/'.length, -'/recipe.yaml'.length);
+		const recipeObj = await c.env.FILES.get(obj.key);
+		if (!recipeObj) continue;
+		const recipe = loadYaml(await recipeObj.text());
+		const trigObj = await c.env.FILES.get(`workflows/${slug}/trigger.yaml`);
+		const trig = trigObj ? loadYaml(await trigObj.text()) : {};
 		let receipt: string | null = null;
 		const log = await c.env.FILES.get(`workflows/${slug}/log.md`);
 		if (log) {
 			const lines = (await log.text()).trim().split('\n').filter(Boolean);
 			receipt = lines[lines.length - 1] ?? null;
 		}
-		const tr = fm.trigger as { on?: string; match?: string; cron?: string } | undefined;
-		const trigger = tr
-			? tr.on === 'inbox'
-				? `inbox ${tr.match ?? ''}`
-				: tr.on === 'schedule'
-					? `schedule ${tr.cron ?? ''}`
-					: String(tr.on)
-			: '-';
+		const on = String(trig.on ?? 'demand');
+		const trigger = on === 'inbox' ? `inbox ${trig.match ?? ''}` : on === 'schedule' ? `schedule ${trig.cron ?? ''}` : on;
 		wf.push({
 			slug,
-			name: String(fm.name ?? slug),
-			status: String(fm.status ?? '?'),
-			trust: String(fm.trust ?? '?'),
-			owner: String(fm.owner ?? '?'),
+			name: String(recipe.title ?? slug),
+			status: String(trig.status ?? 'active'),
+			trust: String(trig.trust ?? 'review'),
+			owner: String(trig.owner ?? '?'),
 			trigger,
 			receipt,
 		});
