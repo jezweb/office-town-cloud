@@ -57,6 +57,11 @@
 	// Free transformations up to 100k/month per zone. No API key needed.
 	"images": { "binding": "IMAGES" },
 
+	// Media Transformations — extract video frames + audio tracks server-side
+	// (no ffmpeg) for vision/transcription. Per-Worker binding, public open
+	// beta (transform ops unbilled during beta). Powers media-pipeline Phase C.
+	"media": { "binding": "MEDIA" },
+
 	// Outbound email via Cloudflare Email Routing — no API key required.
 	// Requires Email Routing set up on the user's domain with destination
 	// addresses verified. Email Routing is free up to 100 sends/day.
