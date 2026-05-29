@@ -15,13 +15,14 @@
 //                       images → multimodal description (Gemma 4 / Kimi)
 //                       video  → frame sequence + audio transcript
 //                       audio  → Whisper transcript
+//                       PPTX   → slide-text extraction (fflate unzip + XML)
 //                       PDF / DOCX / XLSX / HTML → env.AI.toMarkdown
-//                     (PPTX + some exotic types are NOT supported by toMarkdown.)
 //   transform_image — Resize/crop/format-convert via Cloudflare Images binding
 //   publish         — Render markdown to HTML, expose at /p/<slug> (sugar over share mode=public)
 //   unpublish       — Remove a public page (sugar over revoke)
 
 import { Hono } from 'hono';
+import { unzipSync, strFromU8 } from 'fflate';
 import puppeteer from '@cloudflare/puppeteer';
 import type { AppContext, Env } from '../types';
 import { FilesService } from '../files/service';
@@ -310,6 +311,54 @@ async function transcribeAudio(env: Env, bytes: ArrayBuffer): Promise<string> {
 	return `## Transcript\n\n${text}`;
 }
 
+function decodeXmlEntities(s: string): string {
+	return s
+		.replace(/&amp;/g, '&')
+		.replace(/&lt;/g, '<')
+		.replace(/&gt;/g, '>')
+		.replace(/&quot;/g, '"')
+		.replace(/&apos;/g, "'")
+		.replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)));
+}
+
+// PowerPoint → markdown. toMarkdown rejects PPTX, so we extract the slide TEXT
+// ourselves: a .pptx is a zip of XML; ppt/slides/slideN.xml holds the text runs
+// (<a:t>) grouped into paragraphs (<a:p>). We don't need slide images/layout for
+// the cortex — the words (names, numbers, content) are what the agent learns
+// from. Pure-JS (fflate), no native deps, runs in the Worker.
+function pptxToMarkdown(bytes: ArrayBuffer): string {
+	let files: Record<string, Uint8Array>;
+	try {
+		files = unzipSync(new Uint8Array(bytes));
+	} catch {
+		throw new Error("Couldn't read this PowerPoint file (not a valid .pptx zip).");
+	}
+	const slideNames = Object.keys(files)
+		.filter((k) => /^ppt\/slides\/slide\d+\.xml$/.test(k))
+		.sort((a, b) => Number(a.match(/slide(\d+)/)![1]) - Number(b.match(/slide(\d+)/)![1]));
+	if (slideNames.length === 0) {
+		throw new Error('No slides found in this PowerPoint file.');
+	}
+	const parts: string[] = [];
+	slideNames.forEach((name, i) => {
+		const xml = strFromU8(files[name]);
+		const paragraphs = xml
+			.split('<a:p>')
+			.slice(1)
+			.map((chunk) =>
+				[...chunk.matchAll(/<a:t>([\s\S]*?)<\/a:t>/g)].map((m) => decodeXmlEntities(m[1])).join(''),
+			)
+			.filter((t) => t.trim().length > 0);
+		parts.push(`## Slide ${i + 1}\n\n${paragraphs.length ? paragraphs.join('\n\n') : '_(no text)_'}`);
+	});
+	return parts.join('\n\n');
+}
+
+const PPTX_EXT = /\.pptx$/i;
+function isPptxInput(filename: string, contentType: string): boolean {
+	return PPTX_EXT.test(filename) || contentType.includes('presentationml');
+}
+
 async function describeImage(
 	env: Env,
 	bytes: ArrayBuffer,
@@ -533,7 +582,8 @@ async function handleAction(env: Env, args: Record<string, unknown>): Promise<un
 			const isImage = isImageInput(filename, contentType);
 			const isVideo = !isImage && isVideoInput(filename, contentType);
 			const isAudio = !isImage && !isVideo && isAudioInput(filename, contentType);
-			const kind = isImage ? 'img' : isVideo ? 'video' : isAudio ? 'audio' : 'md';
+			const isPptx = !isImage && !isVideo && !isAudio && isPptxInput(filename, contentType);
+			const kind = isImage ? 'img' : isVideo ? 'video' : isAudio ? 'audio' : isPptx ? 'pptx' : 'md';
 			const model = (args.model as string | undefined) ?? 'gemma4';
 			const hint = args.hint as string | undefined;
 
@@ -543,11 +593,11 @@ async function handleAction(env: Env, args: Record<string, unknown>): Promise<un
 			// hint for images/video; just the kind for audio (Whisper) and
 			// toMarkdown (deterministic).
 			const contentHash = await sha256Hex(bytes);
-			const cacheKey = kind === 'md' || kind === 'audio'
+			const cacheKey = kind === 'md' || kind === 'audio' || kind === 'pptx'
 				? `${contentHash}|${kind}`
 				: `${contentHash}|${kind}|${model}|${hint ?? ''}`;
 
-			type ConvertHandler = 'image-description' | 'video-description' | 'audio-transcription' | 'to-markdown';
+			type ConvertHandler = 'image-description' | 'video-description' | 'audio-transcription' | 'pptx-text' | 'to-markdown';
 			let markdown: string;
 			let mimeType: string;
 			let handler: ConvertHandler;
@@ -577,6 +627,10 @@ async function handleAction(env: Env, args: Record<string, unknown>): Promise<un
 				markdown = await transcribeAudio(env, bytes);
 				mimeType = contentType.startsWith('audio/') ? contentType : 'audio/mpeg';
 				handler = 'audio-transcription';
+			} else if (isPptx) {
+				markdown = pptxToMarkdown(bytes);
+				mimeType = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+				handler = 'pptx-text';
 			} else {
 				const blob = new Blob([bytes], { type: contentType });
 				const result = await env.AI.toMarkdown({ name: filename, blob });
