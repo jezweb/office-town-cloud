@@ -89,16 +89,33 @@ await check('mcp/wiki rejects a bad bearer (401)', async () => {
 	assert(r.status === 401, `expected 401, got ${r.status}`);
 });
 
-// 3. Files write path: upload → download → delete, in an isolated namespace.
+// 3. Files write path: upload → list → download → delete, all on RAW keys.
+// Guards the one-namespace fix (upload/list/download/convert must agree).
 console.log('\nFiles:');
 const fileKey = `smoke-test/ping-${Date.now()}.txt`;
-await check('files upload→download→delete round-trip', async () => {
+await check('files upload→list→download→delete round-trip (raw key namespace)', async () => {
 	const marker = `smoke-${Date.now()}`;
 	await callTool('files', 'files', { action: 'upload', path: fileKey, content_text: marker, content_type: 'text/plain' });
+	const listed = await callTool('files', 'files', { action: 'list', prefix: 'smoke-test' });
+	assert((listed.files ?? []).some((f) => f.path === fileKey), `list did not surface ${fileKey} (namespace mismatch?)`);
 	const dl = await callTool('files', 'files', { action: 'download', path: fileKey });
 	const got = Buffer.from(dl.content_base64, 'base64').toString('utf8');
 	assert(got === marker, `download mismatch: got "${got}"`);
 	await callTool('files', 'files', { action: 'delete', path: fileKey });
+});
+
+// Convert by r2_path WITHOUT a filename — guards filename-derivation + that
+// convert reads the same key namespace upload wrote to.
+await check('files convert (r2_path, no filename) reads what upload wrote', async () => {
+	const htmlKey = `smoke-test/conv-${Date.now()}.html`;
+	const marker = `convmarker${Date.now()}`;
+	await callTool('files', 'files', { action: 'upload', path: htmlKey, content_text: `<h1>${marker}</h1>`, content_type: 'text/html' });
+	try {
+		const res = await callTool('files', 'files', { action: 'convert', source: 'r2_path', source_value: htmlKey, save_sidecar: false });
+		assert((res.markdown ?? '').includes(marker), 'convert output missing the marker');
+	} finally {
+		await callTool('files', 'files', { action: 'delete', path: htmlKey });
+	}
 });
 
 // 4. Installer + dashboard endpoints serve.
