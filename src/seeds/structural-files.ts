@@ -336,6 +336,115 @@ If they worry about cost, reassure them: most people never pay.
 `;
 }
 
+const WORKFLOWS_INTRO = `# workflows — what your cortex keeps handled
+
+A *workflow* is a standing job your cortex owns. You turn it on once; it fires on a
+trigger (a file landing in your inbox, a time of day, an external webhook), does the work
+end to end, and reports back in a line. You stay in command — review what it drafts,
+pause or change any of them — without being in the loop for every run.
+
+Each lives in its own folder: \`workflows/<name>/workflow.md\` is the definition (it's a
+goal in plain language, not a script — edit it freely), \`log.md\` is the running receipt
+of what it has moved, and \`pending/\` holds anything waiting for your OK.
+
+These starters are here to use or change:
+- **filing-cabinet** — drop receipts / invoices / docs in inbox/, they get read + filed.
+- **ask-my-cortex** — ask about your own world; get a cited answer, not a guess.
+- **meeting-to-actions** — drop a recording; decisions + tasks filed, a follow-up drafted.
+- **morning-brief** *(off)* — a short daily brief of what needs you. Turn it on when ready.
+- **relationship-keeper** *(off)* — keeps contacts current; suggests who to reach out to.
+
+Add one by asking an agent ("put my X on a workflow") or copy a folder and edit its
+workflow.md. Pause one by setting \`status: paused\` in its frontmatter.
+`;
+
+// Starter Workflows. The body is the GOAL in plain language (the agent reasons from it,
+// it is NOT a step script); the frontmatter is the contract (trigger, owner, trust).
+const STARTER_WORKFLOWS: Record<string, string> = {
+	'filing-cabinet': `---
+name: Filing cabinet
+slug: filing-cabinet
+status: active
+owner: worker
+trust: auto
+trigger: { on: inbox, match: "*.{pdf,jpg,jpeg,png,heic,docx,xlsx}" }
+report: receipt
+---
+When a receipt, invoice, contract, or scanned document lands in inbox/, convert it
+(files convert by r2_path — never base64; wait ~10s if it hasn't synced yet), pull out
+who / what / when / how much (vendor, amount, date, any reference number), and file it:
+create or update the relevant org / contact / project in the wiki and link the document
+to it. Move the original (and its .md sidecar) into that entity's attachments/. Only
+surface a one-line note if something genuinely needs me — a duplicate, an amount over
+$2,000, a missing tax field, or an org you can't confidently match. Otherwise file it
+quietly and append one line to this workflow's log.md: what you filed and where.
+`,
+	'ask-my-cortex': `---
+name: Ask my cortex
+slug: ask-my-cortex
+status: active
+owner: librarian
+trust: auto
+trigger: { on: demand }
+report: answer
+---
+When the owner asks about their own world ("what did I decide about X?", "what's
+outstanding with Acme?", "who did I meet at the conference?"), answer from the wiki — not
+from guesswork. Search the relevant collections, read the entries, give a brief, direct
+answer, and CITE the entries you used (collection/slug) so it's checkable. If the cortex
+doesn't hold the answer, say so plainly rather than inventing one. Accuracy and brevity
+over completeness.
+`,
+	'meeting-to-actions': `---
+name: Meeting to actions
+slug: meeting-to-actions
+status: active
+owner: worker
+trust: review
+trigger: { on: inbox, match: "*.{mp3,m4a,wav,mp4,mov,webm}" }
+report: receipt
+---
+When a meeting recording (audio or video) lands in inbox/, convert it (files convert by
+r2_path → a transcript; for video the key frames too). Then: log each decision to the
+decisions collection (who, why, date); create tasks for the action items (with an owner
+and due date where stated, linked to the project and the people); update the contacts who
+were there. Finally, DRAFT a follow-up email summarising outcomes + next steps and leave
+it in this workflow's pending/ for the owner to review and send — never send it yourself.
+Append one line to log.md: what you filed + that a draft is waiting.
+`,
+	'morning-brief': `---
+name: Morning brief
+slug: morning-brief
+status: paused
+owner: boss
+trust: auto
+trigger: { on: schedule, cron: "0 7 * * *" }
+report: brief
+---
+Once a day, produce a short brief for the owner — no more than five things, each worth
+their attention: decisions waiting on them, drafts ready to send, tasks slipping, anything
+new the cortex learned overnight, today's commitments. Ruthlessly concise — if there's
+nothing worth saying, say almost nothing. This is a brief, not a second inbox. Pull from
+tasks, decisions, recent wiki changes, and any pending/ items other workflows have left.
+(Starts paused — the owner turns it on when they want the daily rhythm.)
+`,
+	'relationship-keeper': `---
+name: Relationship keeper
+slug: relationship-keeper
+status: paused
+owner: librarian
+trust: review
+trigger: { on: schedule, cron: "0 8 * * 1" }
+report: receipt
+---
+Keep the contacts collection alive without the owner doing data entry. From recent
+meetings, emails, and filed documents, update each contact's last-interaction and a line
+on what's current with them. Once a week, surface — don't act on — a short list of people
+who've gone quiet that the owner might want to reach out to, with a one-line suggested
+reason, as a pending/ note for review. Never message anyone automatically. (Starts paused.)
+`,
+};
+
 // Build the full set of structural files for a given worker URL.
 export function buildStructuralFiles(workerUrl: string): StructuralFile[] {
 	const files: StructuralFile[] = [
@@ -344,9 +453,13 @@ export function buildStructuralFiles(workerUrl: string): StructuralFile[] {
 		{ key: 'inbox/_intro.md', content: INBOX_INTRO },
 		{ key: 'inbox/prompt-quick.md', content: PROMPT_QUICK },
 		{ key: 'inbox/prompt-thorough.md', content: PROMPT_THOROUGH },
+		{ key: 'workflows/_intro.md', content: WORKFLOWS_INTRO },
 	];
 	for (const [collection, intro] of Object.entries(COLLECTION_INTROS)) {
 		files.push({ key: `wiki/${collection}/_intro.md`, content: intro });
+	}
+	for (const [slug, content] of Object.entries(STARTER_WORKFLOWS)) {
+		files.push({ key: `workflows/${slug}/workflow.md`, content });
 	}
 	return files;
 }
@@ -357,7 +470,7 @@ let structuralConfirmed = false;
 export async function installStructuralFilesIfNeeded(env: Env, workerUrl: string): Promise<void> {
 	if (structuralConfirmed) return;
 
-	const FLAG_KEY = 'structural_files_installed_v5';
+	const FLAG_KEY = 'structural_files_installed_v6';
 	const flag = await env.DB.prepare('SELECT value FROM worker_config WHERE key = ?')
 		.bind(FLAG_KEY)
 		.first<{ value: string }>();
