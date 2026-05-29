@@ -214,6 +214,32 @@ const STATEMENTS: string[] = [
 		first_seen         TEXT NOT NULL DEFAULT (datetime('now')),
 		last_seen          TEXT NOT NULL DEFAULT (datetime('now'))
 	)`,
+	// Cloud→local bridge: a webhook (or schedule) enqueues a job tagged for a
+	// device; the daemon polls, claims, runs the workflow locally, reports back.
+	`CREATE TABLE IF NOT EXISTS jobs (
+		job_id        TEXT PRIMARY KEY,
+		workflow_slug TEXT NOT NULL,
+		target_device TEXT,                          -- device that should run it (null = any)
+		payload       TEXT,                          -- JSON passed to the workflow
+		status        TEXT NOT NULL DEFAULT 'pending', -- pending | claimed | done | failed
+		result        TEXT,
+		source        TEXT,                          -- what created it (webhook id, schedule, manual)
+		created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+		claimed_at    TEXT,
+		finished_at   TEXT
+	)`,
+	`CREATE INDEX IF NOT EXISTS idx_jobs_device_status ON jobs(target_device, status, created_at)`,
+	// Registered inbound trigger sources (webhooks). A POST to /api/triggers/<id>
+	// with the matching secret enqueues a job for the source's workflow.
+	`CREATE TABLE IF NOT EXISTS trigger_sources (
+		source_id     TEXT PRIMARY KEY,
+		label         TEXT,
+		secret_hash   TEXT NOT NULL,                 -- sha256 of the shared secret
+		workflow_slug TEXT NOT NULL,
+		target_device TEXT,                          -- where the job runs (null = cloud/any)
+		created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+		last_fired_at TEXT
+	)`,
 ];
 
 // Bump whenever a table/index/trigger is ADDED to STATEMENTS. An existing
@@ -222,7 +248,7 @@ const STATEMENTS: string[] = [
 // objects get created. Without this, the "worker_config exists" sentinel alone
 // would conflate "schema exists" with "schema is current" and silently skip
 // every table added after the first deploy (e.g. convert_cache).
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 
 // Per-isolate memo. Once schema is confirmed at the current version, no
 // further probes.

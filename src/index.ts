@@ -28,6 +28,7 @@ import { voiceMcpRoutes } from './mcp-server/voice';
 import { sandboxMcpRoutes } from './mcp-server/sandbox';
 import { handleInboundEmail } from './email/inbound';
 import { syncRoutes } from './sync/routes';
+import { workflowsRoutes, jobsRoutes, triggerRoutes } from './workflows/routes';
 import type { ForwardableEmailMessage } from '@cloudflare/workers-types';
 
 // Required export for the Cloudflare Containers binding declared in
@@ -106,6 +107,11 @@ app.route('/api/cron', cronRoutes);
 // Sync API — worker is the canonical write-orchestrator for officetowd
 // + future dashboard editors + server-side AI agents. See src/sync/routes.ts.
 app.route('/api/sync', syncRoutes);
+// Workflows: discovery (bearer) + the cloud→local bridge. /api/triggers is PUBLIC
+// (per-source secret, not bearer) so external webhooks can fire workflows.
+app.route('/api/workflows', workflowsRoutes);
+app.route('/api/jobs', jobsRoutes);
+app.route('/api/triggers', triggerRoutes);
 app.route('/', setupRoutes);
 
 // MCP servers (JSON-RPC over streamable-HTTP). Each enforces its own bearer
