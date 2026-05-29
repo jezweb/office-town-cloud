@@ -120,7 +120,7 @@ async function resolveBytes(
 		return { bytes, contentType: mimeHint ?? resp.headers.get('content-type') ?? 'application/octet-stream', stream: new Response(bytes).body! };
 	}
 	if (source === 'r2_path') {
-		const obj = await env.FILES.get(value);
+		const obj = await bucketForKey(env, value).get(value);
 		if (!obj) throw new Error(`Not found in substrate bucket: ${value}`);
 		const bytes = await obj.arrayBuffer();
 		return { bytes, contentType: mimeHint ?? obj.httpMetadata?.contentType ?? 'application/octet-stream', stream: new Response(bytes).body! };
@@ -206,6 +206,7 @@ async function runVision(
 	imageDataUrls: string[],
 	userText: string,
 	systemPrompt: string,
+	maxTokens = 1024,
 ): Promise<string> {
 	const modelId = IMAGE_MODELS[modelKey] ?? IMAGE_MODELS.gemma4;
 	const content = [
@@ -217,31 +218,70 @@ async function runVision(
 			{ role: 'system', content: systemPrompt },
 			{ role: 'user', content },
 		],
-		max_tokens: 1024,
+		max_tokens: maxTokens,
 	} as never);
 	const text = coerceModelText(result).trim();
 	if (!text) throw new Error(`Model ${modelId} returned no description`);
 	return text;
 }
 
+// Formats a multimodal LLM can decode directly. HEIC/HEIF/TIFF/BMP are not in
+// this set — they must be transcoded first or the model returns "unreadable".
+const VISION_SAFE_MIME = /^image\/(jpeg|png|webp|gif)$/i;
+
+function visionSafeContentType(filename: string, contentType: string): string | null {
+	if (VISION_SAFE_MIME.test(contentType)) return contentType.toLowerCase();
+	const ext = filename.toLowerCase().match(/\.([a-z0-9]+)$/)?.[1];
+	if (ext === 'jpg' || ext === 'jpeg') return 'image/jpeg';
+	if (ext === 'png') return 'image/png';
+	if (ext === 'webp') return 'image/webp';
+	if (ext === 'gif') return 'image/gif';
+	return null; // needs normalising (HEIC from iPhones, TIFF, BMP, ...)
+}
+
+// Transcode non-vision-safe image bytes to JPEG via Cloudflare Images so the
+// model can decode them. iPhone photos are HEIC by default — the most common
+// "dump your photos" input. CF Images ingests HEIC/HEIF natively; for formats
+// it can't ingest (TIFF, BMP) the transcode throws and we fall back to the
+// original bytes (best effort — the model may still cope, or report unreadable).
+async function normaliseImageForVision(
+	env: Env,
+	bytes: ArrayBuffer,
+	contentType: string,
+	filename: string,
+): Promise<{ bytes: ArrayBuffer; contentType: string }> {
+	const safe = visionSafeContentType(filename, contentType);
+	if (safe) return { bytes, contentType: safe };
+	try {
+		const result = await env.IMAGES.input(new Response(bytes).body!).output({ format: 'image/jpeg' } as never);
+		const out = await new Response(result.image()).arrayBuffer();
+		if (out.byteLength > 0) return { bytes: out, contentType: 'image/jpeg' };
+	} catch (err) {
+		console.error(JSON.stringify({ event: 'vision_normalise_error', filename, error: String(err) }));
+	}
+	return { bytes, contentType: contentType.startsWith('image/') ? contentType : 'image/jpeg' };
+}
+
 async function describeImage(
 	env: Env,
 	bytes: ArrayBuffer,
 	contentType: string,
+	filename: string,
 	hint: string | undefined,
 	modelKey: string,
 	userIntro = 'Describe this image for a knowledge base.',
 ): Promise<string> {
-	const dataUrl = `data:${contentType};base64,${arrayBufferToBase64(bytes)}`;
+	const norm = await normaliseImageForVision(env, bytes, contentType, filename);
+	const dataUrl = `data:${norm.contentType};base64,${arrayBufferToBase64(norm.bytes)}`;
 	const userText = hint ? `${userIntro} Focus: ${hint}` : userIntro;
 	return runVision(env, modelKey, [dataUrl], userText, IMAGE_SYSTEM_PROMPT);
 }
 
 // Video understanding via Media Transformations (env.MEDIA) — frames + audio
-// extracted server-side, no ffmpeg. v1: one representative frame described by
-// the multimodal model + the audio track transcribed by Whisper, combined.
-// Enhancement (gemma4 handles ~1min / 60 frames): a spritesheet for full
-// temporal coverage in one vision call — see the media-pipeline plan.
+// extracted server-side, no ffmpeg. Frames are sampled across the clip and
+// passed as an ordered image sequence (Gemma 4's native multimodal way), and
+// the audio track is transcribed by Whisper. The two are combined into one
+// markdown doc: visual summary + transcript.
 async function describeVideo(
 	env: Env,
 	bytes: ArrayBuffer,
@@ -298,7 +338,7 @@ async function describeVideo(
 	const parts: string[] = [];
 	if (frames.length > 0) {
 		const userText = hint ? `${VIDEO_INTRO} Focus: ${hint}` : VIDEO_INTRO;
-		const visual = await runVision(env, modelKey, frames, userText, IMAGE_SYSTEM_PROMPT);
+		const visual = await runVision(env, modelKey, frames, userText, IMAGE_SYSTEM_PROMPT, 2048);
 		parts.push(`## Visual (${frames.length} frames)\n\n${visual}`);
 	}
 	if (transcript) parts.push(`## Transcript\n\n${transcript}`);
@@ -463,13 +503,7 @@ async function handleAction(env: Env, args: Record<string, unknown>): Promise<un
 				handler = hit.handler as ConvertHandler;
 				cached = true;
 			} else if (isImage) {
-				markdown = await describeImage(
-					env,
-					bytes,
-					contentType.startsWith('image/') ? contentType : 'image/jpeg',
-					hint,
-					model,
-				);
+				markdown = await describeImage(env, bytes, contentType, filename, hint, model);
 				mimeType = contentType;
 				handler = 'image-description';
 			} else if (isVideo) {
