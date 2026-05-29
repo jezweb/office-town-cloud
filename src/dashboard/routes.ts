@@ -1334,10 +1334,36 @@ else
         TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
         echo "  Downloading officetowd $LATEST_TAG ($OS/$ARCH)..."
         if curl -fsSL "$URL" -o "$TMP/officetowd.tar.gz"; then
-          tar -xzf "$TMP/officetowd.tar.gz" -C "$TMP"
-          \${SUDO:-} install -m 0755 "$TMP/officetowd" "$DEST/officetowd"
-          hash -r 2>/dev/null || true
-          echo "  ✓ Installed officetowd to $DEST/officetowd"
+          # Verify the download against the release checksums before running it.
+          # No checksum or a mismatch → refuse to install (we run this binary).
+          VERIFIED=no
+          CHECKSUMS_URL="https://github.com/$DAEMON_REPO/releases/download/$LATEST_TAG/checksums.txt"
+          if curl -fsSL "$CHECKSUMS_URL" -o "$TMP/checksums.txt" 2>/dev/null; then
+            if command -v sha256sum >/dev/null 2>&1; then
+              GOT=$(sha256sum "$TMP/officetowd.tar.gz" | awk '{print $1}')
+            else
+              GOT=$(shasum -a 256 "$TMP/officetowd.tar.gz" | awk '{print $1}')
+            fi
+            WANT=$(awk -v a="$ASSET" '$2==a{print $1}' "$TMP/checksums.txt")
+            if [ -z "$WANT" ]; then
+              echo "  ! No checksum published for $ASSET — refusing to install for safety."
+            elif [ "$GOT" != "$WANT" ]; then
+              echo "  ! Checksum mismatch for $ASSET — refusing to install (download may be corrupt or tampered)."
+            else
+              echo "  ✓ Verified checksum."
+              VERIFIED=yes
+            fi
+          else
+            echo "  ! Couldn't fetch checksums.txt — refusing to install for safety."
+          fi
+          if [ "$VERIFIED" = "yes" ]; then
+            tar -xzf "$TMP/officetowd.tar.gz" -C "$TMP"
+            \${SUDO:-} install -m 0755 "$TMP/officetowd" "$DEST/officetowd"
+            hash -r 2>/dev/null || true
+            echo "  ✓ Installed officetowd to $DEST/officetowd"
+          else
+            echo "    Sync setup skipped. Your cortex still works via the dashboard: $WORKER_URL/dashboard"
+          fi
         else
           echo "  ! Download failed — skipping sync setup."
         fi
