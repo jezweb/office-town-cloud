@@ -1440,7 +1440,14 @@ PYEOF
       officetowd sync 2>&1 | sed 's/^/    /' || echo "  ! First sync had an issue — run 'officetowd sync' to retry."
       echo "  ✓ Cortex folder ready."
       echo ""
-      echo "  To keep it syncing in the background, run:  officetowd start"
+      # Install the background service so sync keeps running + restarts on
+      # login/reboot — otherwise it stops the moment this terminal closes.
+      if officetowd install-service >/dev/null 2>&1; then
+        echo "  ✓ Background sync enabled (auto-starts on login)."
+      else
+        echo "  To keep it syncing in the background, run:  officetowd start"
+        echo "  (or enable auto-start later with:  officetowd install-service)"
+      fi
     fi
   fi
 fi
@@ -1585,11 +1592,16 @@ print(f'  ✓ Removed {removed} office-town-* extension(s) from {config_path}')
 print(f'  ✓ Re-enabled the built-in memory extension')
 PYEOF
 
+# Stop the background sync service if it's installed (leave the binary in place).
+if command -v officetowd >/dev/null 2>&1; then
+  officetowd uninstall-service >/dev/null 2>&1 && echo "  ✓ Stopped the background sync service." || true
+fi
+
 echo ""
 echo "Done. Restart Goose Desktop (if open) so it reloads the config."
 echo ""
-echo "Note: this only removes the MCP wiring. The goose CLI and officetowd"
-echo "binary (if installed) are untouched — remove those manually if needed:"
+echo "Note: this removes the MCP wiring + stops background sync. The goose CLI"
+echo "and officetowd binary are left in place — remove those manually if needed:"
 echo "  brew uninstall block/tap/goose       # if installed via brew"
 echo "  sudo rm /usr/local/bin/officetowd    # if you installed the sync daemon"
 `;
