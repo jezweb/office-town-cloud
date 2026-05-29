@@ -77,7 +77,11 @@ self-contained, so in-worker is simpler.
 
 ## Plan, in value order
 
-### Phase A — image description via a capable multimodal LLM  *(highest value, lowest risk)*
+### Phase A — image description via a capable multimodal LLM  ✅ SHIPPED 2026-05-29
+Live in files.convert: images → gemma4 (default) / kimi (`model` param), reads
+text + describes in one call, `hint` steer, save-alongside sidecar. Verified on
+a real business-card image. Below is the original spec.
+
 The real parity gap. When `extract` (or `convert`) receives an image, run a
 **general multimodal LLM** via the chat-completions `image_url` path with a
 search-oriented prompt: subject, any visible text, document-vs-photo, key
