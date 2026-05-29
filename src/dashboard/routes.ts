@@ -1255,6 +1255,12 @@ else:
     config['extensions'] = extensions
 
 config_path.write_text(yaml.safe_dump(config, default_flow_style=False, sort_keys=False))
+# The bearer token (full cortex access) lives in this file — lock it down so
+# other local users can't read it. Matches the officetowd config (0600).
+try:
+    config_path.chmod(0o600)
+except OSError:
+    pass
 print(f'  ✓ Wrote 6 office-town-* extensions to {config_path}')
 PYEOF
 echo ""

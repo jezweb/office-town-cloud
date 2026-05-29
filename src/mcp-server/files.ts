@@ -107,25 +107,42 @@ function asContent(value: unknown): { type: 'text'; text: string } {
 	return { type: 'text', text: typeof value === 'string' ? value : JSON.stringify(value, null, 2) };
 }
 
+function tooBigError(sizeBytes: number, maxBytes: number): Error {
+	return new Error(
+		`File is ${(sizeBytes / 1048576).toFixed(1)}MB — too large to convert in the cloud (max ${Math.round(maxBytes / 1048576)}MB). The Worker holds the whole file in memory; for very large media, split it or convert locally.`,
+	);
+}
+
+// maxBytes caps the input to keep the 128MB Worker isolate alive. We check the
+// size BEFORE materialising the body where the source lets us (R2 object .size,
+// HTTP Content-Length), so an oversized file is rejected without first
+// allocating it.
 async function resolveBytes(
 	env: Env,
 	source: string,
 	value: string,
 	mimeHint?: string,
+	maxBytes?: number,
 ): Promise<{ bytes: ArrayBuffer; contentType: string; stream: ReadableStream<Uint8Array> }> {
 	if (source === 'url') {
 		const resp = await fetch(value);
 		if (!resp.ok) throw new Error(`Failed to fetch ${value}: ${resp.status}`);
+		const declared = Number(resp.headers.get('content-length') ?? 0);
+		if (maxBytes && declared > maxBytes) throw tooBigError(declared, maxBytes);
 		const bytes = await resp.arrayBuffer();
+		if (maxBytes && bytes.byteLength > maxBytes) throw tooBigError(bytes.byteLength, maxBytes);
 		return { bytes, contentType: mimeHint ?? resp.headers.get('content-type') ?? 'application/octet-stream', stream: new Response(bytes).body! };
 	}
 	if (source === 'r2_path') {
 		const obj = await bucketForKey(env, value).get(value);
 		if (!obj) throw new Error(`Not found in substrate bucket: ${value}`);
+		if (maxBytes && obj.size > maxBytes) throw tooBigError(obj.size, maxBytes);
 		const bytes = await obj.arrayBuffer();
 		return { bytes, contentType: mimeHint ?? obj.httpMetadata?.contentType ?? 'application/octet-stream', stream: new Response(bytes).body! };
 	}
 	if (source === 'base64') {
+		// base64 decodes to ~3/4 its string length.
+		if (maxBytes && value.length * 0.75 > maxBytes) throw tooBigError(value.length * 0.75, maxBytes);
 		const binary = atob(value);
 		const buf = new Uint8Array(binary.length);
 		for (let i = 0; i < binary.length; i++) buf[i] = binary.charCodeAt(i);
@@ -462,13 +479,19 @@ async function handleAction(env: Env, args: Record<string, unknown>): Promise<un
 			}
 			const sourceKind = args.source as string;
 			const sourceValue = args.source_value as string;
+			const filename = args.filename as string;
+			// Cap input size to survive the 128MB isolate. Video streams through
+			// Media Transformations (100MB input cap, no full base64); images/docs
+			// get base64-encoded (~1.33x) so stay well under at 40MB.
+			const looksVideo = isVideoInput(filename, (args.mime_type as string | undefined) ?? '');
+			const maxConvertBytes = looksVideo ? 100 * 1024 * 1024 : 40 * 1024 * 1024;
 			const { bytes, contentType } = await resolveBytes(
 				env,
 				sourceKind,
 				sourceValue,
 				args.mime_type as string | undefined,
+				maxConvertBytes,
 			);
-			const filename = args.filename as string;
 			const isImage = isImageInput(filename, contentType);
 			const isVideo = !isImage && isVideoInput(filename, contentType);
 			const kind = isImage ? 'img' : isVideo ? 'video' : 'md';
