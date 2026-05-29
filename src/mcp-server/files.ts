@@ -80,12 +80,17 @@ const TOOLS = {
 				title: { type: 'string', description: 'Public page title (publish)' },
 				body: { type: 'string', description: 'Markdown body to publish' },
 				share_id: { type: 'string', description: 'Share ID to revoke' },
-				// convert
-				source: { type: 'string', enum: ['url', 'r2_path', 'base64'], description: 'Where the source file lives (convert)' },
-				source_value: { type: 'string', description: 'URL, R2 path, or base64 bytes' },
+				// convert — images get a multimodal description (reads text + describes);
+				// PDF/Office/HTML/audio get text extraction. Converted markdown is saved
+				// as a sidecar next to the original by default (for r2_path sources).
+				source: { type: 'string', enum: ['url', 'r2_path', 'base64'], description: 'Where the source file lives. Prefer r2_path — inbox/ and cortex files sync to R2 automatically (~10s); convert by key, e.g. inbox/quote.pdf' },
+				source_value: { type: 'string', description: 'R2 key (e.g. inbox/quote.pdf), URL, or base64 bytes' },
 				filename: { type: 'string', description: 'Original filename incl. extension' },
 				mime_type: { type: 'string', description: 'Optional MIME hint' },
-				save_to_files: { type: 'string', description: 'If set, save result to this path' },
+				hint: { type: 'string', description: 'Optional steer for image description, e.g. "focus on invoice numbers and totals"' },
+				model: { type: 'string', enum: ['gemma4', 'kimi'], description: 'Image model: gemma4 (fast, default) or kimi (slower, better for dense/complex docs)' },
+				save_to_files: { type: 'string', description: 'Explicit path to save the converted markdown (overrides the default sidecar)' },
+				save_sidecar: { type: 'boolean', description: 'Default true for r2_path: saves converted markdown as <original>.md beside it. Set false to skip.' },
 				// transform_image
 				width: { type: 'number' },
 				height: { type: 'number' },
@@ -138,6 +143,88 @@ function arrayBufferToBase64(bytes: ArrayBuffer): string {
 		binary += String.fromCharCode(...chunk);
 	}
 	return btoa(binary);
+}
+
+// Multimodal models for image understanding. NOT the dedicated vision models
+// (llama-3.2-vision, LLaVA) — those are weak. General multimodal LLMs read
+// visible text AND describe the image in one call. Mirrors Goanna's split.
+const IMAGE_MODELS: Record<string, string> = {
+	gemma4: '@cf/google/gemma-4-26b-a4b-it', // fast default, good for most images
+	kimi: '@cf/moonshotai/kimi-k2.6', // slower, better for complex / dense documents
+};
+
+const IMAGE_EXT = /\.(jpe?g|png|gif|webp|bmp|tiff?|heic|heif|avif)$/i;
+
+function isImageInput(filename: string, contentType: string): boolean {
+	return contentType.startsWith('image/') || IMAGE_EXT.test(filename);
+}
+
+const IMAGE_SYSTEM_PROMPT = `You describe images so they become searchable, useful context in a knowledge base. Look at the image and write concise markdown covering, only where applicable:
+
+- **What it is** — a photo, a scanned document, a brochure, a screenshot, a diagram, a product shot, a logo?
+- **Visible text** — transcribe any text you can read (signs, labels, headings, body, handwriting, numbers, prices, dates, contact details). This matters most for documents.
+- **Subject & key details** — what's shown: people (described, never identified by name unless the text states it), places, objects, products, layout, colours, condition, anything distinctive.
+- **Why it might matter** — one line on what this document or image is for, if it's clear.
+
+Write only the description — no preamble like "This image shows". If the image is unreadable or empty, say so plainly.`;
+
+function coerceModelText(result: unknown): string {
+	if (typeof result === 'string') return result;
+	if (result == null) return '';
+	if (typeof result !== 'object') return String(result);
+	const r = result as Record<string, unknown>;
+	if (typeof r.response === 'string') return r.response;
+	const choices = r.choices;
+	if (Array.isArray(choices) && choices.length > 0) {
+		const msg = (choices[0] as Record<string, unknown>)?.message as Record<string, unknown> | undefined;
+		if (msg) {
+			if (typeof msg.content === 'string') return msg.content;
+			if (Array.isArray(msg.content)) {
+				return (msg.content as Array<Record<string, unknown>>)
+					.map((p) => (typeof p.text === 'string' ? p.text : ''))
+					.filter(Boolean)
+					.join('\n');
+			}
+			if (typeof msg.reasoning_content === 'string') return msg.reasoning_content;
+		}
+	}
+	return '';
+}
+
+async function describeImage(
+	env: Env,
+	bytes: ArrayBuffer,
+	contentType: string,
+	hint: string | undefined,
+	modelKey: string,
+): Promise<string> {
+	const modelId = IMAGE_MODELS[modelKey] ?? IMAGE_MODELS.gemma4;
+	const dataUrl = `data:${contentType};base64,${arrayBufferToBase64(bytes)}`;
+	const userText = hint
+		? `Describe this image for a knowledge base. Focus: ${hint}`
+		: 'Describe this image for a knowledge base.';
+	const result = await env.AI.run(modelId as never, {
+		messages: [
+			{ role: 'system', content: IMAGE_SYSTEM_PROMPT },
+			{
+				role: 'user',
+				content: [
+					{ type: 'text', text: userText },
+					{ type: 'image_url', image_url: { url: dataUrl } },
+				],
+			},
+		],
+		max_tokens: 1024,
+	} as never);
+	const text = coerceModelText(result).trim();
+	if (!text) throw new Error(`Image model ${modelId} returned no description`);
+	return text;
+}
+
+// Pick the R2 bucket for a key the same way the sync API does: wiki/ → WIKI,
+// everything else → FILES. Keeps a sidecar in the same bucket as its sibling.
+function bucketForKey(env: Env, key: string): R2Bucket {
+	return key.startsWith('wiki/') ? env.WIKI : env.FILES;
 }
 
 async function handleAction(env: Env, args: Record<string, unknown>): Promise<unknown> {
@@ -240,33 +327,70 @@ async function handleAction(env: Env, args: Record<string, unknown>): Promise<un
 			if (!args.source || !args.source_value || !args.filename) {
 				throw new Error('convert requires source + source_value + filename');
 			}
+			const sourceKind = args.source as string;
+			const sourceValue = args.source_value as string;
 			const { bytes, contentType } = await resolveBytes(
 				env,
-				args.source as string,
-				args.source_value as string,
+				sourceKind,
+				sourceValue,
 				args.mime_type as string | undefined,
 			);
 			const filename = args.filename as string;
-			const blob = new Blob([bytes], { type: contentType });
-			const result = await env.AI.toMarkdown({ name: filename, blob });
-			if (result.format === 'error') {
-				throw new Error(`Conversion failed for ${filename}: ${result.error}`);
+
+			// Images → multimodal description (reads visible text AND describes).
+			// Everything else → toMarkdown (PDF/Office/HTML/audio).
+			let markdown: string;
+			let mimeType: string;
+			let handler: 'image-description' | 'to-markdown';
+			let tokens: number | undefined;
+			if (isImageInput(filename, contentType)) {
+				markdown = await describeImage(
+					env,
+					bytes,
+					contentType.startsWith('image/') ? contentType : 'image/jpeg',
+					args.hint as string | undefined,
+					(args.model as string | undefined) ?? 'gemma4',
+				);
+				mimeType = contentType;
+				handler = 'image-description';
+			} else {
+				const blob = new Blob([bytes], { type: contentType });
+				const result = await env.AI.toMarkdown({ name: filename, blob });
+				if (result.format === 'error') {
+					throw new Error(`Conversion failed for ${filename}: ${result.error}`);
+				}
+				markdown = result.data;
+				mimeType = result.mimeType;
+				tokens = result.tokens;
+				handler = 'to-markdown';
 			}
-			const markdown = result.data;
+
+			// Persist the converted markdown as a sidecar next to the original.
+			// Explicit save_to_files wins; otherwise, when converting an R2 file,
+			// default to "<original-key>.md" in the same bucket — unless the
+			// caller opts out with save_sidecar:false. url/base64 sources have no
+			// natural home, so only save when save_to_files is given.
 			let savedAt: string | undefined;
-			if (args.save_to_files) {
-				const meta = await files.upload({
-					path: args.save_to_files as string,
-					content_text: markdown,
-					content_type: 'text/markdown',
-				});
-				savedAt = meta.path;
+			const explicit = args.save_to_files as string | undefined;
+			const sidecarOptOut = args.save_sidecar === false;
+			let sidecarKey: string | undefined = explicit;
+			if (!sidecarKey && sourceKind === 'r2_path' && !sidecarOptOut) {
+				sidecarKey = sourceValue.replace(/\.[^./]+$/, '') + '.md';
+				if (sidecarKey === sourceValue) sidecarKey = `${sourceValue}.md`; // no ext
 			}
+			if (sidecarKey) {
+				await bucketForKey(env, sidecarKey).put(sidecarKey, markdown, {
+					httpMetadata: { contentType: 'text/markdown' },
+				});
+				savedAt = sidecarKey;
+			}
+
 			return {
 				filename,
-				mime_type: result.mimeType,
+				mime_type: mimeType,
+				handler,
 				markdown,
-				tokens: result.tokens,
+				...(tokens ? { tokens } : {}),
 				...(savedAt ? { saved_to: savedAt } : {}),
 			};
 		}
