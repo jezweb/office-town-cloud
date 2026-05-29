@@ -1,6 +1,7 @@
 // Dashboard — server-rendered HTML over wiki/files/cron/published.
 
 import { Hono } from 'hono';
+import yaml from 'js-yaml';
 import { getEffectiveBearer } from '../auth/bearer';
 import {
 	buildSessionCookie,
@@ -146,6 +147,7 @@ a.wikilink-broken:hover { background: rgba(169, 68, 66, 0.18); }
   <nav>
     <a href="/">Town</a>
     <a href="/dashboard/wiki">Wiki</a>
+    <a href="/dashboard/workflows">Workflows</a>
     <a href="/dashboard/kanban">Kanban</a>
     <a href="/dashboard/cron">Routines</a>
     <a href="/dashboard/files">Files</a>
@@ -964,6 +966,105 @@ dashboardRoutes.get('/dashboard/cron', async (c) => {
   </table>
 </div>`;
 	return c.html(LAYOUT('Routines', content));
+});
+
+dashboardRoutes.get('/dashboard/workflows', async (c) => {
+	// Workflows — parsed from workflow.md defs in R2.
+	const listing = await c.env.FILES.list({ prefix: 'workflows/', limit: 1000 });
+	type Wf = { slug: string; name: string; status: string; trust: string; owner: string; trigger: string; receipt: string | null };
+	const wf: Wf[] = [];
+	for (const obj of listing.objects) {
+		if (!obj.key.endsWith('/workflow.md')) continue;
+		const slug = obj.key.slice('workflows/'.length, -'/workflow.md'.length);
+		const o = await c.env.FILES.get(obj.key);
+		if (!o) continue;
+		let fm: Record<string, unknown> = {};
+		try {
+			const t = await o.text();
+			if (t.startsWith('---')) {
+				const e = t.indexOf('\n---', 3);
+				if (e > 0) fm = (yaml.load(t.slice(3, e)) as Record<string, unknown>) ?? {};
+			}
+		} catch {
+			/* leave fm empty */
+		}
+		let receipt: string | null = null;
+		const log = await c.env.FILES.get(`workflows/${slug}/log.md`);
+		if (log) {
+			const lines = (await log.text()).trim().split('\n').filter(Boolean);
+			receipt = lines[lines.length - 1] ?? null;
+		}
+		const tr = fm.trigger as { on?: string; match?: string; cron?: string } | undefined;
+		const trigger = tr
+			? tr.on === 'inbox'
+				? `inbox ${tr.match ?? ''}`
+				: tr.on === 'schedule'
+					? `schedule ${tr.cron ?? ''}`
+					: String(tr.on)
+			: '-';
+		wf.push({
+			slug,
+			name: String(fm.name ?? slug),
+			status: String(fm.status ?? '?'),
+			trust: String(fm.trust ?? '?'),
+			owner: String(fm.owner ?? '?'),
+			trigger,
+			receipt,
+		});
+	}
+	const esc = (s: string) => s.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+	const wfRows = wf
+		.sort((a, b) => a.slug.localeCompare(b.slug))
+		.map(
+			(w) => `<tr>
+<td><strong>${esc(w.name)}</strong><br><span class="muted">${w.slug}</span></td>
+<td><span class="tag">${esc(w.trigger)}</span></td>
+<td>${w.owner}</td>
+<td><span class="tag">${w.trust}</span></td>
+<td>${w.status === 'active' ? 'active' : '<span class="muted">paused</span>'}</td>
+<td class="muted">${w.receipt ? esc(w.receipt) : '—'}</td>
+</tr>`,
+		)
+		.join('');
+
+	// Connected devices.
+	const dev = await c.env.DB.prepare(
+		`SELECT device_id, label, kind, platform, goose_version, timezone, last_seen FROM devices ORDER BY last_seen DESC`,
+	).all<{ device_id: string; label: string | null; kind: string; platform: string | null; goose_version: string | null; timezone: string | null; last_seen: string }>();
+	const now = Date.now();
+	const devRows = (dev.results ?? [])
+		.map((d) => {
+			const age = Math.round((now - new Date(String(d.last_seen).replace(' ', 'T') + 'Z').getTime()) / 60000);
+			const stale = age > 15;
+			const ago = age < 60 ? `${age}m` : age < 1440 ? `${Math.round(age / 60)}h` : `${Math.round(age / 1440)}d`;
+			return `<tr>
+<td><strong>${esc(d.label ?? d.device_id.slice(0, 8))}</strong><br><span class="muted">${d.kind} · ${d.platform ?? '?'}</span></td>
+<td>${d.timezone ?? '-'}</td>
+<td>${d.goose_version ?? '-'}</td>
+<td class="${stale ? 'status-error' : ''}">${stale ? `⚠ ${ago} ago` : `✓ ${ago} ago`}</td>
+</tr>`;
+		})
+		.join('');
+
+	const content = `
+<h1 style="margin-top: 0;">Workflows</h1>
+<p class="muted">Standing jobs your cortex owns — each fires on a trigger, does the work, and reports back. Edit them in <code>~/OfficeTown/workflows/</code> (the body is a goal in plain language).</p>
+<div class="card">
+  <table>
+    <thead><tr><th>Workflow</th><th>Trigger</th><th>Owner</th><th>Trust</th><th>State</th><th>Last moved</th></tr></thead>
+    <tbody>${wfRows || '<tr><td colspan="6" class="muted">No workflows yet</td></tr>'}</tbody>
+  </table>
+</div>
+
+<h2>Connected devices</h2>
+<p class="muted">Machines syncing this cortex. A device going quiet (⚠) means its sync daemon may be down — files dropped there won't reach your agents until it's back.</p>
+<div class="card">
+  <table>
+    <thead><tr><th>Device</th><th>Timezone</th><th>Goose</th><th>Last sync</th></tr></thead>
+    <tbody>${devRows || '<tr><td colspan="4" class="muted">No devices connected yet</td></tr>'}</tbody>
+  </table>
+</div>`;
+	return c.html(LAYOUT('Workflows', content));
 });
 
 dashboardRoutes.get('/dashboard/files', async (c) => {
