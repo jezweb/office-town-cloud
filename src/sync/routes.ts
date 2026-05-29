@@ -31,6 +31,7 @@
 import { Hono } from 'hono';
 import yaml from 'js-yaml';
 import type { AppContext, Env } from '../types';
+import { touchDevice, deviceIdFrom } from '../identity';
 
 const app = new Hono<AppContext>();
 
@@ -635,44 +636,84 @@ app.get('/credentials', async (c) => {
 	});
 });
 
-// POST /api/sync/heartbeat — officetowd reports after each sync pass so the
-// cortex knows the daemon is alive and when it last synced. Body: { machine,
-// version, stats }. The server stamps the time (don't trust the client clock).
-// This is what makes a silently-dead sync daemon visible instead of leaving the
-// user wondering why their files never reach the agent.
+// POST /api/sync/heartbeat — officetowd reports after each sync pass, per device,
+// so the cortex knows which machines are alive + when each last synced. The
+// daemon sends X-Office-Town-Device + body { platform, version, stats }. Timezone
+// + region come free from request.cf (no device read). Makes a silently-dead
+// daemon — on any machine — visible.
 app.post('/heartbeat', async (c) => {
-	let body: { machine?: string; version?: string; stats?: unknown } = {};
+	let body: { platform?: string; version?: string; stats?: unknown; machine?: string } = {};
 	try {
 		body = await c.req.json();
 	} catch {
 		// tolerate an empty/garbled body — still record the ping
 	}
-	const record = {
-		machine: typeof body.machine === 'string' ? body.machine.slice(0, 100) : 'unknown',
-		version: typeof body.version === 'string' ? body.version.slice(0, 40) : 'unknown',
-		stats: body.stats ?? null,
-		at: new Date().toISOString(),
-	};
-	await c.env.DB.prepare(`INSERT OR REPLACE INTO worker_config (key, value) VALUES ('sync_heartbeat', ?)`)
-		.bind(JSON.stringify(record))
-		.run();
-	return c.json({ ok: true, recorded_at: record.at });
+	const deviceId = deviceIdFrom(c);
+	if (deviceId) {
+		await touchDevice(c, {
+			deviceId,
+			kind: 'daemon',
+			platform: typeof body.platform === 'string' ? body.platform.slice(0, 40) : undefined,
+			gooseVersion: undefined,
+			stats: body.stats ?? null,
+		});
+	}
+	return c.json({ ok: true, recorded_at: new Date().toISOString(), device_id: deviceId ?? null });
 });
 
-// GET /api/sync/heartbeat — last heartbeat + computed freshness. Used by the
-// installer's post-sync check, the dashboard, and the agent answering "is my
-// sync working?".
+// GET /api/sync/heartbeat — per-device freshness. `seen` stays for the installer's
+// post-sync check; `devices` is the list the dashboard + agent use.
 app.get('/heartbeat', async (c) => {
-	const row = await c.env.DB.prepare(`SELECT value FROM worker_config WHERE key = 'sync_heartbeat'`).first<{
-		value: string;
-	}>();
-	if (!row?.value) {
-		return c.json({ seen: false, message: 'No sync daemon has reported yet.' });
-	}
-	const hb = JSON.parse(row.value) as { machine: string; version: string; stats: unknown; at: string };
-	const ageMinutes = Math.round((Date.now() - new Date(hb.at).getTime()) / 60000);
-	const stale = ageMinutes > 15; // daemon syncs ~every 60s; >15 min idle = likely down
-	return c.json({ seen: true, ...hb, age_minutes: ageMinutes, stale, healthy: !stale });
+	const { results } = await c.env.DB.prepare(
+		`SELECT device_id, label, kind, platform, goose_version, timezone, region, timezone_confirmed, last_stats, first_seen, last_seen
+		 FROM devices ORDER BY last_seen DESC`,
+	).all<Record<string, unknown>>();
+	const now = Date.now();
+	const devices = (results ?? []).map((d) => {
+		const ageMinutes = Math.round((now - new Date(String(d.last_seen).replace(' ', 'T') + 'Z').getTime()) / 60000);
+		const stale = ageMinutes > 15;
+		return {
+			...d,
+			last_stats: d.last_stats ? JSON.parse(String(d.last_stats)) : null,
+			timezone_confirmed: Number(d.timezone_confirmed) === 1,
+			age_minutes: ageMinutes,
+			stale,
+			healthy: !stale,
+		};
+	});
+	return c.json({ seen: devices.length > 0, count: devices.length, devices });
+});
+
+// GET /api/sync/devices — same data, dashboard-friendly alias.
+app.get('/devices', async (c) => {
+	const { results } = await c.env.DB.prepare(
+		`SELECT device_id, label, kind, platform, goose_version, timezone, region, timezone_confirmed, first_seen, last_seen
+		 FROM devices ORDER BY last_seen DESC`,
+	).all<Record<string, unknown>>();
+	return c.json({ devices: results ?? [] });
+});
+
+// POST /api/sync/devices/:id/confirm-timezone — user pins the timezone so the
+// IP-derived value stops overwriting it.
+app.post('/devices/:id/confirm-timezone', async (c) => {
+	const id = c.req.param('id');
+	const body = (await c.req.json().catch(() => ({}))) as { timezone?: string };
+	if (!body.timezone) return c.json({ error: 'timezone required' }, 400);
+	await c.env.DB.prepare(
+		`UPDATE devices SET timezone = ?, timezone_confirmed = 1, last_seen = last_seen WHERE device_id = ?`,
+	)
+		.bind(body.timezone, id)
+		.run();
+	return c.json({ ok: true });
+});
+
+// POST /api/sync/devices/:id/label — friendly rename.
+app.post('/devices/:id/label', async (c) => {
+	const id = c.req.param('id');
+	const body = (await c.req.json().catch(() => ({}))) as { label?: string };
+	if (!body.label) return c.json({ error: 'label required' }, 400);
+	await c.env.DB.prepare(`UPDATE devices SET label = ? WHERE device_id = ?`).bind(body.label.slice(0, 80), id).run();
+	return c.json({ ok: true });
 });
 
 export const syncRoutes = app;

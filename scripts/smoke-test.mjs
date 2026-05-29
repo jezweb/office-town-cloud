@@ -132,11 +132,11 @@ await check('GET /disconnect.sh serves a bash script', async () => {
 	const t = await r.text();
 	assert(t.includes('#!/usr/bin/env bash'), 'response does not look like the uninstaller');
 });
-await check('GET /api/sync/heartbeat returns sync freshness', async () => {
+await check('GET /api/sync/heartbeat returns per-device freshness', async () => {
 	const r = await fetch(`${WORKER_URL}/api/sync/heartbeat`, { headers: { Authorization: `Bearer ${BEARER}` } });
 	assert(r.ok, `HTTP ${r.status}`);
 	const j = await r.json();
-	assert(typeof j.seen === 'boolean', 'heartbeat response missing "seen"');
+	assert(typeof j.seen === 'boolean' && Array.isArray(j.devices), 'heartbeat missing "seen"/"devices"');
 });
 
 // 5. Wiki CRUD round-trip (only with --write; namespaced + cleaned up).

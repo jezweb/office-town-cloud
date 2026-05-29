@@ -198,6 +198,22 @@ const STATEMENTS: string[] = [
 		markdown   TEXT NOT NULL,
 		created_at TEXT NOT NULL DEFAULT (datetime('now'))
 	)`,
+	// Connected devices/actors (the Workflow identity keystone). Filled mostly
+	// from connection metadata (request.cf timezone/region) + MCP clientInfo —
+	// the daemon only mints + sends a random device_id. See CONCEPT-the-workflow.
+	`CREATE TABLE IF NOT EXISTS devices (
+		device_id          TEXT PRIMARY KEY,
+		label              TEXT,
+		kind               TEXT NOT NULL DEFAULT 'daemon',
+		platform           TEXT,
+		goose_version      TEXT,
+		timezone           TEXT,
+		region             TEXT,
+		timezone_confirmed INTEGER NOT NULL DEFAULT 0,
+		last_stats         TEXT,
+		first_seen         TEXT NOT NULL DEFAULT (datetime('now')),
+		last_seen          TEXT NOT NULL DEFAULT (datetime('now'))
+	)`,
 ];
 
 // Bump whenever a table/index/trigger is ADDED to STATEMENTS. An existing
@@ -206,7 +222,7 @@ const STATEMENTS: string[] = [
 // objects get created. Without this, the "worker_config exists" sentinel alone
 // would conflate "schema exists" with "schema is current" and silently skip
 // every table added after the first deploy (e.g. convert_cache).
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 // Per-isolate memo. Once schema is confirmed at the current version, no
 // further probes.
