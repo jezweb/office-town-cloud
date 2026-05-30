@@ -15,7 +15,12 @@ Office Town ships interactive apps that render inside Goose Desktop (via MCP-UI)
 
 ![Generative-UI showcase](docs/img/app-showcase.png)
 
-**13 built-in apps**: `tasks`, `capture`, `quote-to-cash`, `mini-crm`, `run-sheet`, `onsite-quote`, `compliance`, `bookings` (calendar), `deliverables` (table), `asset-register` (renewal countdowns), `support-tickets`, `decision-log` (timeline), and a capabilities `showcase` (Tailwind theming, charts, photo upload, voice-to-text via Whisper, image generation via Workers AI / FLUX).
+| | | |
+|---|---|---|
+| ![Bookings](docs/img/app-bookings.png) | ![Compliance](docs/img/app-compliance.png) | ![Decision log](docs/img/app-decision-log.png) |
+| **Bookings** — month calendar | **Compliance** — deadline countdowns | **Decision log** — a timeline |
+
+**13 built-in apps**: `tasks`, `capture`, `quote-to-cash`, `mini-crm`, `run-sheet`, `onsite-quote`, `compliance`, `bookings` (calendar), `deliverables` (table), `asset-register` (renewal countdowns), `support-tickets`, `decision-log` (timeline), and a capabilities `showcase` (Tailwind theming, charts, photo upload, voice-to-text via Whisper, image generation via Workers AI / FLUX). The view-shapes — form, list, board, table, calendar, timeline, detail-card, dashboard — are a reusable kit the agent composes new apps from.
 
 Apps are real-origin `/app/*` pages (Alpine + Tailwind, no build step). Three flagships back onto **live cortex collections** rather than an opaque blob — a Quote-to-Cash deal is a real file in your `jobs` collection, a Mini-CRM contact is a `contacts` entry, a compliance item is a `deadlines` entry — so the agent and wiki browser see the same data. Access is via a **collection-scoped token** (`cortex:jobs` can touch only the jobs collection, never your secrets).
 
