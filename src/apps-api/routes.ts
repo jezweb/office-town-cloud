@@ -38,6 +38,15 @@ export const CATALOG: AppDef[] = [
 		width: 1000,
 		height: 700,
 	},
+	{
+		slug: 'office-town-capture',
+		name: 'Office Town Capture',
+		description: 'Jot a note or paste a link — it lands in your cortex inbox and gets filed',
+		scope: 'cortex',
+		pagePath: '/app/capture',
+		width: 480,
+		height: 560,
+	},
 ];
 
 // Which apps the owner wants installed (worker_config). Default: all catalog.

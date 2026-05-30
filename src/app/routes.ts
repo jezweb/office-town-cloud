@@ -11,6 +11,7 @@ import { getEffectiveBearer } from '../auth/bearer';
 import { verifyUiToken } from '../auth/ui-token';
 import { renderTasksPage } from './tasks-page';
 import { renderEntityEditPage } from './entity-page';
+import { renderCapturePage } from './capture-page';
 import { WikiService } from '../wiki/service';
 
 const app = new Hono<AppContext>();
@@ -53,6 +54,16 @@ app.get('/entity', async (c) => {
 	} catch {
 		return c.html('<body style="font:14px system-ui;padding:24px">Entity not found.</body>', 404);
 	}
+});
+
+app.get('/capture', async (c) => {
+	const t = c.req.query('t') ?? '';
+	const bearer = await getEffectiveBearer(c.env);
+	const ok = t && (t === bearer || (await verifyUiToken(t, 'cortex', bearer, Date.now())));
+	if (!ok) {
+		return c.html('<!DOCTYPE html><meta charset="utf-8"><body style="font:14px system-ui;padding:24px"><h2>Link expired</h2><p>Reopen this from Goose.</p></body>', 401);
+	}
+	return c.html(renderCapturePage(t, new URL(c.req.url).origin));
 });
 
 export const appRoutes = app;

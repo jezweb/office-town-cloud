@@ -44,4 +44,28 @@ app.post('/note', async (c) => {
 	return c.json({ ok: true });
 });
 
+// Quick Capture — drop a note/link into the cortex inbox; filing-cabinet files it.
+app.post('/capture', async (c) => {
+	const b = (await c.req.json().catch(() => ({}))) as { text?: string };
+	if (!b.text || !b.text.trim()) return c.json({ error: 'text required' }, 400);
+	const ts = new Date().toISOString().replace(/[:.]/g, '-');
+	const key = `inbox/capture-${ts}.md`;
+	await c.env.FILES.put(key, b.text.trim(), { httpMetadata: { contentType: 'text/markdown' } });
+	return c.json({ ok: true, key });
+});
+
+// Recent captures (most recent first) — name + a one-line snippet.
+app.get('/captures', async (c) => {
+	const listing = await c.env.FILES.list({ prefix: 'inbox/capture-', limit: 50 });
+	const objs = listing.objects.sort((a, b) => (a.key < b.key ? 1 : -1)).slice(0, 10);
+	const captures = await Promise.all(
+		objs.map(async (o) => {
+			const f = await c.env.FILES.get(o.key);
+			const txt = f ? (await f.text()).trim() : '';
+			return { key: o.key, snippet: txt.replace(/\s+/g, ' ').slice(0, 100) };
+		}),
+	);
+	return c.json({ captures });
+});
+
 export const cortexApiRoutes = app;
