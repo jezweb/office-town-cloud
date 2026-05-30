@@ -1,6 +1,39 @@
 # Office Town Cloud
 
-The Cloudflare Workers backend for [Office Town](https://github.com/jezweb/office-town) — capabilities you add to your [Goose](https://block.github.io/goose/) installation. A single Worker hosts the substrate (wiki + files + publish + dashboard + cron + inbound email) alongside **6 MCP gateway tools** (wiki, files, email, cron, voice, sandbox) that give agents every kind of file/input/output a knowledge worker needs.
+The Cloudflare Workers backend for [Office Town](https://github.com/jezweb/office-town) — capabilities you add to your [Goose](https://block.github.io/goose/) installation. A single Worker hosts the substrate (wiki + files + publish + dashboard + cron + inbound email) alongside **7 MCP gateway servers** (wiki, files, email, cron, voice, sandbox, workflows) that give agents every kind of file/input/output a knowledge worker needs — including a layer of **interactive apps** that run as windows inside Goose Desktop.
+
+Your data lives as plain markdown on your own Cloudflare account. You can open every file in Finder. The site is at [officetown.au](https://officetown.au).
+
+## Apps
+
+Office Town ships interactive apps that render inside Goose Desktop (via MCP-UI) and save straight to your cortex. You click and type directly — no "hey AI, change the phone number". The agent can open one for you, **build a brand-new one on request** (`create_app`), or **share a customer-facing one behind a magic link** (`create_share_app`).
+
+| | |
+|---|---|
+| ![Quote to Cash](docs/img/app-quote-to-cash.png) | ![Mini-CRM](docs/img/app-mini-crm.png) |
+| **Quote to Cash** — line-item quotes → job → invoice → paid. | **Mini-CRM** — pipeline, contacts, follow-ups, Today triage. |
+
+![Generative-UI showcase](docs/img/app-showcase.png)
+
+**13 built-in apps**: `tasks`, `capture`, `quote-to-cash`, `mini-crm`, `run-sheet`, `onsite-quote`, `compliance`, `bookings` (calendar), `deliverables` (table), `asset-register` (renewal countdowns), `support-tickets`, `decision-log` (timeline), and a capabilities `showcase` (Tailwind theming, charts, photo upload, voice-to-text via Whisper, image generation via Workers AI / FLUX).
+
+Apps are real-origin `/app/*` pages (Alpine + Tailwind, no build step). Three flagships back onto **live cortex collections** rather than an opaque blob — a Quote-to-Cash deal is a real file in your `jobs` collection, a Mini-CRM contact is a `contacts` entry, a compliance item is a `deadlines` entry — so the agent and wiki browser see the same data. Access is via a **collection-scoped token** (`cortex:jobs` can touch only the jobs collection, never your secrets).
+
+## Packs
+
+A **pack** sets your town up for a trade in one move: it registers the collections that line of work needs and installs the matching apps. Your agent can install one when you describe your business ("I'm a sparkie" → Trades) via the `install_pack` tool, or you click one on `/dashboard/packs`.
+
+![Packs dashboard](docs/img/dashboard-packs.png)
+
+| Pack | Apps + collections |
+|---|---|
+| **Trades** | run-sheet, onsite-quote, quote-to-cash, asset-register · `jobs`, `sites`, `price-list` |
+| **Professional services** | compliance, mini-crm, support-tickets, decision-log · `engagements`, `deadlines` |
+| **Creative** | bookings, deliverables, mini-crm · `creative-projects`, `deliverables`, `bookings` |
+| **Web agency** | asset-register, support-tickets, deliverables, decision-log · `properties`, `tickets` |
+| **Bookings & services** | bookings, mini-crm, onsite-quote · `bookings` |
+
+(These are **app/industry packs** — distinct from the **agent role packs** in [office-town-plugin](https://github.com/jezweb/office-town-plugin), which add specialist agent personas.)
 
 ## Deploy
 
@@ -8,152 +41,105 @@ The Cloudflare Workers backend for [Office Town](https://github.com/jezweb/offic
 
 Cloudflare provisions everything from `wrangler.jsonc`:
 
-- **D1** — wiki index, FTS5 search, audit log, cron jobs
-- **R2** (substrate bucket) — markdown entries + binary attachments + published pages + signed shares (Goanna-style entity-as-folder layout)
+- **D1** — wiki index, FTS5 search, audit log, cron jobs, app installed-set
+- **R2** — markdown entries + binary attachments + published pages + signed shares + app data (entity-as-folder layout)
 - **Vectorize** — 768-dim semantic search (bge-base-en-v1.5)
 - **Queue** — embedding pipeline
-- **Workers AI** — bge embeddings + toMarkdown for PDF/DOCX/audio/images
+- **Workers AI** — bge embeddings, `toMarkdown` (PDF/DOCX/audio/images), Whisper, FLUX
 - **Images** — resize / format-convert / strip-EXIF
-- **Email Routing** — outbound `send_email` binding + inbound `email()` handler (writes inbound to wiki/research/)
+- **Containers** — the `sandbox` MCP runner (`@cloudflare/sandbox`)
+- **Email Routing** — outbound `send_email` binding + inbound `email()` handler
 
-**Two fields the deploy form asks for** — fill these in:
+**Two fields the deploy form asks for:**
 
 | Field | Value |
 |---|---|
 | Vectorize **Dimensions** | `768` |
 | Vectorize **Metric** | `cosine` |
 
-(These match Workers AI's `bge-base-en-v1.5` embedding model. Cloudflare's deploy-button schema doesn't currently allow pre-filling these from `wrangler.jsonc`.)
-
-**Everything else can stay blank** — `MCP_BEARER_TOKEN` auto-generates on first request. Optional fields (`BETTER_AUTH_SECRET`, `GOOGLE_CLIENT_ID/SECRET`) are post-deploy opt-ins for dashboard sign-in.
-
-~2 min, returns `https://office-town-<you>.<account>.workers.dev`.
+Everything else can stay blank — `MCP_BEARER_TOKEN` auto-generates on first request. `BETTER_AUTH_SECRET` + `GOOGLE_CLIENT_ID/SECRET` are post-deploy opt-ins for dashboard sign-in. ~2 min, returns `https://office-town-<you>.<account>.workers.dev`.
 
 ## Wire it into Goose
 
 You need Goose installed: https://block.github.io/goose/.
 
-👉 **The one-line installer** (`<your-worker-url>/connect.sh`) bootstraps the Goose CLI if needed, wires the 6 MCP servers into `~/.config/goose/config.yaml` (Goose has no non-interactive `mcp add`, so we edit the config directly), installs the plugin (roles + skills + the workflows runner), sets up `officetowd` with a stable device id + persistent background sync, verifies all 6 tools respond, and opens your cortex folder. ~5 min after the button. The dashboard's **Connect** page gives you the pre-filled command.
+👉 **The one-line installer** (`<your-worker-url>/connect.sh`) bootstraps the Goose CLI if needed, wires the 7 MCP servers into `~/.config/goose/config.yaml`, installs the plugin (roles + skills + the workflows runner), sets up [officetowd](https://github.com/jezweb/officetowd) with a stable device id + persistent background sync, auto-installs the apps to your Apps page, verifies the tools respond, and creates your cortex folder at `~/OfficeTown/`. ~5 min after the button. The dashboard's **Connect** page hands you the pre-filled command.
 
-### Optional — wire local file sync
+[officetowd](https://github.com/jezweb/officetowd) is a small Go daemon that bisyncs your local `~/OfficeTown/` folder against the worker (editable in Obsidian/VSCode/Finder) and reconciles the installed apps onto your Goose Apps page each sync. Same MCP bearer; no R2 token needed.
 
-Want the wiki + binary attachments on your laptop, editable in Obsidian/VSCode/Finder?
+## The MCP gateway servers
 
-`<your-worker-url>/dashboard/wire-sync` — pick one of: shell one-liner, homebrew, or agent prompt. Installs [officetowd](https://github.com/jezweb/officetowd) — a small Go daemon that bisyncs your local folder against the worker. Same MCP bearer; no R2 token needed. Goanna-style conflict resolution.
+Each MCP server exposes ONE gateway tool with multiple actions (per the mcp-gateway pattern).
 
-See `.jez/artifacts/unified-write-path-2026-05-28.md` for why all writes flow through the worker (audit, frontmatter repair, indexing).
-
-## The MCP gateway tools — 57 actions across 6 servers
-
-Each MCP server exposes ONE gateway tool with multiple actions (per `~/.claude/rules/mcp-gateway-pattern.md`):
-
-### `wiki` — 22 actions (the team memory layer)
+### `wiki` — the memory layer
 
 | Reading | Writing |
 |---|---|
-| `get` / `read` — fetch by collection+slug | `write` — create entry |
-| `search` — FTS5 + vector hybrid + optional MCP-Sampling synthesis | `update` — merge frontmatter patch |
-| `list` — browse a collection with frontmatter filter | `supersede` — atomic replace with audit |
-| `tree` — directory shape of all collections | `archive` — soft delete (filterable out) |
-| `recent` — last-modified entries | `delete` — hard delete (audit-logged) |
-| `glob` — pattern match like `find -name` | `link` — cross-reference two entries |
-| `head` / `head_many` — first-N-lines preview | `register` — add a new collection |
-| `history` — audit log for an entry | `attach` / `detach` — non-markdown files on an entity |
-| `related` — what links to/from this entry | |
-| `collections` — list all collection definitions | |
-| `list_attachments` — files on an entity | |
+| `get` / `read`, `search` (FTS5 + vector hybrid + optional synthesis), `list`, `tree`, `recent`, `glob`, `head` / `head_many`, `history`, `related`, `collections`, `list_attachments` | `write`, `update`, `supersede`, `archive`, `delete`, `link`, `register`, `attach` / `detach` |
 
 Every mutation requires `why:` per the audit design contract.
 
-### `files` — 10 actions (everything-non-markdown for agents)
+### `files` — everything non-markdown
 
-| Action | Purpose |
+`upload` / `download` / `list` / `delete` · `share` (temp\|public) / `revoke` · `publish` / `unpublish` (→ `/p/<slug>`) · `convert` (any-doc → markdown via `toMarkdown`) · `transform_image` · `fetch_with_js` / `screenshot` (browser rendering).
+
+### `email` — `send` (Cloudflare Email Routing) · `draft`. Inbound auto-filed at `wiki/research/`.
+
+### `cron` · `voice` · `sandbox`
+
+Scheduling (7 actions); transcribe / synthesize + 40 Aura-2 voices; a Containers-backed code runner.
+
+### `workflows` — the visual + app surface
+
+| Tool | Purpose |
 |---|---|
-| `upload` / `download` / `list` / `delete` | R2 file ops |
-| `share` (mode: temp\|public) / `revoke` | Signed-URL share + public publishing |
-| `publish` / `unpublish` | Render markdown → `/p/<slug>` |
-| `convert` | Any-doc → markdown via Workers AI `toMarkdown` (PDF, DOCX, XLSX, PPTX, HTML, image-OCR, audio-transcribe) |
-| `transform_image` | Resize / crop / format-convert via Cloudflare Images |
-
-### `email` — 2 actions
-
-| Action | Purpose |
-|---|---|
-| `send` | Outbound via Cloudflare Email Routing (verified destinations) |
-| `draft` | Save draft to substrate bucket for human review |
-
-Inbound is auto-filed by the worker's `email()` handler at `wiki/research/`.
+| `cortex_ui` | Inline panels in Goose Desktop — views: `workflows`, `cortex` (browse), `entity` (click-to-edit), `kit`, `tasks` |
+| `create_app` | Author a new standalone app and install it to the owner's Apps page |
+| `create_share_app` | Publish a customer-facing app behind a public magic link (write-only to the owner's inbox) |
+| `launch_app` | Open / refresh / close an installed app window (the popup) |
+| `install_pack` | Install an industry pack (collections + apps) |
 
 ## Workflows — the standing jobs your cortex owns
 
-A **Workflow** is the core unit Office Town ships: a standing responsibility the cortex owns. You turn it on once; it fires on a **trigger** (a file landing in inbox/, a schedule, or an inbound **webhook**), does the work end to end with the agent's judgement, and reports back in a one-line receipt — never extra work for you.
+A **Workflow** is a standing responsibility the cortex owns. You turn it on once; it fires on a **trigger** (a file landing in `inbox/`, a schedule, or an inbound **webhook**), does the work end to end with the agent's judgement, and reports back in a one-line receipt.
 
-Each is plain markdown in the cortex at `workflows/<slug>/workflow.md` (frontmatter = the contract: trigger, owner, trust; body = the goal in plain language), with `log.md` (receipts) and `pending/` (drafts awaiting your OK). Five ship seeded: **filing-cabinet**, **ask-my-cortex**, **meeting-to-actions**, **morning-brief**, **relationship-keeper**.
+Each is plain markdown at `workflows/<slug>/workflow.md` (frontmatter = trigger, owner, trust; body = the goal in plain language), with `log.md` (receipts) and `pending/` (drafts awaiting approval). Five ship seeded: **filing-cabinet**, **ask-my-cortex**, **meeting-to-actions**, **morning-brief**, **relationship-keeper**.
 
-- **Trust tiers** — `auto` (file/organise silently), `review` (drafts to `pending/`, you approve — anything outward/lossy), `ask`. Nothing irreversible without a yes.
-- **Two runtimes** — *local* (the Goose agent, with all your connectors, when your machine is up) and a *cloud bridge*: an inbound webhook (`POST /api/triggers/:id`, per-source secret) enqueues a **job** for a device; the `officetowd` daemon polls, claims it, and runs the workflow locally via headless Goose. So a Stripe payment or a form submit can fire a workflow.
-- **Devices** — each connected machine has an identity (`devices` table); timezone/region come free from the connection (`request.cf`), so the daemon stays a minimal courier. `/dashboard/workflows` shows every workflow + connected devices with sync freshness.
+- **Trust tiers** — `auto` (silent), `review` (drafts to `pending/`, you approve anything outward/lossy), `ask`. Nothing irreversible without a yes.
+- **Two runtimes** — *local* (the Goose agent) and a *cloud bridge*: an inbound webhook (`POST /api/triggers/:id`, per-source secret) enqueues a **job**; the `officetowd` daemon claims it and runs the workflow locally via headless Goose. So a Stripe payment or a form submit can fire a workflow.
 
 ## Architecture
 
-Single Worker. Single R2 substrate bucket. Designed filesystem-friendly so v1.1's `officetowd` daemon (Go-lang Goanna-style bisync) can mirror it locally.
+Single Worker. Single R2 substrate bucket. `officetowd` mirrors it locally (Goanna-style bisync).
 
 | Surface | Routes |
 |---|---|
-| HTTP API (bearer-gated) | `/api/wiki/*`, `/api/files/*`, `/api/publish/*`, `/api/cron/*`, `/api/sync/*`, `/api/workflows/*`, `/api/jobs/*` |
-| MCP gateways (JSON-RPC over streamable-HTTP) | `POST /mcp/{wiki,files,email,cron,voice,sandbox}` + `GET /mcp/*/sse` |
-| Inbound webhooks (per-source secret, public) | `POST /api/triggers/:id` → enqueues a workflow job |
-| Dashboard (HTML) | `/`, `/dashboard/*` (incl. `/dashboard/workflows`) |
+| HTTP API (bearer-gated) | `/api/{wiki,files,publish,cron,sync,workflows,jobs,apps,packs}/*` |
+| Self-authed (scoped UI token or bearer) | `/api/{tasks,cortex,appdata,collection,media}/*` |
+| MCP gateways (JSON-RPC / streamable-HTTP) | `POST /mcp/{wiki,files,email,cron,voice,sandbox,workflows}` |
+| App pages (scoped-token-gated) | `/app/*` |
+| Customer magic-link apps (public, write-only) | `/c/:shareId` |
+| Inbound webhooks (per-source secret) | `POST /api/triggers/:id` |
+| Dashboard (HTML) | `/`, `/dashboard/*` (incl. `/dashboard/{workflows,apps,packs}`) |
 | Public reader | `/p/<slug>`, `/s/<token>` |
-| Health | `/health` |
-| Cron + queue consumer + inbound email | exported handlers alongside `fetch` |
+| Health + cron + queue consumer + inbound email | exported handlers alongside `fetch` |
 
 ## Cost
 
-Typical SMB volume: **~$2-5/month**. Variables: Vectorize ($0.04 per 1M dims queried), Workers AI embeddings ($0.011 per 1M tokens), Queue ($0.40 per 1M messages), Cloudflare Images (free up to 100k transformations/month), Email Routing (free up to 100 outbound/day). Workers + D1 + R2 inside free tier at this scale.
-
-## Documentation
-
-Master plan + reference knowledge live in `.jez/artifacts/`:
-
-| File | Purpose |
-|---|---|
-| `MASTER-PLAN-2026-05-28.md` | Authoritative current plan — read this first |
-| `officetowd-spec-2026-05-28.md` | v1.1 sync daemon spec |
-| `goose-knowledge-{01..05}.md` | ~5000 lines of Goose primitives reference |
-| `cloudflare-knowledge-{01..03}.md` | ~5000 lines of Cloudflare primitives reference |
-| `conversation-audit-2026-05-28.md` | Full design decision history |
-| `single-worker-collapse-{plan,build-spec}-2026-05-27.md` | Refactor that got us here |
-
-Older docs (`ARCHITECTURE.md`, `EXTENSIONS-CATALOGUE.md`, `BUILD-SPEC.md`, `SHIP-PLAN.md`) are superseded — kept for history.
-
-
-
-## v1.1 plan + new MCPs
-
-See `.jez/artifacts/V1.1-PLAN-2026-05-28.md` for the full v1.1 build plan.
-
-Already shipped in v1.1 (Phase 1 + 3):
-- Browser rendering restored (as `files(action:fetch_with_js)` + `files(action:screenshot)`)
-- MCP Sampling synthesis on `wiki(action:search, synthesize:true)` (via Workers AI direct call; pure-MCP-Sampling in v1.2)
-- Cron MCP gateway at `/mcp/cron` (7 actions)
-- Voice MCP gateway at `/mcp/voice` (transcribe + synthesize + 40 Aura-2 voices, Realtime placeholder)
-- Sandbox MCP gateway at `/mcp/sandbox` (Containers placeholder)
-- `office-town-pack-cloudflare` plugin scaffold (bundles Cloudflare's official MCPs)
-
-Pending implementation (scaffolds in place):
-- `jezweb/officetowd` Go daemon for local⇄R2 bisync (~1-2 weeks)
-- Cloudflare Realtime SFU wiring for voice MCP `call_*` actions
-- Cloudflare Containers wiring for sandbox MCP `run` action
-- AI Search benchmark spike
+Typical SMB volume: **~$2-5/month**. Workers + D1 + R2 sit inside the free tier at this scale; Vectorize, Workers AI, Queue and Images are cents. Most people never pay.
 
 ## Repos in this family
 
 - [office-town](https://github.com/jezweb/office-town) — methodology + template
 - [office-town-plugin](https://github.com/jezweb/office-town-plugin) — Goose plugin (4 role agents + skills + recipes + hooks)
+- [officetowd](https://github.com/jezweb/officetowd) — Go daemon for local⇄R2 bisync + app reconcile
 - [office-town-pack-knowledge](https://github.com/jezweb/office-town-pack-knowledge) — concepts pack to seed the wiki
-- [office-town-pack-*](https://github.com/jezweb?tab=repositories&q=office-town-pack) — other role packs
-- `officetowd` (v1.1, coming) — Go-lang sync daemon for local⇄R2
+- [office-town-pack-*](https://github.com/jezweb?tab=repositories&q=office-town-pack) — agent role packs (startup, design, hosting, wordpress, business, cloudflare, comms)
+- [officetown.au](https://github.com/jezweb/officetown.au) — the landing site
+
+## Documentation
+
+In-repo: `ARCHITECTURE.md`, `WIKI-SCHEMA.md`, `EXTENSIONS-CATALOGUE.md`, `INSTALL.md`, and `docs/` (HOOKS, MCP-UI, ONBOARDING, MEMORY-COMPARISON).
 
 ## Licence
 
