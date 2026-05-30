@@ -34,6 +34,7 @@ import { tasksApiRoutes } from './tasks/routes';
 import { cortexApiRoutes } from './cortex-api/routes';
 import { appsApiRoutes } from './apps-api/routes';
 import { appDataRoutes } from './appdata/routes';
+import { shareAppRoutes } from './share-app/routes';
 import { appRoutes } from './app/routes';
 import type { ForwardableEmailMessage } from '@cloudflare/workers-types';
 
@@ -130,6 +131,9 @@ app.route('/api/apps', appsApiRoutes);
 app.route('/api/appdata', appDataRoutes);
 // externalUrl panel pages (token-gated) — /app/tasks, /app/entity.
 app.route('/app', appRoutes);
+// PUBLIC customer-facing shared apps (magic link) — agent-built, write-only to
+// the owner's cortex inbox. Not gated.
+app.route('/c', shareAppRoutes);
 app.route('/', setupRoutes);
 
 // MCP servers (JSON-RPC over streamable-HTTP). Each enforces its own bearer

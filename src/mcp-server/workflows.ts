@@ -22,6 +22,7 @@ import { renderWorkflowsApp, type WorkflowSummary, type PendingDraft } from './w
 import { renderOverview, renderCollection, renderEntry } from './cortex-browser-ui';
 import { renderKitGallery } from './cortex-kit-gallery-ui';
 import { createCustomApp } from '../apps-api/routes';
+import { createSharedApp } from '../share-app/store';
 // cortex-entity-ui.ts (rawHtml read-only card) is kept for a future inline-mention
 // path; the entity view now serves the editable externalUrl page (app/entity-page).
 
@@ -99,6 +100,25 @@ const TOOLS = {
 				html: { type: 'string', description: 'Complete self-contained HTML doc. Use window.ot.load()/save(data) for persistence.' },
 				width: { type: 'number', description: 'Window width px (default 720)' },
 				height: { type: 'number', description: 'Window height px (default 640)' },
+			},
+			required: ['name', 'html'],
+		},
+	},
+	create_share_app: {
+		description: [
+			'Create a CUSTOMER-FACING app behind a public magic link and return the URL to send them.',
+			'For ONE external person/moment: a feedback form, intake form, quote approval, booking page,',
+			'status page. You author self-contained HTML; the customer opens the link (NO login) and submits.',
+			'SUBMIT: call window.ot.submit(data) with a JSON object of the form fields — it writes a response',
+			'into the cortex inbox (only the owner sees responses). The app is WRITE-ONLY for the customer: it',
+			'CANNOT read the cortex or anything else. Self-contained HTML only (inline CSS/JS, NO external URLs).',
+			'After creating, give the owner the returned link to send to their customer; responses hit the inbox.',
+		].join(' '),
+		inputSchema: {
+			type: 'object',
+			properties: {
+				name: { type: 'string', description: 'What the form is (shown to the owner; titles the responses)' },
+				html: { type: 'string', description: 'Complete self-contained HTML doc. Use window.ot.submit(data) to send the response.' },
 			},
 			required: ['name', 'html'],
 		},
@@ -243,6 +263,26 @@ async function handleRpc(env: Env, req: JsonRpcRequest, origin: string): Promise
 								{
 									type: 'text',
 									text: `Created app "${def.name}" (${def.slug}). It installs to the owner's Goose Apps page within ~1 minute (the sync daemon writes it). Tell them to open the Apps tab and Launch it.`,
+								},
+							],
+						},
+					};
+				}
+				if (params.name === 'create_share_app') {
+					const sa = (params.arguments ?? {}) as { name?: string; html?: string };
+					if (!sa.name || !sa.html) {
+						return { jsonrpc: '2.0', id: req.id, error: { code: -32602, message: 'create_share_app needs {name, html}' } };
+					}
+					const shared = await createSharedApp(env, { name: sa.name, html: sa.html });
+					const url = `${origin}/c/${shared.shareId}`;
+					return {
+						jsonrpc: '2.0',
+						id: req.id,
+						result: {
+							content: [
+								{
+									type: 'text',
+									text: `Created a shareable app "${shared.name}". Send your customer this magic link:\n${url}\n\nThey open it (no login), fill it in, and the response lands in your cortex inbox. The link is write-only — they can't see your cortex or anything else.`,
 								},
 							],
 						},
