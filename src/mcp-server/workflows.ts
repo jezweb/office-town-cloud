@@ -21,7 +21,8 @@ import { renderMarkdownBody } from '../publish/service';
 import { renderWorkflowsApp, type WorkflowSummary, type PendingDraft } from './workflows-ui';
 import { renderOverview, renderCollection, renderEntry } from './cortex-browser-ui';
 import { renderKitGallery } from './cortex-kit-gallery-ui';
-import { renderEntityCard } from './cortex-entity-ui';
+// cortex-entity-ui.ts (rawHtml read-only card) is kept for a future inline-mention
+// path; the entity view now serves the editable externalUrl page (app/entity-page).
 
 const app = new Hono<AppContext>();
 
@@ -216,12 +217,11 @@ async function handleRpc(env: Env, req: JsonRpcRequest, origin: string): Promise
 					if (!a.collection || !a.slug) {
 						return { jsonrpc: '2.0', id: req.id, error: { code: -32602, message: 'entity view needs {collection, slug}' } };
 					}
-					const svc = new WikiService(env);
-					const entry = await svc.read(a.collection, a.slug);
-					const related = await svc.related(a.collection, a.slug);
+					// Editable externalUrl page — click a field to edit, saves to the wiki.
+					const token = await signUiToken('cortex', 7200, await getEffectiveBearer(env), Date.now());
 					uri = 'ui://office-town/entity';
-					mimeType = 'text/html';
-					text = renderEntityCard(a.collection, a.slug, entry.frontmatter, entry.body, related);
+					mimeType = 'text/uri-list';
+					text = `${origin}/app/entity?c=${encodeURIComponent(a.collection)}&s=${encodeURIComponent(a.slug)}&t=${encodeURIComponent(token)}`;
 				} else if (view === 'kit') {
 					uri = 'ui://office-town/kit';
 					mimeType = 'text/html';

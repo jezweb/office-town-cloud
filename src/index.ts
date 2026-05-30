@@ -31,6 +31,7 @@ import { handleInboundEmail } from './email/inbound';
 import { syncRoutes } from './sync/routes';
 import { workflowsRoutes, jobsRoutes, triggerRoutes } from './workflows/routes';
 import { tasksApiRoutes } from './tasks/routes';
+import { cortexApiRoutes } from './cortex-api/routes';
 import { appRoutes } from './app/routes';
 import type { ForwardableEmailMessage } from '@cloudflare/workers-types';
 
@@ -118,7 +119,10 @@ app.route('/api/triggers', triggerRoutes);
 // Tasks API — self-authed (UI token from the board panel, or the bearer). NOT
 // in MCP_PATH_PREFIXES so the global gate passes it through to its own check.
 app.route('/api/tasks', tasksApiRoutes);
-// externalUrl panel pages (token-gated) — /app/tasks etc.
+// Cortex edit API — self-authed (UI token scope 'cortex', or bearer). Powers
+// click-to-edit fields + append-note on the entity panel.
+app.route('/api/cortex', cortexApiRoutes);
+// externalUrl panel pages (token-gated) — /app/tasks, /app/entity.
 app.route('/app', appRoutes);
 app.route('/', setupRoutes);
 

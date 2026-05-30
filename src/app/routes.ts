@@ -10,6 +10,8 @@ import type { AppContext } from '../types';
 import { getEffectiveBearer } from '../auth/bearer';
 import { verifyUiToken } from '../auth/ui-token';
 import { renderTasksPage } from './tasks-page';
+import { renderEntityEditPage } from './entity-page';
+import { WikiService } from '../wiki/service';
 
 const app = new Hono<AppContext>();
 
@@ -21,6 +23,26 @@ app.get('/tasks', async (c) => {
 		return c.html('<!DOCTYPE html><meta charset="utf-8"><body style="font:14px system-ui;padding:24px"><h2>Link expired</h2><p>Reopen the Tasks panel from Goose.</p></body>', 401);
 	}
 	return c.html(renderTasksPage(t, new URL(c.req.url).origin));
+});
+
+app.get('/entity', async (c) => {
+	const t = c.req.query('t') ?? '';
+	const collection = c.req.query('c') ?? '';
+	const slug = c.req.query('s') ?? '';
+	const bearer = await getEffectiveBearer(c.env);
+	const ok = t && (t === bearer || (await verifyUiToken(t, 'cortex', bearer, Date.now())));
+	if (!ok) {
+		return c.html('<!DOCTYPE html><meta charset="utf-8"><body style="font:14px system-ui;padding:24px"><h2>Link expired</h2><p>Reopen this from Goose.</p></body>', 401);
+	}
+	if (!collection || !slug) return c.html('<body style="font:14px system-ui;padding:24px">Missing entity.</body>', 400);
+	try {
+		const svc = new WikiService(c.env);
+		const entry = await svc.read(collection, slug);
+		const related = await svc.related(collection, slug);
+		return c.html(renderEntityEditPage(t, new URL(c.req.url).origin, collection, slug, entry.frontmatter, related));
+	} catch {
+		return c.html('<body style="font:14px system-ui;padding:24px">Entity not found.</body>', 404);
+	}
 });
 
 export const appRoutes = app;
