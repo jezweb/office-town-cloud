@@ -28,7 +28,11 @@ export function renderEntityEditPage(
 	slug: string,
 	frontmatter: Record<string, unknown>,
 	related: { outgoing: Array<{ collection: string; slug: string; kind?: string }>; incoming: Array<{ collection: string; slug: string; kind?: string }> },
+	actions: Array<{ label: string; prompt: string }> = [],
 ): string {
+	const pills = actions
+		.map((a) => `<button class="pill" data-prompt="${esc(a.prompt)}">${esc(a.label)}</button>`)
+		.join('');
 	const title = (frontmatter.title as string) ?? (frontmatter.name as string) ?? slug;
 	const fields = Object.entries(frontmatter).filter(
 		([k, v]) => !HIDE.has(k) && (v == null || typeof v !== 'object'),
@@ -68,6 +72,9 @@ export function renderEntityEditPage(
   .ok{font-size:12px;color:var(--green);margin-left:4px;opacity:0;transition:opacity .2s;} .ok.show{opacity:1;}
   h2{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin:20px 0 8px;}
   .badges{display:flex;gap:6px;flex-wrap:wrap;} .badge{background:var(--code);color:var(--muted);border-radius:6px;padding:3px 9px;font-size:12px;border:1px solid var(--card-line);}
+  .pills{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px;}
+  .pill{background:var(--card);border:1px solid var(--accent);color:var(--accent);border-radius:999px;padding:6px 13px;font:inherit;font-size:13px;cursor:pointer;}
+  .pill:hover{background:var(--accent);color:var(--accent-fg);}
   .badge.rel{cursor:pointer;} .badge.rel:hover{border-color:var(--accent);color:var(--accent);}
   .btn{border:0;border-radius:8px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;background:var(--accent);color:var(--accent-fg);font-family:inherit;} .btn:hover{background:var(--accent-deep);}
   .hint{color:var(--muted);font-size:12px;margin:0 0 14px;}
@@ -75,6 +82,7 @@ export function renderEntityEditPage(
 <body>
   <h1>${icon(collection)} ${esc(title)}<span class="type">${esc(collection.replace(/s$/, ''))}</span></h1>
   <p class="hint">Click any field and overtype — it saves as you go.</p>
+  ${pills ? `<h2>Suggested</h2><div class="pills">${pills}</div>` : ''}
   ${fieldRows || '<p class="hint">No editable fields.</p>'}
   ${relChips ? `<h2>Related</h2><div class="badges">${relChips}</div>` : ''}
   <h2>Add a note</h2>
@@ -104,8 +112,11 @@ export function renderEntityEditPage(
     if(r.ok){ t.value=''; }
   }
 
-  // Ask the agent (via mcp-ui prompt action) to open a related entity.
-  function openRel(c,s){ try{ window.parent.postMessage({type:'prompt',messageId:'ot-'+Date.now(),payload:{prompt:'Open '+c+'/'+s+' in the cortex browser.'}},'*'); }catch(e){} }
+  // Fire a prompt action to the host (Goose) — the agent then carries it out.
+  function act(p){ try{ window.parent.postMessage({type:'prompt',messageId:'ot-'+Date.now(),payload:{prompt:p}},'*'); }catch(e){} }
+  function openRel(c,s){ act('Open '+c+'/'+s+' in the cortex browser.'); }
+  // Suggested-action pills — the agent filled these for THIS entity.
+  document.querySelectorAll('.pill').forEach(function(b){ b.addEventListener('click',function(){ act(b.dataset.prompt); }); });
 </script>
 </body></html>`;
 }

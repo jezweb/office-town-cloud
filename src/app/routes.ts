@@ -35,11 +35,21 @@ app.get('/entity', async (c) => {
 		return c.html('<!DOCTYPE html><meta charset="utf-8"><body style="font:14px system-ui;padding:24px"><h2>Link expired</h2><p>Reopen this from Goose.</p></body>', 401);
 	}
 	if (!collection || !slug) return c.html('<body style="font:14px system-ui;padding:24px">Missing entity.</body>', 400);
+	let actions: Array<{ label: string; prompt: string }> = [];
+	const rawActions = c.req.query('a');
+	if (rawActions) {
+		try {
+			const parsed = JSON.parse(rawActions);
+			if (Array.isArray(parsed)) actions = parsed.filter((x) => x && typeof x.label === 'string' && typeof x.prompt === 'string');
+		} catch {
+			/* ignore malformed actions */
+		}
+	}
 	try {
 		const svc = new WikiService(c.env);
 		const entry = await svc.read(collection, slug);
 		const related = await svc.related(collection, slug);
-		return c.html(renderEntityEditPage(t, new URL(c.req.url).origin, collection, slug, entry.frontmatter, related));
+		return c.html(renderEntityEditPage(t, new URL(c.req.url).origin, collection, slug, entry.frontmatter, related, actions));
 	} catch {
 		return c.html('<body style="font:14px system-ui;padding:24px">Entity not found.</body>', 404);
 	}

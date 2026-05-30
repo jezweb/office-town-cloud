@@ -56,9 +56,13 @@ const TOOLS = {
 			'              For "show my workflows", "what is my cortex doing", reviewing/approving work.',
 			'  cortex    — browse everything the cortex knows. No extra args = collections + recent entries;',
 			'              {collection} = list that collection; {collection, slug} = render that entry as markdown.',
-			'  entity    — a compact card for ONE entity (needs {collection, slug}): its key fields, a summary,',
-			'              and its relationships. Use when you mention an org/contact/project and want to show it',
-			'              richly instead of as text. The card adapts to whatever fields the entity has.',
+			'  entity    — an editable panel for ONE entity (needs {collection, slug}): click-to-edit fields,',
+			'              relationships, append-a-note. The owner edits directly (no need to ask you).',
+			'              OPTIONAL {actions: [{label, prompt}]} — look at THIS entity and suggest up to ~6 useful',
+			'              next moves as buttons. label = short (e.g. "Draft welcome email"); prompt = the exact',
+			'              instruction sent back to you when tapped. For internal/safe moves (create a task, set a',
+			'              reminder, file a note) write a prompt that just does it; for outward/irreversible ones',
+			'              (send email, publish) write a prompt that DRAFTS to pending for the owner to approve.',
 			'  kit       — a playground demoing the interactive controls (drag-reorder, form). For exploring.',
 			'  tasks     — a live kanban board (drag cards between To do / Doing / Done; it saves itself).',
 			'              For "show my tasks", "my task board", "what am I working on".',
@@ -199,7 +203,12 @@ async function handleRpc(env: Env, req: JsonRpcRequest, origin: string): Promise
 				if (params.name !== 'cortex_ui') {
 					return { jsonrpc: '2.0', id: req.id, error: { code: -32602, message: `Unknown tool: ${params.name}` } };
 				}
-				const a = (params.arguments ?? {}) as { view?: View; collection?: string; slug?: string };
+				const a = (params.arguments ?? {}) as {
+					view?: View;
+					collection?: string;
+					slug?: string;
+					actions?: Array<{ label: string; prompt: string }>;
+				};
 				const view = a.view ?? 'workflows';
 				let uri: string;
 				let mimeType: string;
@@ -221,7 +230,11 @@ async function handleRpc(env: Env, req: JsonRpcRequest, origin: string): Promise
 					const token = await signUiToken('cortex', 7200, await getEffectiveBearer(env), Date.now());
 					uri = 'ui://office-town/entity';
 					mimeType = 'text/uri-list';
-					text = `${origin}/app/entity?c=${encodeURIComponent(a.collection)}&s=${encodeURIComponent(a.slug)}&t=${encodeURIComponent(token)}`;
+					let url = `${origin}/app/entity?c=${encodeURIComponent(a.collection)}&s=${encodeURIComponent(a.slug)}&t=${encodeURIComponent(token)}`;
+					if (Array.isArray(a.actions) && a.actions.length) {
+						url += `&a=${encodeURIComponent(JSON.stringify(a.actions.slice(0, 8)))}`;
+					}
+					text = url;
 				} else if (view === 'kit') {
 					uri = 'ui://office-town/kit';
 					mimeType = 'text/html';
