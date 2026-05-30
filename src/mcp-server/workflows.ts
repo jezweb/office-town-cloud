@@ -182,7 +182,7 @@ async function handleRpc(env: Env, req: JsonRpcRequest, origin: string): Promise
 					id: req.id,
 					result: {
 						protocolVersion: '2025-03-26',
-						capabilities: { tools: {} },
+						capabilities: { tools: {}, resources: {} },
 						serverInfo: { name: 'office-town-workflows', version: '1.0.0' },
 					},
 				};
@@ -256,6 +256,39 @@ async function handleRpc(env: Env, req: JsonRpcRequest, origin: string): Promise
 					id: req.id,
 					result: { content: [{ type: 'resource', resource: { uri, mimeType, text } }] },
 				};
+			}
+			// Apps page: Goose lists ui:// resources as launchable apps (mime
+			// text/html;profile=mcp-app, window props from _meta.window) and calls
+			// resources/read to get the HTML. We build it fresh on read.
+			case 'resources/list':
+				return {
+					jsonrpc: '2.0',
+					id: req.id,
+					result: {
+						resources: [
+							{ uri: 'ui://office-town/workflows', name: 'Workflows', description: 'Your standing jobs + anything awaiting approval', mimeType: 'text/html;profile=mcp-app', _meta: { window: { width: 480, height: 720, resizable: true } } },
+							{ uri: 'ui://office-town/cortex', name: 'Cortex', description: 'Browse everything your cortex knows', mimeType: 'text/html;profile=mcp-app', _meta: { window: { width: 540, height: 820, resizable: true } } },
+							{ uri: 'ui://office-town/tasks', name: 'Tasks', description: 'Your task board — drag, add, it saves itself', mimeType: 'text/html;profile=mcp-app', _meta: { window: { width: 1000, height: 700, resizable: true } } },
+						],
+					},
+				};
+			case 'resources/read': {
+				const uri = ((req.params ?? {}) as { uri?: string }).uri ?? '';
+				let html: string;
+				if (uri === 'ui://office-town/workflows') {
+					const { workflows, pending } = await loadWorkflows(env);
+					html = renderWorkflowsApp(workflows, pending);
+				} else if (uri === 'ui://office-town/cortex') {
+					html = await handleBrowse(env, {});
+				} else if (uri === 'ui://office-town/tasks') {
+					// Live board needs its own origin + token → thin iframe wrapper.
+					const token = await signUiToken('tasks', 7200, await getEffectiveBearer(env), Date.now());
+					const src = `${origin}/app/tasks?t=${encodeURIComponent(token)}`;
+					html = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>html,body{margin:0;height:100%}iframe{border:0;width:100%;height:100vh;display:block}</style></head><body><iframe src="${src}"></iframe></body></html>`;
+				} else {
+					return { jsonrpc: '2.0', id: req.id, error: { code: -32602, message: `Unknown resource: ${uri}` } };
+				}
+				return { jsonrpc: '2.0', id: req.id, result: { contents: [{ uri, mimeType: 'text/html;profile=mcp-app', text: html }] } };
 			}
 			default:
 				return { jsonrpc: '2.0', id: req.id, error: { code: -32601, message: `Method not found: ${req.method}` } };
