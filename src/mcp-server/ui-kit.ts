@@ -99,6 +99,14 @@ const STYLE = `
   .md pre { background:var(--code); padding:12px; border-radius:8px; overflow:auto; } .md pre code { background:none; padding:0; }
   .md blockquote { border-left:3px solid var(--line); margin:8px 0; padding:2px 12px; color:var(--muted); }
   .md table { border-collapse:collapse; margin:8px 0; } .md th,.md td { border:1px solid var(--line); padding:4px 8px; text-align:left; }
+  /* entity card — fields adapt to whatever the entity has */
+  .kv { margin:12px 0; display:flex; flex-direction:column; gap:5px; }
+  .kvrow { display:flex; gap:10px; font-size:13px; align-items:baseline; }
+  .kvk { color:var(--muted); min-width:96px; text-transform:capitalize; flex-shrink:0; }
+  .kvv { color:var(--fg); word-break:break-word; }
+  .esum { color:var(--muted); font-size:13px; margin:12px 0; }
+  .erel-h { font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); margin:14px 0 6px; }
+  .badge.rel { cursor:pointer; border:1px solid var(--card-line); } .badge.rel:hover { border-color:var(--accent); color:var(--accent); }
 `;
 
 const SCRIPT = `

@@ -10,7 +10,7 @@ const ICONS: Record<string, string> = {
 	orgs: '🏢', contacts: '👤', projects: '📋', decisions: '⚖️', knowledge: '📚',
 	research: '🔬', people: '👥', sites: '📍', team: '🧑‍💼', owner: '🪪', business: '💼',
 };
-const icon = (name: string): string => ICONS[name] ?? '📁';
+export const icon = (name: string): string => ICONS[name] ?? '📁';
 
 const OPEN_BROWSER = 'Open the cortex browser.';
 const browseCollection = (c: string) => `Browse the "${c}" collection in the cortex browser.`;

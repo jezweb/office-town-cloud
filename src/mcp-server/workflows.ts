@@ -21,6 +21,7 @@ import { renderMarkdownBody } from '../publish/service';
 import { renderWorkflowsApp, type WorkflowSummary, type PendingDraft } from './workflows-ui';
 import { renderOverview, renderCollection, renderEntry } from './cortex-browser-ui';
 import { renderKitGallery } from './cortex-kit-gallery-ui';
+import { renderEntityCard } from './cortex-entity-ui';
 
 const app = new Hono<AppContext>();
 
@@ -41,7 +42,7 @@ interface JsonRpcResult<T = unknown> {
 // ONE gateway tool, many views — keeps the agent's tool list to a single entry
 // no matter how many panels we add (Jezweb mcp-gateway-pattern). A new surface
 // is a new `view` value, never a new tool.
-const VIEWS = ['workflows', 'cortex', 'kit', 'tasks'] as const;
+const VIEWS = ['workflows', 'cortex', 'entity', 'kit', 'tasks'] as const;
 type View = (typeof VIEWS)[number];
 
 const TOOLS = {
@@ -54,6 +55,9 @@ const TOOLS = {
 			'              For "show my workflows", "what is my cortex doing", reviewing/approving work.',
 			'  cortex    — browse everything the cortex knows. No extra args = collections + recent entries;',
 			'              {collection} = list that collection; {collection, slug} = render that entry as markdown.',
+			'  entity    — a compact card for ONE entity (needs {collection, slug}): its key fields, a summary,',
+			'              and its relationships. Use when you mention an org/contact/project and want to show it',
+			'              richly instead of as text. The card adapts to whatever fields the entity has.',
 			'  kit       — a playground demoing the interactive controls (drag-reorder, form). For exploring.',
 			'  tasks     — a live kanban board (drag cards between To do / Doing / Done; it saves itself).',
 			'              For "show my tasks", "my task board", "what am I working on".',
@@ -208,6 +212,16 @@ async function handleRpc(env: Env, req: JsonRpcRequest, origin: string): Promise
 					uri = 'ui://office-town/cortex';
 					mimeType = 'text/html';
 					text = await handleBrowse(env, a);
+				} else if (view === 'entity') {
+					if (!a.collection || !a.slug) {
+						return { jsonrpc: '2.0', id: req.id, error: { code: -32602, message: 'entity view needs {collection, slug}' } };
+					}
+					const svc = new WikiService(env);
+					const entry = await svc.read(a.collection, a.slug);
+					const related = await svc.related(a.collection, a.slug);
+					uri = 'ui://office-town/entity';
+					mimeType = 'text/html';
+					text = renderEntityCard(a.collection, a.slug, entry.frontmatter, entry.body, related);
 				} else if (view === 'kit') {
 					uri = 'ui://office-town/kit';
 					mimeType = 'text/html';
