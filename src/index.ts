@@ -35,6 +35,7 @@ import { cortexApiRoutes } from './cortex-api/routes';
 import { appsApiRoutes } from './apps-api/routes';
 import { packsRoutes } from './packs/routes';
 import { appDataRoutes } from './appdata/routes';
+import { collectionApiRoutes } from './collection-api/routes';
 import { shareAppRoutes } from './share-app/routes';
 import { mediaRoutes } from './media/routes';
 import { appRoutes } from './app/routes';
@@ -133,6 +134,9 @@ app.route('/api/apps', appsApiRoutes);
 app.route('/api/packs', packsRoutes);
 // Per-app key-value store for agent-built apps — self-authed (app-scoped token).
 app.route('/api/appdata', appDataRoutes);
+// Collection-scoped CRUD for flagship apps backed by a real cortex collection.
+// Self-authed (cortex:<collection> token or bearer) — NOT in MCP_PATH_PREFIXES.
+app.route('/api/collection', collectionApiRoutes);
 // Shared media capabilities for apps — upload, transcribe (Whisper), generate (FLUX).
 app.route('/api/media', mediaRoutes);
 // externalUrl panel pages (token-gated) — /app/tasks, /app/entity.

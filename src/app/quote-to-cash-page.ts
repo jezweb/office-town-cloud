@@ -165,7 +165,7 @@ export function renderQuoteToCashPage(token: string, origin: string): string {
 <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
 <script>
   var TOKEN=${JSON.stringify(token)}, ORIGIN=${JSON.stringify(origin)};
-  var DATA=ORIGIN+'/api/appdata/office-town-quote-to-cash', MEDIA=ORIGIN+'/api/media';
+  var COL=ORIGIN+'/api/collection/jobs', MEDIA=ORIGIN+'/api/media';
   var H={'Authorization':'Bearer '+TOKEN,'Content-Type':'application/json'};
   var STAGES=${JSON.stringify(STAGES)};
 
@@ -178,7 +178,13 @@ export function renderQuoteToCashPage(token: string, origin: string): string {
 
     get current(){ var self=this; return this.deals.find(function(d){return d.id===self.currentId;})||null; },
 
-    async boot(){ try{ var r=await fetch(DATA,{headers:H}); var d=r.ok?await r.json():{}; this.deals=Array.isArray(d.deals)?d.deals:[]; }catch(e){ this.deals=[]; }
+    async boot(){
+      try{ var r=await fetch(COL,{headers:H}); var d=r.ok?await r.json():{}; var es=Array.isArray(d.entries)?d.entries:[];
+        this.deals=es.filter(function(e){return e.frontmatter&&e.frontmatter.kind==='quote-to-cash';}).map(function(e){ var fm=e.frontmatter;
+          return { id:e.slug, slug:e.slug, ref:fm.ref||e.slug.toUpperCase(), client:fm.client||'', stage:fm.stage||'draft',
+            lines:Array.isArray(fm.lines)?fm.lines:[{desc:'',qty:1,price:0}], notes:'', _notesLoaded:false,
+            attachments:Array.isArray(fm.attachments)?fm.attachments:[], invoice:fm.invoice||{status:'none'} }; });
+      }catch(e){ this.deals=[]; }
       var self=this; this.$watch('tab',function(v){ if(v==='money') self.$nextTick(function(){ self.recalc(); self.drawChart(); }); }); },
 
     money(n){ return '$'+(Number(n)||0).toLocaleString('en-AU',{minimumFractionDigits:2,maximumFractionDigits:2}); },
@@ -188,14 +194,15 @@ export function renderQuoteToCashPage(token: string, origin: string): string {
     byStage(s){ return this.deals.filter(function(d){return d.stage===s;}); },
     stageTotal(s){ var self=this; return this.byStage(s).reduce(function(t,d){return t+self.total(d);},0); },
 
-    newDeal(){ var n=this.deals.filter(function(d){return /^Q-/.test(d.ref);}).length+1;
-      var ref='Q-'+String(1000+n);
-      var d={id:'d-'+Math.random().toString(36).slice(2,9), ref:ref, client:'', stage:'draft',
-        lines:[{desc:'',qty:1,price:0}], notes:'', attachments:[], invoice:{status:'none'}, createdAt:new Date().toISOString()};
-      this.deals.unshift(d); this.currentId=d.id; this.tab='deal'; this.save(); },
-    open(id){ this.currentId=id; this.tab='deal'; },
+    newDeal(){ var nums=this.deals.map(function(d){var m=/(\\d+)$/.exec(d.ref||'');return m?+m[1]:1000;});
+      var n=(nums.length?Math.max.apply(null,nums):1000)+1; var ref='Q-'+n; var slug='q-'+n;
+      var d={id:slug, slug:slug, ref:ref, client:'', stage:'draft',
+        lines:[{desc:'',qty:1,price:0}], notes:'', _notesLoaded:true, attachments:[], invoice:{status:'none'}};
+      this.deals.unshift(d); this.currentId=d.id; this.tab='deal'; this.saveDeal(d); },
+    open(id){ this.currentId=id; this.tab='deal'; var d=this.current; if(d && !d._notesLoaded) this.loadNotes(d); },
+    async loadNotes(d){ try{ var r=await fetch(COL+'/'+encodeURIComponent(d.slug),{headers:H}); if(r.ok){ var j=await r.json(); d.notes=j.body||''; } }catch(e){} d._notesLoaded=true; },
     addLine(){ this.current.lines.push({desc:'',qty:1,price:0}); this.touch(); },
-    del(){ var id=this.currentId; this.deals=this.deals.filter(function(d){return d.id!==id;}); this.currentId=null; this.tab='pipeline'; this.save(); },
+    del(){ var d=this.current; if(!d)return; this.deals=this.deals.filter(function(x){return x.id!==d.id;}); this.currentId=null; this.tab='pipeline'; this.deleteDeal(d.slug); },
 
     invoiceLine(){ var inv=this.current&&this.current.invoice||{status:'none'};
       if(inv.status==='paid') return 'Paid'+(inv.paidAt?' · '+inv.paidAt.slice(0,10):'');
@@ -204,9 +211,14 @@ export function renderQuoteToCashPage(token: string, origin: string): string {
     markSent(){ this.current.invoice={status:'sent',sentAt:new Date().toISOString()}; if(this.current.stage!=='paid') this.current.stage='invoiced'; this.touch(); },
     markPaid(){ var inv=this.current.invoice||{}; inv.status='paid'; inv.paidAt=new Date().toISOString(); this.current.invoice=inv; this.current.stage='paid'; this.touch(); },
 
-    touch(){ var self=this; clearTimeout(this.saveTimer); this.saveTimer=setTimeout(function(){ self.save(); },600); },
-    async save(){ this.savedNote='saving…'; try{ await fetch(DATA,{method:'PUT',headers:H,body:JSON.stringify({deals:this.deals})}); this.savedNote='✓ saved'; }catch(e){ this.savedNote='save failed'; }
+    touch(){ var self=this; var d=this.current; clearTimeout(this.saveTimer); this.saveTimer=setTimeout(function(){ self.saveDeal(d); },600); },
+    frontmatterFor(d){ return { title:(d.client||d.ref), kind:'quote-to-cash', ref:d.ref, client:d.client, stage:d.stage,
+      lines:d.lines, subtotal:this.subtotal(d), value:this.total(d), invoice:d.invoice, attachments:d.attachments }; },
+    async saveDeal(d){ if(!d)return; this.savedNote='saving…';
+      try{ await fetch(COL+'/'+encodeURIComponent(d.slug),{method:'PUT',headers:H,body:JSON.stringify({frontmatter:this.frontmatterFor(d),body:d.notes||'',why:'quote-to-cash edit'})}); this.savedNote='✓ saved'; }
+      catch(e){ this.savedNote='save failed'; }
       var self=this; setTimeout(function(){ self.savedNote=''; },1500); },
+    async deleteDeal(slug){ try{ await fetch(COL+'/'+encodeURIComponent(slug),{method:'DELETE',headers:H}); }catch(e){} },
 
     fileUrl(key){ return MEDIA+'/file?key='+encodeURIComponent(key)+'&t='+encodeURIComponent(TOKEN); },
     async attach(e){ var f=e.target.files[0]; if(!f||!this.current)return; var self=this;

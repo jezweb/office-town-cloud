@@ -59,8 +59,8 @@ export const CATALOG: AppDef[] = [
 	{
 		slug: 'office-town-quote-to-cash',
 		name: 'Quote to Cash',
-		description: 'Quote → job → invoice → paid, all in one window. Line-item quotes, photo attachments, voice notes, money dashboard.',
-		scope: 'app:office-town-quote-to-cash',
+		description: 'Quote → job → invoice → paid, all in one window. Each deal is a real entry in your jobs collection (visible to the agent + wiki).',
+		scope: 'cortex:jobs',
 		pagePath: '/app/quote-to-cash',
 		width: 920,
 		height: 760,
@@ -264,7 +264,10 @@ function wrapperHtml(src: string): string {
 }
 
 async function liveSrc(env: Env, origin: string, def: AppDef): Promise<string> {
-	const token = await signUiToken(def.scope, 60 * 60 * 24 * 365, await getEffectiveBearer(env), Date.now());
+	// 7-day TTL: the daemon re-mints these on every sync (reconcileApps rewrites
+	// the cache files), so a week comfortably survives a sync gap without leaving
+	// a near-permanent capability token sitting in the app's iframe URL.
+	const token = await signUiToken(def.scope, 60 * 60 * 24 * 7, await getEffectiveBearer(env), Date.now());
 	return `${origin}${def.pagePath}?t=${encodeURIComponent(token)}`;
 }
 

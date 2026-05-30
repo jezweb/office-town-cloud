@@ -91,9 +91,19 @@ app.get('/showcase', async (c) => {
 app.get('/quote-to-cash', async (c) => {
 	const t = c.req.query('t') ?? '';
 	const bearer = await getEffectiveBearer(c.env);
-	const ok = t && (t === bearer || (await verifyUiToken(t, 'app:office-town-quote-to-cash', bearer, Date.now())));
+	const ok = t && (t === bearer || (await verifyUiToken(t, 'cortex:jobs', bearer, Date.now())));
 	if (!ok) {
 		return c.html('<!DOCTYPE html><meta charset="utf-8"><body style="font:14px system-ui;padding:24px"><h2>Link expired</h2><p>Reopen this from Goose.</p></body>', 401);
+	}
+	// Self-sufficient: ensure the jobs collection exists (q2c writes deals there)
+	// even if the Trades pack was never installed. Idempotent.
+	try {
+		await new WikiService(c.env).registerCollection({
+			name: 'jobs', shape: 'entity-as-folder', canonical_filename: 'job.md', required_fields: ['title'],
+			description: 'Jobs — scope, site, materials, photos, status, next step',
+		});
+	} catch {
+		/* already registered — fine */
 	}
 	return c.html(renderQuoteToCashPage(t, new URL(c.req.url).origin));
 });
