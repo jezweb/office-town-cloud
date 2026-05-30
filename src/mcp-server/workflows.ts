@@ -123,6 +123,23 @@ const TOOLS = {
 			required: ['name', 'html'],
 		},
 	},
+	launch_app: {
+		description: [
+			'Open (or refresh/close) an INSTALLED app window in Goose Desktop for the owner — the popup.',
+			'Use to surface an app proactively (then say you have opened their task board). The app must',
+			'already be installed (catalogue + installed-set; built-ins like office-town-tasks always are);',
+			'a just-created app needs ~1 min to install first. slug = the app id. mode: launch (default) |',
+			'refresh | close.',
+		].join(' '),
+		inputSchema: {
+			type: 'object',
+			properties: {
+				slug: { type: 'string', description: 'App id, e.g. office-town-tasks, office-town-capture' },
+				mode: { type: 'string', enum: ['launch', 'refresh', 'close'], description: 'Default launch' },
+			},
+			required: ['slug'],
+		},
+	},
 } as const;
 
 function clip(s: string, n: number): string {
@@ -285,6 +302,20 @@ async function handleRpc(env: Env, req: JsonRpcRequest, origin: string): Promise
 									text: `Created a shareable app "${shared.name}". Send your customer this magic link:\n${url}\n\nThey open it (no login), fill it in, and the response lands in your cortex inbox. The link is write-only — they can't see your cortex or anything else.`,
 								},
 							],
+						},
+					};
+				}
+				if (params.name === 'launch_app') {
+					const la = (params.arguments ?? {}) as { slug?: string; mode?: string };
+					if (!la.slug) return { jsonrpc: '2.0', id: req.id, error: { code: -32602, message: 'launch_app needs {slug}' } };
+					const evt = la.mode === 'close' ? 'app_deleted' : la.mode === 'refresh' ? 'app_updated' : 'app_created';
+					const verb = la.mode === 'close' ? 'Closed' : la.mode === 'refresh' ? 'Refreshed' : 'Opened';
+					return {
+						jsonrpc: '2.0',
+						id: req.id,
+						result: {
+							content: [{ type: 'text', text: `${verb} "${la.slug}" in Goose Desktop.` }],
+							_meta: { platform_notification: { method: 'platform_event', params: { extension: 'apps', event_type: evt, app_name: la.slug } } },
 						},
 					};
 				}
