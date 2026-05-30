@@ -13,7 +13,7 @@ import { renderMarkdownBody, resolveWikilinks } from '../publish/service';
 import type { AppContext } from '../types';
 import { loadTownStats, renderTownView } from './town-view';
 import { PROMPT_VARIANTS } from '../setup/prompts';
-import { CATALOG, buildGooseAppHtml } from '../apps-api/routes';
+import { CATALOG, buildGooseAppHtml, getInstalledSet, setInstalledSet } from '../apps-api/routes';
 
 export const dashboardRoutes = new Hono<AppContext>();
 
@@ -230,23 +230,53 @@ function linkifyValue(key: string, raw: unknown): string {
 	return escapeHtml(value);
 }
 
-// Apps catalogue — Office Town panels installable into Goose's Apps page.
-dashboardRoutes.get('/dashboard/apps', (c) => {
-	const cards = CATALOG.map(
-		(a) => `
+// Apps catalogue — toggle which Office Town panels are installed into Goose.
+// The daemon reconciles the installed-set on each sync (writes/removes the
+// cache files). Toggling here changes intent; it applies within ~1 min.
+dashboardRoutes.get('/dashboard/apps', async (c) => {
+	const installed = await getInstalledSet(c.env);
+	const cards = CATALOG.map((a) => {
+		const on = installed.has(a.slug);
+		const toggleLabel = on ? 'Uninstall' : 'Install';
+		const toggleBg = on ? 'transparent; color: var(--muted); border: 1px solid var(--border)' : 'var(--accent); color: #fff; border: 0';
+		const status = on
+			? '<span class="tag" style="background: var(--green); color: #fff; border-color: var(--green);">installed</span>'
+			: '<span class="tag">not installed</span>';
+		return `
     <div class="card" style="max-width: 460px; margin-bottom: 1rem;">
-      <h2 style="margin-top: 0;">${escapeHtml(a.name)}</h2>
-      <p class="muted">${escapeHtml(a.description)}</p>
-      <p class="muted" style="font-size: 0.8em; margin: 0.25rem 0 0.85rem;">${a.width}×${a.height} window · saves directly to your cortex</p>
-      <a href="/dashboard/apps/download/${encodeURIComponent(a.slug)}" style="display: inline-block; padding: 0.5rem 1rem; border-radius: 6px; background: var(--accent); color: #fff; text-decoration: none; font-weight: 500;">Download for Goose →</a>
-    </div>`,
-	).join('');
+      <div style="display: flex; align-items: center; gap: 0.5rem;"><h2 style="margin: 0;">${escapeHtml(a.name)}</h2>${status}</div>
+      <p class="muted" style="margin: 0.4rem 0;">${escapeHtml(a.description)}</p>
+      <p class="muted" style="font-size: 0.8em; margin: 0 0 0.85rem;">${a.width}×${a.height} window · saves directly to your cortex</p>
+      <div style="display: flex; gap: 0.5rem; align-items: center;">
+        <form method="POST" action="/dashboard/apps/toggle" style="margin: 0;">
+          <input type="hidden" name="slug" value="${escapeHtml(a.slug)}">
+          <input type="hidden" name="install" value="${on ? '0' : '1'}">
+          <button type="submit" style="padding: 0.45rem 0.9rem; border-radius: 6px; background: ${toggleBg}; font-weight: 500; cursor: pointer;">${toggleLabel}</button>
+        </form>
+        <a href="/dashboard/apps/download/${encodeURIComponent(a.slug)}" style="color: var(--accent-deep); font-size: 0.9em;">download .html</a>
+      </div>
+    </div>`;
+	}).join('');
 	const content = `
 <h1 style="margin-top: 0;">Apps</h1>
-<p class="muted" style="max-width: 720px;">Office Town panels that run as standalone windows in Goose Desktop. The setup script (<a href="/dashboard/connect">Connect Goose</a>) installs these automatically. Or download one below and use <strong>Import App</strong> on Goose's Apps page.</p>
+<p class="muted" style="max-width: 720px;">Office Town panels that run as standalone windows in Goose Desktop. Toggle which ones are installed — the sync daemon writes/removes them on its next pass (~1 min), no manual Import. (No daemon? Use <em>download .html</em> + Goose's Import App.)</p>
 ${cards || '<p class="muted">No apps in the catalogue yet.</p>'}
-<p class="muted" style="font-size: 0.85em; max-width: 720px; margin-top: 1.5rem;">These are direct-edit panels (a task board, etc.) that save straight to your cortex — they work as standalone windows. Agent-driven panels (workflows, the cortex browser) work best inline: just ask your agent <em>"show my workflows"</em> in a chat.</p>`;
+<p class="muted" style="font-size: 0.85em; max-width: 720px; margin-top: 1.5rem;">These are direct-edit panels that save straight to your cortex, so they work standalone. Agent-driven panels (workflows, the cortex browser) work best inline: ask your agent <em>"show my workflows"</em> in a chat.</p>`;
 	return c.html(LAYOUT('Apps - Office Town', content));
+});
+
+// Toggle an app's installed state (the daemon applies it next sync).
+dashboardRoutes.post('/dashboard/apps/toggle', async (c) => {
+	const body = await c.req.parseBody();
+	const slug = String(body.slug ?? '');
+	const install = String(body.install ?? '') === '1';
+	if (CATALOG.some((a) => a.slug === slug)) {
+		const set = await getInstalledSet(c.env);
+		if (install) set.add(slug);
+		else set.delete(slug);
+		await setInstalledSet(c.env, [...set]);
+	}
+	return c.redirect('/dashboard/apps', 302);
 });
 
 // Download a single app as a GooseApp HTML file (for Goose's Import App).
@@ -1451,10 +1481,13 @@ try:
     data = json.loads(urllib.request.urlopen(req, timeout=20).read())
     cache_dir = pathlib.Path.home() / '.config' / 'goose' / 'mcp-apps-cache'
     cache_dir.mkdir(parents=True, exist_ok=True)
-    n = 0
-    for f in data.get('files', []):
+    for f in data.get('install', []):
         (cache_dir / f['filename']).write_text(json.dumps(f['content'], indent=2))
-        n += 1
+    for fn in data.get('remove', []):
+        p = cache_dir / fn
+        if p.exists():
+            p.unlink()
+    n = len(data.get('install', []))
     print(f"  ✓ Installed {n} Office Town app(s) — open the Apps tab in Goose (restart if it was running)")
 except Exception as e:
     print(f"  (skipped apps install: {e} — you can Import them from the dashboard instead)")

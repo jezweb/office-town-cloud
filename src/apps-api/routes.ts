@@ -40,6 +40,23 @@ export const CATALOG: AppDef[] = [
 	},
 ];
 
+// Which apps the owner wants installed (worker_config). Default: all catalog.
+export async function getInstalledSet(env: Env): Promise<Set<string>> {
+	const row = await env.DB.prepare(`SELECT value FROM worker_config WHERE key = 'installed_apps'`).first<{ value: string }>();
+	if (!row) return new Set(CATALOG.map((a) => a.slug));
+	try {
+		return new Set(JSON.parse(row.value) as string[]);
+	} catch {
+		return new Set(CATALOG.map((a) => a.slug));
+	}
+}
+
+export async function setInstalledSet(env: Env, slugs: string[]): Promise<void> {
+	await env.DB.prepare(`INSERT OR REPLACE INTO worker_config (key, value) VALUES ('installed_apps', ?)`)
+		.bind(JSON.stringify([...new Set(slugs)]))
+		.run();
+}
+
 async function sha256Hex(s: string): Promise<string> {
 	const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
 	return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
@@ -104,10 +121,20 @@ app.get('/catalog', (c) =>
 	c.json({ apps: CATALOG.map(({ slug, name, description }) => ({ slug, name, description })) }),
 );
 
+// Reconcile bundle: what to WRITE (installed apps, fresh tokens) + what to
+// REMOVE (catalog apps not installed). The daemon + connect.sh apply both, so
+// toggling an app off in the dashboard uninstalls it on the next sync.
 app.get('/cache-bundle', async (c) => {
 	const origin = new URL(c.req.url).origin;
-	const files = await Promise.all(CATALOG.map((def) => buildCacheFile(c.env, origin, def)));
-	return c.json({ dir: '~/.config/goose/mcp-apps-cache', files });
+	const installed = await getInstalledSet(c.env);
+	const install: Array<{ filename: string; content: Record<string, unknown> }> = [];
+	const remove: string[] = [];
+	for (const def of CATALOG) {
+		const file = await buildCacheFile(c.env, origin, def);
+		if (installed.has(def.slug)) install.push(file);
+		else remove.push(file.filename);
+	}
+	return c.json({ dir: '~/.config/goose/mcp-apps-cache', install, remove });
 });
 
 export const appsApiRoutes = app;
