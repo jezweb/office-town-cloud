@@ -169,7 +169,7 @@ export function renderMiniCrmPage(token: string, origin: string): string {
 <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
 <script>
   var TOKEN=${JSON.stringify(token)}, ORIGIN=${JSON.stringify(origin)};
-  var DATA=ORIGIN+'/api/appdata/office-town-mini-crm';
+  var COL=ORIGIN+'/api/collection/contacts';
   var H={'Authorization':'Bearer '+TOKEN,'Content-Type':'application/json'};
   var STAGES=${JSON.stringify(CRM_STAGES)};
   function today(){ var d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
@@ -204,17 +204,28 @@ export function renderMiniCrmPage(token: string, origin: string): string {
     byStage(s){ return this.contacts.filter(function(c){return c.stage===s;}); },
     isOverdue(c){ return c.due_date && c.due_date<today(); },
 
-    async boot(){ try{ var r=await fetch(DATA,{headers:H}); var d=r.ok?await r.json():{}; this.contacts=Array.isArray(d.contacts)?d.contacts:[]; }catch(e){ this.contacts=[]; } },
+    async boot(){
+      try{ var r=await fetch(COL,{headers:H}); var d=r.ok?await r.json():{}; var es=Array.isArray(d.entries)?d.entries:[];
+        this.contacts=es.map(function(e){ var fm=e.frontmatter||{};
+          return { id:e.slug, slug:e.slug, name:fm.name||'', company:fm.company||'', email:fm.email||'', phone:fm.phone||'',
+            stage:fm.stage||'new', value:fm.value||0, next_step:fm.next_step||'', due_date:fm.due_date||'',
+            activity:Array.isArray(fm.activity)?fm.activity:[] }; });
+      }catch(e){ this.contacts=[]; } },
     open(id){ this.currentId=id; this.tab='contacts'; this.view='detail'; },
-    newContact(){ var c={id:'c-'+Math.random().toString(36).slice(2,9), name:'', company:'', email:'', phone:'', stage:'new', value:0, next_step:'', due_date:'', notes:'', activity:[], createdAt:new Date().toISOString()};
-      this.contacts.unshift(c); this.currentId=c.id; this.tab='contacts'; this.view='detail'; this.save(); },
+    newContact(){ var slug='c-'+Math.random().toString(36).slice(2,9);
+      var c={id:slug, slug:slug, name:'', company:'', email:'', phone:'', stage:'new', value:0, next_step:'', due_date:'', activity:[]};
+      this.contacts.unshift(c); this.currentId=c.id; this.tab='contacts'; this.view='detail'; },
     logNote(){ if(!this.noteDraft.trim()||!this.current)return; if(!this.current.activity)this.current.activity=[]; this.current.activity.unshift({at:today(),text:this.noteDraft.trim()}); this.noteDraft=''; this.touch(); },
-    markDone(id){ var c=this.contacts.find(function(x){return x.id===id;}); if(!c)return; if(!c.activity)c.activity=[]; c.activity.unshift({at:today(),text:'✓ '+c.next_step}); c.next_step=''; c.due_date=''; this.touch(); },
-    del(){ var id=this.currentId; this.contacts=this.contacts.filter(function(c){return c.id!==id;}); this.currentId=null; this.view='list'; this.save(); },
+    markDone(id){ var c=this.contacts.find(function(x){return x.id===id;}); if(!c)return; if(!c.activity)c.activity=[]; c.activity.unshift({at:today(),text:'✓ '+c.next_step}); c.next_step=''; c.due_date=''; this.saveContact(c); },
+    del(){ var c=this.current; if(!c)return; this.contacts=this.contacts.filter(function(x){return x.id!==c.id;}); this.currentId=null; this.view='list'; this.deleteContact(c.slug); },
 
-    touch(){ var self=this; clearTimeout(this.saveTimer); this.saveTimer=setTimeout(function(){ self.save(); },600); },
-    async save(){ this.savedNote='saving…'; try{ await fetch(DATA,{method:'PUT',headers:H,body:JSON.stringify({contacts:this.contacts})}); this.savedNote='✓ saved'; }catch(e){ this.savedNote='save failed'; }
+    touch(){ var self=this; var c=this.current; clearTimeout(this.saveTimer); this.saveTimer=setTimeout(function(){ self.saveContact(c); },600); },
+    frontmatterFor(c){ return { name:c.name, kind:'contact', company:c.company, email:c.email, phone:c.phone, stage:c.stage, value:c.value, next_step:c.next_step, due_date:c.due_date, activity:c.activity }; },
+    async saveContact(c){ if(!c||!(c.name||'').trim())return; this.savedNote='saving…';
+      try{ await fetch(COL+'/'+encodeURIComponent(c.slug),{method:'PUT',headers:H,body:JSON.stringify({frontmatter:this.frontmatterFor(c),body:'',why:'mini-crm edit'})}); this.savedNote='✓ saved'; }
+      catch(e){ this.savedNote='save failed'; }
       var self=this; setTimeout(function(){ self.savedNote=''; },1500); },
+    async deleteContact(slug){ try{ await fetch(COL+'/'+encodeURIComponent(slug),{method:'DELETE',headers:H}); }catch(e){} },
   }; }
 </script>
 </body></html>`;

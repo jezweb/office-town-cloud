@@ -55,7 +55,7 @@ export function renderCompliancePage(token: string, origin: string): string {
 <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
 <script>
   var TOKEN=${JSON.stringify(token)}, ORIGIN=${JSON.stringify(origin)};
-  var DATA=ORIGIN+'/api/appdata/office-town-compliance';
+  var COL=ORIGIN+'/api/collection/deadlines';
   var H={'Authorization':'Bearer '+TOKEN,'Content-Type':'application/json'};
   function todayD(){ return new Date(new Date().getFullYear(),new Date().getMonth(),new Date().getDate()); }
   function iso(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
@@ -63,7 +63,11 @@ export function renderCompliancePage(token: string, origin: string): string {
 
   function cmp(){ return {
     obligations:[], d:{name:'',due:'',frequency:'quarterly'}, savedNote:'',
-    async boot(){ try{ var r=await fetch(DATA,{headers:H}); var x=r.ok?await r.json():{}; this.obligations=Array.isArray(x.obligations)?x.obligations:[]; }catch(e){ this.obligations=[]; } },
+    async boot(){
+      try{ var r=await fetch(COL,{headers:H}); var x=r.ok?await r.json():{}; var es=Array.isArray(x.entries)?x.entries:[];
+        this.obligations=es.map(function(e){ var fm=e.frontmatter||{}; return { id:e.slug, slug:e.slug, name:fm.name||fm.title||'', due:fm.due||'', frequency:fm.frequency||'quarterly' }; })
+          .filter(function(o){return o.due;});
+      }catch(e){ this.obligations=[]; } },
     daysTo:daysTo,
     countLabel(o){ var n=daysTo(o.due); if(n<0) return Math.abs(n)+'d ago'; if(n===0) return 'today'; return n+'d'; },
     chip(o){ var n=daysTo(o.due); if(n<0) return 'bg-brand text-white'; if(n<=7) return 'bg-brand/20 text-brand-deep'; if(n<=30) return 'bg-amber-500/15 text-amber-700 dark:text-amber-400'; return 'bg-black/10 dark:bg-white/10 opacity-70'; },
@@ -75,12 +79,17 @@ export function renderCompliancePage(token: string, origin: string): string {
         {key:'month',label:'Next 30 days',items:s.filter(function(o){var n=daysTo(o.due);return n>=0&&n<=30;})},
         {key:'later',label:'Upcoming',items:s.filter(function(o){return daysTo(o.due)>30;})},
       ]; },
-    add(){ if(!this.d.due)return; this.obligations.push({id:'o-'+Math.random().toString(36).slice(2,9), name:this.d.name, due:this.d.due, frequency:this.d.frequency}); this.d={name:'',due:'',frequency:this.d.frequency}; this.save(); },
-    lodge(o){ if(o.frequency==='once'){ this.remove(o.id); return; }
-      var add={quarterly:3,monthly:1,annual:12}[o.frequency]||3; var dt=new Date(o.due+'T00:00:00'); dt.setMonth(dt.getMonth()+add); o.due=iso(dt); this.save(); },
-    remove(id){ this.obligations=this.obligations.filter(function(o){return o.id!==id;}); this.save(); },
-    async save(){ this.savedNote='saving…'; try{ await fetch(DATA,{method:'PUT',headers:H,body:JSON.stringify({obligations:this.obligations})}); this.savedNote='✓ saved'; }catch(e){ this.savedNote='save failed'; }
+    add(){ if(!this.d.due)return; var slug='o-'+Math.random().toString(36).slice(2,9);
+      var o={id:slug, slug:slug, name:this.d.name, due:this.d.due, frequency:this.d.frequency};
+      this.obligations.push(o); this.d={name:'',due:'',frequency:this.d.frequency}; this.saveOne(o); },
+    lodge(o){ if(o.frequency==='once'){ this.remove(o); return; }
+      var add={quarterly:3,monthly:1,annual:12}[o.frequency]||3; var dt=new Date(o.due+'T00:00:00'); dt.setMonth(dt.getMonth()+add); o.due=iso(dt); this.saveOne(o); },
+    remove(o){ var id=(o&&o.id)||o; var slug=(o&&o.slug)||o; this.obligations=this.obligations.filter(function(x){return x.id!==id;}); this.deleteOne(slug); },
+    async saveOne(o){ this.savedNote='saving…';
+      try{ await fetch(COL+'/'+encodeURIComponent(o.slug),{method:'PUT',headers:H,body:JSON.stringify({frontmatter:{title:o.name||('Deadline '+o.due), kind:'deadline', name:o.name, due:o.due, frequency:o.frequency},body:'',why:'compliance edit'})}); this.savedNote='✓ saved'; }
+      catch(e){ this.savedNote='save failed'; }
       var self=this; setTimeout(function(){ self.savedNote=''; },1500); },
+    async deleteOne(slug){ try{ await fetch(COL+'/'+encodeURIComponent(slug),{method:'DELETE',headers:H}); }catch(e){} },
   }; }
 </script>
 </body></html>`;

@@ -108,10 +108,30 @@ app.get('/quote-to-cash', async (c) => {
 	return c.html(renderQuoteToCashPage(t, new URL(c.req.url).origin));
 });
 
+app.get('/compliance', async (c) => {
+	const t = c.req.query('t') ?? '';
+	const bearer = await getEffectiveBearer(c.env);
+	const ok = t && (t === bearer || (await verifyUiToken(t, 'cortex:deadlines', bearer, Date.now())));
+	if (!ok) {
+		return c.html('<!DOCTYPE html><meta charset="utf-8"><body style="font:14px system-ui;padding:24px"><h2>Link expired</h2><p>Reopen this from Goose.</p></body>', 401);
+	}
+	// Self-sufficient: ensure the deadlines collection exists even without the
+	// Professional services pack. Idempotent.
+	try {
+		await new WikiService(c.env).registerCollection({
+			name: 'deadlines', shape: 'dated-stream', canonical_filename: '', required_fields: ['title'],
+			description: 'Compliance + lodgement deadlines (BAS, tax, super, ASIC)',
+		});
+	} catch {
+		/* already registered — fine */
+	}
+	return c.html(renderCompliancePage(t, new URL(c.req.url).origin));
+});
+
 app.get('/mini-crm', async (c) => {
 	const t = c.req.query('t') ?? '';
 	const bearer = await getEffectiveBearer(c.env);
-	const ok = t && (t === bearer || (await verifyUiToken(t, 'app:office-town-mini-crm', bearer, Date.now())));
+	const ok = t && (t === bearer || (await verifyUiToken(t, 'cortex:contacts', bearer, Date.now())));
 	if (!ok) {
 		return c.html('<!DOCTYPE html><meta charset="utf-8"><body style="font:14px system-ui;padding:24px"><h2>Link expired</h2><p>Reopen this from Goose.</p></body>', 401);
 	}
@@ -121,7 +141,6 @@ app.get('/mini-crm', async (c) => {
 const sampler: Array<[string, string, (t: string, o: string) => string]> = [
 	['/run-sheet', 'app:office-town-run-sheet', renderRunSheetPage],
 	['/onsite-quote', 'app:office-town-onsite-quote', renderOnsiteQuotePage],
-	['/compliance', 'app:office-town-compliance', renderCompliancePage],
 	['/bookings', 'app:office-town-bookings', renderBookingCalendarPage],
 	['/deliverables', 'app:office-town-deliverables', renderDeliverablesPage],
 	['/asset-register', 'app:office-town-asset-register', renderAssetRegisterPage],

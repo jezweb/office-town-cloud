@@ -68,8 +68,8 @@ export const CATALOG: AppDef[] = [
 	{
 		slug: 'office-town-mini-crm',
 		name: 'Mini CRM',
-		description: 'Pipeline board, contacts directory, follow-ups list and a Today triage — the four core CRM jobs in one window.',
-		scope: 'app:office-town-mini-crm',
+		description: 'Pipeline, contacts, follow-ups and Today — a CRM view over your real contacts collection (agent + wiki see every contact).',
+		scope: 'cortex:contacts',
 		pagePath: '/app/mini-crm',
 		width: 920,
 		height: 760,
@@ -95,8 +95,8 @@ export const CATALOG: AppDef[] = [
 	{
 		slug: 'office-town-compliance',
 		name: 'Compliance Deadlines (pro)',
-		description: 'BAS, tax, super and ASIC lodgements counted down with urgency chips; mark lodged and it rolls to next period.',
-		scope: 'app:office-town-compliance',
+		description: 'BAS, tax, super and ASIC lodgements counted down; each is a real entry in your deadlines collection. Mark lodged → rolls to next period.',
+		scope: 'cortex:deadlines',
 		pagePath: '/app/compliance',
 		width: 620,
 		height: 720,
