@@ -9,7 +9,7 @@ import { getEffectiveBearer } from './bearer';
 
 // NOTE: /api/triggers/ is deliberately NOT here — inbound webhooks authenticate
 // with a per-source secret, not the bearer.
-const MCP_PATH_PREFIXES = ['/mcp/', '/api/wiki/', '/api/files/', '/api/publish/', '/api/cron/', '/api/sync/', '/api/setup/', '/api/workflows/', '/api/jobs/'];
+const MCP_PATH_PREFIXES = ['/mcp/', '/api/wiki/', '/api/files/', '/api/publish/', '/api/cron/', '/api/sync/', '/api/setup/', '/api/workflows/', '/api/jobs/', '/api/apps/'];
 
 // Paths under MCP_PATH_PREFIXES that are explicitly public — they don't
 // expose any data themselves, only direct the caller to authenticate.

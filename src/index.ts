@@ -32,6 +32,7 @@ import { syncRoutes } from './sync/routes';
 import { workflowsRoutes, jobsRoutes, triggerRoutes } from './workflows/routes';
 import { tasksApiRoutes } from './tasks/routes';
 import { cortexApiRoutes } from './cortex-api/routes';
+import { appsApiRoutes } from './apps-api/routes';
 import { appRoutes } from './app/routes';
 import type { ForwardableEmailMessage } from '@cloudflare/workers-types';
 
@@ -122,6 +123,8 @@ app.route('/api/tasks', tasksApiRoutes);
 // Cortex edit API — self-authed (UI token scope 'cortex', or bearer). Powers
 // click-to-edit fields + append-note on the entity panel.
 app.route('/api/cortex', cortexApiRoutes);
+// App catalog + Goose install bundle (bearer-gated) — connect.sh + daemon consume it.
+app.route('/api/apps', appsApiRoutes);
 // externalUrl panel pages (token-gated) — /app/tasks, /app/entity.
 app.route('/app', appRoutes);
 app.route('/', setupRoutes);

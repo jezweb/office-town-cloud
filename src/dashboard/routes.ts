@@ -1400,6 +1400,33 @@ echo ""
 echo "✓ Goose config updated."
 echo ""
 
+# ---- Stage 2.4: Office Town apps (Goose Apps page) -------------------------
+# Writes GooseApp cache JSONs into ~/.config/goose/mcp-apps-cache/ so the
+# Office Town panels appear on Goose's Apps page with no manual Import. The
+# worker builds them (with scoped tokens); we just drop them in the cache.
+echo "→ Installing Office Town apps to Goose's Apps page..."
+WORKER_URL="$WORKER_URL" MCP_BEARER="$MCP_BEARER" $PY <<'PYEOF'
+import os, json, urllib.request, pathlib
+worker = os.environ['WORKER_URL'].rstrip('/')
+bearer = os.environ['MCP_BEARER']
+try:
+    req = urllib.request.Request(
+        f"{worker}/api/apps/cache-bundle",
+        headers={"Authorization": f"Bearer {bearer}", "User-Agent": "office-town-connect/1.0"},
+    )
+    data = json.loads(urllib.request.urlopen(req, timeout=20).read())
+    cache_dir = pathlib.Path.home() / '.config' / 'goose' / 'mcp-apps-cache'
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    n = 0
+    for f in data.get('files', []):
+        (cache_dir / f['filename']).write_text(json.dumps(f['content'], indent=2))
+        n += 1
+    print(f"  ✓ Installed {n} Office Town app(s) — open the Apps tab in Goose (restart if it was running)")
+except Exception as e:
+    print(f"  (skipped apps install: {e} — you can Import them from the dashboard instead)")
+PYEOF
+echo ""
+
 # ---- Stage 2.5: Office Town plugin (roles + skills + recipes + hooks) ------
 # The plugin gives the 4 roles (boss/librarian/worker/scout), their skills,
 # the town standing orders, and the session-start hook. Without it the agent
