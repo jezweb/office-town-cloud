@@ -1780,7 +1780,14 @@ dashboardRoutes.get('/dashboard/connect', async (c) => {
 
 	const content = `${claimBanner}
 <h1 style="margin-top: 0;">Connect your Goose</h1>
-<p class="muted">One line in your terminal wires all 6 Office Town MCPs into Goose. If the <code>goose</code> CLI isn't installed yet, the script will bootstrap it for you.</p>
+<p class="muted">Two ways to connect — pick one. <strong>Fastest:</strong> the one-click button below (Goose Desktop, no terminal). <strong>Full setup:</strong> the terminal one-liner further down also installs the sync daemon + all 7 MCPs.</p>
+
+<div class="card" style="max-width: 800px; margin-top: 1.25rem; background: linear-gradient(180deg, #fbf3e9 0%, var(--card-bg) 100%); border-color: var(--accent);">
+  <h2 style="margin-top: 0;">① Fastest — one click (Goose Desktop)</h2>
+  <p style="margin: 0.5rem 0;" class="muted">Adds Office Town's visual panels — Workflows, Cortex, Tasks, the editable entity cards — to Goose Desktop. Goose pops a confirm dialog; that's it. No terminal.</p>
+  <a id="goose-deeplink" href="#" style="display: inline-block; padding: 0.65rem 1.2rem; border-radius: 6px; background: var(--accent); color: white; font-size: 1.05em; font-weight: 600; text-decoration: none;">Add to Goose Desktop →</a>
+  <p class="muted" style="font-size: 0.8em; margin-top: 0.7rem;">Then in Goose: open the <strong>Apps</strong> tab (restart Goose if it was already open), or just ask in a chat — <em>"show my task board"</em>. The link carries your bearer token; safe to click here on your own dashboard, but don't share it.</p>
+</div>
 
 <div class="card" style="max-width: 800px; margin-top: 1.5rem;">
   <label style="display: block; margin-bottom: 1rem;">
@@ -1800,8 +1807,8 @@ dashboardRoutes.get('/dashboard/connect', async (c) => {
 </div>
 
 <div class="card" style="max-width: 800px; margin-top: 1.5rem;">
-  <h2 style="margin-top: 0;">Run this in your terminal</h2>
-  <p style="margin: 0.5rem 0;" class="muted">Open Terminal (macOS / Linux) or WSL (Windows) and paste this single line. It installs Goose CLI + the plugin if needed, wires the 6 MCPs, and sets up your cortex folder.</p>
+  <h2 style="margin-top: 0;">② Full setup — one line in your terminal</h2>
+  <p style="margin: 0.5rem 0;" class="muted">The complete install: Goose CLI + the plugin if needed, all 7 MCPs, and your synced cortex folder (so your wiki lives as real files on disk). Open Terminal (macOS / Linux) or WSL (Windows) and paste this single line.</p>
 
   <label style="display: flex; gap: 0.5rem; align-items: flex-start; margin: 0.75rem 0; padding: 0.6rem 0.8rem; background: var(--code); border: 1px solid var(--border); border-radius: 6px; cursor: pointer;">
     <input id="with-sync" type="checkbox" checked style="margin-top: 0.2rem;">
@@ -1821,15 +1828,6 @@ dashboardRoutes.get('/dashboard/connect', async (c) => {
   <pre id="oneliner" style="background: var(--code); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; font-size: 0.85em; overflow-x: auto; line-height: 1.45; white-space: pre-wrap; word-break: break-all;"></pre>
 
   <p class="muted" style="font-size: 0.85em; margin-top: 0.75rem;">Restart Goose Desktop afterward (if it was open) so it picks up the new extensions. Then in a fresh chat, try <code>list contacts in the wiki</code> to confirm.</p>
-
-  <div style="margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid var(--border);">
-    <strong style="font-size: 0.95em;">No terminal? Add the visual panels in one click</strong>
-    <p class="muted" style="font-size: 0.85em; margin: 0.3rem 0 0.6rem;">
-      Opens Goose Desktop and adds the Office Town <strong>panels</strong> server (the Workflows dashboard + Cortex browser). Goose will ask you to confirm. This adds the visual tools only — run the one-liner above for the full setup (all MCPs + the sync daemon).
-    </p>
-    <a id="goose-deeplink" href="#" style="display: inline-block; padding: 0.5rem 1rem; border-radius: 6px; background: var(--accent); color: white; font-size: 0.95em; font-weight: 500; text-decoration: none;">Add to Goose Desktop</a>
-    <p class="muted" style="font-size: 0.78em; margin-top: 0.5rem;">The link carries your bearer token — it's safe to click here on your own dashboard, but don't share or post it.</p>
-  </div>
 
   <details style="margin-top: 1rem; font-size: 0.9em;">
     <summary style="cursor: pointer; color: var(--accent);">What does the script do?</summary>
