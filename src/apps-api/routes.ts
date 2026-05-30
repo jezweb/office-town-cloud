@@ -16,7 +16,7 @@ import { getEffectiveBearer } from '../auth/bearer';
 
 const app = new Hono<AppContext>();
 
-interface AppDef {
+export interface AppDef {
 	slug: string;
 	name: string;
 	description: string;
@@ -28,7 +28,7 @@ interface AppDef {
 
 // The catalog. A "good" standalone app saves directly (no agent round-trip) —
 // Tasks is the proven one. Grows as we build more direct-manipulation panels.
-const CATALOG: AppDef[] = [
+export const CATALOG: AppDef[] = [
 	{
 		slug: 'office-town-tasks',
 		name: 'Office Town Tasks',
@@ -56,9 +56,33 @@ function wrapperHtml(src: string): string {
 	return `<!DOCTYPE html><html><head><meta charset="utf-8"><style>html,body{margin:0;height:100%}iframe{border:0;width:100%;height:100vh;display:block}</style></head><body><iframe src="${src}" allow="clipboard-write"></iframe></body></html>`;
 }
 
-async function buildCacheFile(env: Env, origin: string, def: AppDef): Promise<{ filename: string; content: Record<string, unknown> }> {
+async function liveSrc(env: Env, origin: string, def: AppDef): Promise<string> {
 	const token = await signUiToken(def.scope, 60 * 60 * 24 * 365, await getEffectiveBearer(env), Date.now());
-	const src = `${origin}${def.pagePath}?t=${encodeURIComponent(token)}`;
+	return `${origin}${def.pagePath}?t=${encodeURIComponent(token)}`;
+}
+
+// The importable GooseApp HTML (JSON-LD metadata + the live iframe). The user
+// picks this file via Goose's "Import App".
+export async function buildGooseAppHtml(env: Env, origin: string, def: AppDef): Promise<{ filename: string; html: string }> {
+	const src = await liveSrc(env, origin, def);
+	const meta = JSON.stringify({
+		'@context': 'urn:goose.ai:schema',
+		'@type': 'GooseApp',
+		name: def.slug,
+		description: def.description,
+		width: def.width,
+		height: def.height,
+		resizable: true,
+	});
+	const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
+<script type="application/ld+json">${meta}</script>
+<style>html,body{margin:0;height:100%}iframe{border:0;width:100%;height:100vh;display:block}</style>
+</head><body><iframe src="${src}" allow="clipboard-write"></iframe></body></html>`;
+	return { filename: `${def.slug}.html`, html };
+}
+
+async function buildCacheFile(env: Env, origin: string, def: AppDef): Promise<{ filename: string; content: Record<string, unknown> }> {
+	const src = await liveSrc(env, origin, def);
 	const uri = `ui://apps/${def.slug}`;
 	return {
 		filename: `${await cacheKey(uri)}.json`,

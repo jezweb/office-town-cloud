@@ -13,6 +13,7 @@ import { renderMarkdownBody, resolveWikilinks } from '../publish/service';
 import type { AppContext } from '../types';
 import { loadTownStats, renderTownView } from './town-view';
 import { PROMPT_VARIANTS } from '../setup/prompts';
+import { CATALOG, buildGooseAppHtml } from '../apps-api/routes';
 
 export const dashboardRoutes = new Hono<AppContext>();
 
@@ -152,6 +153,7 @@ a.wikilink-broken:hover { background: rgba(169, 68, 66, 0.18); }
     <a href="/dashboard/cron">Routines</a>
     <a href="/dashboard/files">Files</a>
     <a href="/dashboard/published">Published</a>
+    <a href="/dashboard/apps">Apps</a>
     <a href="/dashboard/connect" style="margin-left: auto;">Connect Goose →</a>
     <a href="/dashboard/sign-out" style="color: var(--muted);">Sign out</a>
   </nav>
@@ -227,6 +229,38 @@ function linkifyValue(key: string, raw: unknown): string {
 
 	return escapeHtml(value);
 }
+
+// Apps catalogue — Office Town panels installable into Goose's Apps page.
+dashboardRoutes.get('/dashboard/apps', (c) => {
+	const cards = CATALOG.map(
+		(a) => `
+    <div class="card" style="max-width: 460px; margin-bottom: 1rem;">
+      <h2 style="margin-top: 0;">${escapeHtml(a.name)}</h2>
+      <p class="muted">${escapeHtml(a.description)}</p>
+      <p class="muted" style="font-size: 0.8em; margin: 0.25rem 0 0.85rem;">${a.width}×${a.height} window · saves directly to your cortex</p>
+      <a href="/dashboard/apps/download/${encodeURIComponent(a.slug)}" style="display: inline-block; padding: 0.5rem 1rem; border-radius: 6px; background: var(--accent); color: #fff; text-decoration: none; font-weight: 500;">Download for Goose →</a>
+    </div>`,
+	).join('');
+	const content = `
+<h1 style="margin-top: 0;">Apps</h1>
+<p class="muted" style="max-width: 720px;">Office Town panels that run as standalone windows in Goose Desktop. The setup script (<a href="/dashboard/connect">Connect Goose</a>) installs these automatically. Or download one below and use <strong>Import App</strong> on Goose's Apps page.</p>
+${cards || '<p class="muted">No apps in the catalogue yet.</p>'}
+<p class="muted" style="font-size: 0.85em; max-width: 720px; margin-top: 1.5rem;">These are direct-edit panels (a task board, etc.) that save straight to your cortex — they work as standalone windows. Agent-driven panels (workflows, the cortex browser) work best inline: just ask your agent <em>"show my workflows"</em> in a chat.</p>`;
+	return c.html(LAYOUT('Apps - Office Town', content));
+});
+
+// Download a single app as a GooseApp HTML file (for Goose's Import App).
+dashboardRoutes.get('/dashboard/apps/download/:slug', async (c) => {
+	const def = CATALOG.find((a) => a.slug === c.req.param('slug'));
+	if (!def) return c.text('Unknown app', 404);
+	const { filename, html } = await buildGooseAppHtml(c.env, new URL(c.req.url).origin, def);
+	return new Response(html, {
+		headers: {
+			'content-type': 'text/html; charset=utf-8',
+			'content-disposition': `attachment; filename="${filename}"`,
+		},
+	});
+});
 
 dashboardRoutes.get('/', async (c) => {
 	const env = c.env;
