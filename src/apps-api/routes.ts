@@ -47,6 +47,15 @@ export const CATALOG: AppDef[] = [
 		width: 480,
 		height: 560,
 	},
+	{
+		slug: 'office-town-showcase',
+		name: 'Office Town Capabilities',
+		description: 'A demo of the ceiling — Tailwind theming, tabs, charts, tables, attachments',
+		scope: 'app:office-town-showcase',
+		pagePath: '/app/showcase',
+		width: 820,
+		height: 720,
+	},
 ];
 
 // Which apps the owner wants installed (worker_config). Default: all catalog.

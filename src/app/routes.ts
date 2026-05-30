@@ -12,6 +12,7 @@ import { verifyUiToken } from '../auth/ui-token';
 import { renderTasksPage } from './tasks-page';
 import { renderEntityEditPage } from './entity-page';
 import { renderCapturePage } from './capture-page';
+import { renderCapabilitiesPage } from './capabilities-page';
 import { getCustomAppHtml } from '../apps-api/routes';
 import { WikiService } from '../wiki/service';
 
@@ -65,6 +66,16 @@ app.get('/capture', async (c) => {
 		return c.html('<!DOCTYPE html><meta charset="utf-8"><body style="font:14px system-ui;padding:24px"><h2>Link expired</h2><p>Reopen this from Goose.</p></body>', 401);
 	}
 	return c.html(renderCapturePage(t, new URL(c.req.url).origin));
+});
+
+app.get('/showcase', async (c) => {
+	const t = c.req.query('t') ?? '';
+	const bearer = await getEffectiveBearer(c.env);
+	const ok = t && (t === bearer || (await verifyUiToken(t, 'app:office-town-showcase', bearer, Date.now())));
+	if (!ok) {
+		return c.html('<!DOCTYPE html><meta charset="utf-8"><body style="font:14px system-ui;padding:24px"><h2>Link expired</h2><p>Reopen this from Goose.</p></body>', 401);
+	}
+	return c.html(renderCapabilitiesPage(t, new URL(c.req.url).origin));
 });
 
 // Agent-built apps: serve the stored HTML with a window.ot persistence bridge
