@@ -33,6 +33,7 @@ import { workflowsRoutes, jobsRoutes, triggerRoutes } from './workflows/routes';
 import { tasksApiRoutes } from './tasks/routes';
 import { cortexApiRoutes } from './cortex-api/routes';
 import { appsApiRoutes } from './apps-api/routes';
+import { appDataRoutes } from './appdata/routes';
 import { appRoutes } from './app/routes';
 import type { ForwardableEmailMessage } from '@cloudflare/workers-types';
 
@@ -125,6 +126,8 @@ app.route('/api/tasks', tasksApiRoutes);
 app.route('/api/cortex', cortexApiRoutes);
 // App catalog + Goose install bundle (bearer-gated) — connect.sh + daemon consume it.
 app.route('/api/apps', appsApiRoutes);
+// Per-app key-value store for agent-built apps — self-authed (app-scoped token).
+app.route('/api/appdata', appDataRoutes);
 // externalUrl panel pages (token-gated) — /app/tasks, /app/entity.
 app.route('/app', appRoutes);
 app.route('/', setupRoutes);

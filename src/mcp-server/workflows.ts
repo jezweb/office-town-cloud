@@ -21,6 +21,7 @@ import { renderMarkdownBody } from '../publish/service';
 import { renderWorkflowsApp, type WorkflowSummary, type PendingDraft } from './workflows-ui';
 import { renderOverview, renderCollection, renderEntry } from './cortex-browser-ui';
 import { renderKitGallery } from './cortex-kit-gallery-ui';
+import { createCustomApp } from '../apps-api/routes';
 // cortex-entity-ui.ts (rawHtml read-only card) is kept for a future inline-mention
 // path; the entity view now serves the editable externalUrl page (app/entity-page).
 
@@ -78,6 +79,28 @@ const TOOLS = {
 				slug: { type: 'string', description: 'view=cortex: entry slug to open (requires collection)' },
 			},
 			required: ['view'],
+		},
+	},
+	create_app: {
+		description: [
+			'Create a NEW standalone app for the owner and install it to their Goose Apps page (it appears',
+			'within ~1 min, daemon-installed). You author a self-contained HTML document; it runs in its own',
+			'Goose window. PERSISTENCE: the app has window.ot.load() (returns saved JSON, {} if none) and',
+			'window.ot.save(data) (persists any JSON) — use these for all state, NOT localStorage or external',
+			'servers. The HTML MUST be fully self-contained: inline CSS + JS, NO external CDN/script/font URLs',
+			'(the sandbox blocks them). Prefer the warm Office Town look (cream #f7f3e8 / terracotta #c25e4f, or',
+			'a dark espresso variant). Use when the owner asks for a custom tool, tracker, board, or widget.',
+		].join(' '),
+		inputSchema: {
+			type: 'object',
+			properties: {
+				name: { type: 'string', description: 'Short app name (shown on the card + window title)' },
+				description: { type: 'string', description: 'One line describing what it does' },
+				html: { type: 'string', description: 'Complete self-contained HTML doc. Use window.ot.load()/save(data) for persistence.' },
+				width: { type: 'number', description: 'Window width px (default 720)' },
+				height: { type: 'number', description: 'Window height px (default 640)' },
+			},
+			required: ['name', 'html'],
 		},
 	},
 } as const;
@@ -200,6 +223,31 @@ async function handleRpc(env: Env, req: JsonRpcRequest, origin: string): Promise
 				};
 			case 'tools/call': {
 				const params = (req.params ?? {}) as { name: string; arguments?: Record<string, unknown> };
+				if (params.name === 'create_app') {
+					const ca = (params.arguments ?? {}) as { name?: string; description?: string; html?: string; width?: number; height?: number };
+					if (!ca.name || !ca.html) {
+						return { jsonrpc: '2.0', id: req.id, error: { code: -32602, message: 'create_app needs {name, html}' } };
+					}
+					const def = await createCustomApp(env, {
+						name: ca.name,
+						description: ca.description ?? '',
+						html: ca.html,
+						width: ca.width,
+						height: ca.height,
+					});
+					return {
+						jsonrpc: '2.0',
+						id: req.id,
+						result: {
+							content: [
+								{
+									type: 'text',
+									text: `Created app "${def.name}" (${def.slug}). It installs to the owner's Goose Apps page within ~1 minute (the sync daemon writes it). Tell them to open the Apps tab and Launch it.`,
+								},
+							],
+						},
+					};
+				}
 				if (params.name !== 'cortex_ui') {
 					return { jsonrpc: '2.0', id: req.id, error: { code: -32602, message: `Unknown tool: ${params.name}` } };
 				}

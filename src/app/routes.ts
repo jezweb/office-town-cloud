@@ -12,6 +12,7 @@ import { verifyUiToken } from '../auth/ui-token';
 import { renderTasksPage } from './tasks-page';
 import { renderEntityEditPage } from './entity-page';
 import { renderCapturePage } from './capture-page';
+import { getCustomAppHtml } from '../apps-api/routes';
 import { WikiService } from '../wiki/service';
 
 const app = new Hono<AppContext>();
@@ -64,6 +65,26 @@ app.get('/capture', async (c) => {
 		return c.html('<!DOCTYPE html><meta charset="utf-8"><body style="font:14px system-ui;padding:24px"><h2>Link expired</h2><p>Reopen this from Goose.</p></body>', 401);
 	}
 	return c.html(renderCapturePage(t, new URL(c.req.url).origin));
+});
+
+// Agent-built apps: serve the stored HTML with a window.ot persistence bridge
+// injected (scoped to this app's data store). The agent's HTML calls
+// ot.load()/ot.save(data); it never sees the bearer or the cortex.
+app.get('/custom/:appId', async (c) => {
+	const appId = c.req.param('appId');
+	const t = c.req.query('t') ?? '';
+	const bearer = await getEffectiveBearer(c.env);
+	const ok = t && (t === bearer || (await verifyUiToken(t, `app:${appId}`, bearer, Date.now())));
+	if (!ok) {
+		return c.html('<!DOCTYPE html><meta charset="utf-8"><body style="font:14px system-ui;padding:24px"><h2>Link expired</h2><p>Reopen this from Goose.</p></body>', 401);
+	}
+	const appDef = await getCustomAppHtml(c.env, appId);
+	if (!appDef) return c.html('<body style="font:14px system-ui;padding:24px">App not found.</body>', 404);
+	const dataUrl = `${new URL(c.req.url).origin}/api/appdata/${appId}`;
+	const bridge = `<script>window.ot=(function(){var A=${JSON.stringify(dataUrl)},H={'Authorization':'Bearer '+${JSON.stringify(t)},'Content-Type':'application/json'};return{load:function(){return fetch(A,{headers:H}).then(function(r){return r.ok?r.json():{};}).catch(function(){return{};});},save:function(d){return fetch(A,{method:'PUT',headers:H,body:JSON.stringify(d)});}};})();</script>`;
+	let html = appDef.html;
+	html = html.includes('</head>') ? html.replace('</head>', `${bridge}</head>`) : bridge + html;
+	return c.html(html);
 });
 
 export const appRoutes = app;

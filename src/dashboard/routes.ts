@@ -13,7 +13,7 @@ import { renderMarkdownBody, resolveWikilinks } from '../publish/service';
 import type { AppContext } from '../types';
 import { loadTownStats, renderTownView } from './town-view';
 import { PROMPT_VARIANTS } from '../setup/prompts';
-import { CATALOG, buildGooseAppHtml, getInstalledSet, setInstalledSet } from '../apps-api/routes';
+import { buildGooseAppHtml, getInstalledSet, setInstalledSet, getFullCatalog } from '../apps-api/routes';
 
 export const dashboardRoutes = new Hono<AppContext>();
 
@@ -235,7 +235,7 @@ function linkifyValue(key: string, raw: unknown): string {
 // cache files). Toggling here changes intent; it applies within ~1 min.
 dashboardRoutes.get('/dashboard/apps', async (c) => {
 	const installed = await getInstalledSet(c.env);
-	const cards = CATALOG.map((a) => {
+	const cards = (await getFullCatalog(c.env)).map((a) => {
 		const on = installed.has(a.slug);
 		const toggleLabel = on ? 'Uninstall' : 'Install';
 		const toggleBg = on ? 'transparent; color: var(--muted); border: 1px solid var(--border)' : 'var(--accent); color: #fff; border: 0';
@@ -270,7 +270,7 @@ dashboardRoutes.post('/dashboard/apps/toggle', async (c) => {
 	const body = await c.req.parseBody();
 	const slug = String(body.slug ?? '');
 	const install = String(body.install ?? '') === '1';
-	if (CATALOG.some((a) => a.slug === slug)) {
+	if ((await getFullCatalog(c.env)).some((a) => a.slug === slug)) {
 		const set = await getInstalledSet(c.env);
 		if (install) set.add(slug);
 		else set.delete(slug);
@@ -281,7 +281,7 @@ dashboardRoutes.post('/dashboard/apps/toggle', async (c) => {
 
 // Download a single app as a GooseApp HTML file (for Goose's Import App).
 dashboardRoutes.get('/dashboard/apps/download/:slug', async (c) => {
-	const def = CATALOG.find((a) => a.slug === c.req.param('slug'));
+	const def = (await getFullCatalog(c.env)).find((a) => a.slug === c.req.param('slug'));
 	if (!def) return c.text('Unknown app', 404);
 	const { filename, html } = await buildGooseAppHtml(c.env, new URL(c.req.url).origin, def);
 	return new Response(html, {

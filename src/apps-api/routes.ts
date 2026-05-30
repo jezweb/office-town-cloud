@@ -66,6 +66,88 @@ export async function setInstalledSet(env: Env, slugs: string[]): Promise<void> 
 		.run();
 }
 
+// --- Agent-built (custom) apps ----------------------------------------------
+// Stored in R2 as apps/custom/<appId>.json = {appId, name, description, html,
+// width, height}. They flow through the SAME catalogue → bundle → daemon path
+// as built-ins, so an agent creating one installs it with no new worker code.
+
+interface CustomApp {
+	appId: string;
+	name: string;
+	description: string;
+	html: string;
+	width: number;
+	height: number;
+}
+
+export async function getCustomApps(env: Env): Promise<CustomApp[]> {
+	const listing = await env.FILES.list({ prefix: 'apps/custom/', limit: 200 });
+	const apps: CustomApp[] = [];
+	for (const obj of listing.objects) {
+		if (!obj.key.endsWith('.json')) continue;
+		const f = await env.FILES.get(obj.key);
+		if (!f) continue;
+		try {
+			apps.push(JSON.parse(await f.text()) as CustomApp);
+		} catch {
+			/* skip malformed */
+		}
+	}
+	return apps;
+}
+
+function customToDef(a: CustomApp): AppDef {
+	return {
+		slug: a.appId,
+		name: a.name,
+		description: a.description,
+		scope: `app:${a.appId}`, // token can only touch THIS app's data store
+		pagePath: `/app/custom/${a.appId}`,
+		width: a.width,
+		height: a.height,
+	};
+}
+
+// Built-ins + agent-built, as one list. Everything downstream uses this.
+export async function getFullCatalog(env: Env): Promise<AppDef[]> {
+	return [...CATALOG, ...(await getCustomApps(env)).map(customToDef)];
+}
+
+export async function getCustomAppHtml(env: Env, appId: string): Promise<CustomApp | null> {
+	const f = await env.FILES.get(`apps/custom/${appId}.json`);
+	if (!f) return null;
+	try {
+		return JSON.parse(await f.text()) as CustomApp;
+	} catch {
+		return null;
+	}
+}
+
+function slugify(name: string): string {
+	return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'app';
+}
+
+// Create (or replace) an agent-built app + auto-add it to the installed-set.
+export async function createCustomApp(
+	env: Env,
+	input: { name: string; description: string; html: string; width?: number; height?: number },
+): Promise<AppDef> {
+	const appId = `custom-${slugify(input.name)}-${crypto.randomUUID().slice(0, 4)}`;
+	const app: CustomApp = {
+		appId,
+		name: input.name,
+		description: input.description,
+		html: input.html,
+		width: input.width ?? 720,
+		height: input.height ?? 640,
+	};
+	await env.FILES.put(`apps/custom/${appId}.json`, JSON.stringify(app), { httpMetadata: { contentType: 'application/json' } });
+	const set = await getInstalledSet(env);
+	set.add(appId);
+	await setInstalledSet(env, [...set]);
+	return customToDef(app);
+}
+
 async function sha256Hex(s: string): Promise<string> {
 	const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
 	return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
@@ -126,9 +208,10 @@ async function buildCacheFile(env: Env, origin: string, def: AppDef): Promise<{ 
 	};
 }
 
-app.get('/catalog', (c) =>
-	c.json({ apps: CATALOG.map(({ slug, name, description }) => ({ slug, name, description })) }),
-);
+app.get('/catalog', async (c) => {
+	const cat = await getFullCatalog(c.env);
+	return c.json({ apps: cat.map(({ slug, name, description }) => ({ slug, name, description })) });
+});
 
 // Reconcile bundle: what to WRITE (installed apps, fresh tokens) + what to
 // REMOVE (catalog apps not installed). The daemon + connect.sh apply both, so
@@ -138,7 +221,7 @@ app.get('/cache-bundle', async (c) => {
 	const installed = await getInstalledSet(c.env);
 	const install: Array<{ filename: string; content: Record<string, unknown> }> = [];
 	const remove: string[] = [];
-	for (const def of CATALOG) {
+	for (const def of await getFullCatalog(c.env)) {
 		const file = await buildCacheFile(c.env, origin, def);
 		if (installed.has(def.slug)) install.push(file);
 		else remove.push(file.filename);
