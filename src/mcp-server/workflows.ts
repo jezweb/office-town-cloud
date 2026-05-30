@@ -23,6 +23,8 @@ import { renderOverview, renderCollection, renderEntry } from './cortex-browser-
 import { renderKitGallery } from './cortex-kit-gallery-ui';
 import { createCustomApp } from '../apps-api/routes';
 import { createSharedApp } from '../share-app/store';
+import { PACKS, getPack } from '../packs/registry';
+import { installPack } from '../packs/routes';
 // cortex-entity-ui.ts (rawHtml read-only card) is kept for a future inline-mention
 // path; the entity view now serves the editable externalUrl page (app/entity-page).
 
@@ -121,6 +123,22 @@ const TOOLS = {
 				html: { type: 'string', description: 'Complete self-contained HTML doc. Use window.ot.submit(data) to send the response.' },
 			},
 			required: ['name', 'html'],
+		},
+	},
+	install_pack: {
+		description: [
+			'Install a vertical PACK for the owner when they describe their line of work — e.g. they say',
+			"\"I'm a sparkie / plumber / builder\" → install 'trades'; \"I'm an accountant / bookkeeper /",
+			"consultant\" → install 'professional-services'. A pack registers the collections that trade needs",
+			'(jobs/sites for trades, engagements/deadlines for pro services) AND installs the relevant apps',
+			'(they appear on the Apps page within ~1 min). Call with no {slug} to list available packs first.',
+			`Available packs: ${PACKS.map((p) => p.slug).join(', ')}.`,
+		].join(' '),
+		inputSchema: {
+			type: 'object',
+			properties: {
+				slug: { type: 'string', enum: PACKS.map((p) => p.slug), description: 'Pack to install. Omit to list available packs.' },
+			},
 		},
 	},
 	launch_app: {
@@ -302,6 +320,26 @@ async function handleRpc(env: Env, req: JsonRpcRequest, origin: string): Promise
 									text: `Created a shareable app "${shared.name}". Send your customer this magic link:\n${url}\n\nThey open it (no login), fill it in, and the response lands in your cortex inbox. The link is write-only — they can't see your cortex or anything else.`,
 								},
 							],
+						},
+					};
+				}
+				if (params.name === 'install_pack') {
+					const ip = (params.arguments ?? {}) as { slug?: string };
+					if (!ip.slug) {
+						const list = PACKS.map((p) => `• ${p.slug} — ${p.name}: ${p.blurb}`).join('\n');
+						return { jsonrpc: '2.0', id: req.id, result: { content: [{ type: 'text', text: `Available packs:\n${list}\n\nCall install_pack with {slug} to install one.` }] } };
+					}
+					const pack = getPack(ip.slug);
+					if (!pack) return { jsonrpc: '2.0', id: req.id, error: { code: -32602, message: `Unknown pack: ${ip.slug}. Available: ${PACKS.map((p) => p.slug).join(', ')}` } };
+					const r = await installPack(env, ip.slug);
+					const cols = [...r.collectionsRegistered, ...r.collectionsAlreadyPresent].join(', ') || 'none';
+					const apps = r.appsAdded.length ? r.appsAdded.join(', ') : 'all already installed';
+					return {
+						jsonrpc: '2.0',
+						id: req.id,
+						result: {
+							content: [{ type: 'text', text: `Installed the ${pack.name} pack. Collections ready: ${cols}. Apps added: ${apps}. The new apps appear on the Goose Apps page within ~1 minute (the sync daemon writes them).` }],
+							_meta: r.appsAdded.length ? { platform_notification: { method: 'platform_event', params: { extension: 'apps', event_type: 'app_created', app_name: r.appsAdded[0] } } } : undefined,
 						},
 					};
 				}

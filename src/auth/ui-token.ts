@@ -42,3 +42,16 @@ export async function verifyUiToken(token: string, scope: string, secret: string
 	if (!Number.isFinite(exp) || exp < Math.floor(nowMs / 1000)) return false;
 	return constantTimeEquals(sig, await hmacHex(secret, `${s}.${expStr}`));
 }
+
+// Verify a validly-signed, unexpired token of ANY scope. For shared owner
+// capabilities (media: upload/transcribe/generate) that any of the owner's
+// apps may use — every token is signed with the owner's bearer, so a valid
+// token means the owner's app, regardless of its scope.
+export async function verifyAnyUiToken(token: string, secret: string, nowMs: number): Promise<boolean> {
+	const parts = token.split('.');
+	if (parts.length !== 3) return false;
+	const [s, expStr, sig] = parts;
+	const exp = Number.parseInt(expStr, 10);
+	if (!Number.isFinite(exp) || exp < Math.floor(nowMs / 1000)) return false;
+	return constantTimeEquals(sig, await hmacHex(secret, `${s}.${expStr}`));
+}

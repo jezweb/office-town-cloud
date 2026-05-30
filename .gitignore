@@ -10,3 +10,7 @@ dist/
 # .jez/ is local-only working space (plans, audits, scripts, screenshots).
 # This is a PUBLIC repo — keep the whole tree off GitHub.
 .jez/
+
+# Test/download artifacts
+.playwright-cli/
+/connect.sh

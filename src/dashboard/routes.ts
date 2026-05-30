@@ -14,6 +14,9 @@ import type { AppContext } from '../types';
 import { loadTownStats, renderTownView } from './town-view';
 import { PROMPT_VARIANTS } from '../setup/prompts';
 import { buildGooseAppHtml, getInstalledSet, setInstalledSet, getFullCatalog } from '../apps-api/routes';
+import { PACKS } from '../packs/registry';
+import { installPack } from '../packs/routes';
+import { WikiService } from '../wiki/service';
 
 export const dashboardRoutes = new Hono<AppContext>();
 
@@ -154,6 +157,7 @@ a.wikilink-broken:hover { background: rgba(169, 68, 66, 0.18); }
     <a href="/dashboard/files">Files</a>
     <a href="/dashboard/published">Published</a>
     <a href="/dashboard/apps">Apps</a>
+    <a href="/dashboard/packs">Packs</a>
     <a href="/dashboard/connect" style="margin-left: auto;">Connect Goose →</a>
     <a href="/dashboard/sign-out" style="color: var(--muted);">Sign out</a>
   </nav>
@@ -277,6 +281,60 @@ dashboardRoutes.post('/dashboard/apps/toggle', async (c) => {
 		await setInstalledSet(c.env, [...set]);
 	}
 	return c.redirect('/dashboard/apps', 302);
+});
+
+// Packs — install a vertical (collections + apps) in one click. The agent can
+// also do this via the install_pack MCP tool when the owner names their trade.
+dashboardRoutes.get('/dashboard/packs', async (c) => {
+	const installed = await getInstalledSet(c.env);
+	const svc = new WikiService(c.env);
+	const colNames = new Set((await svc.listCollections()).map((x) => x.name));
+	const catalog = await getFullCatalog(c.env);
+	const appName = (slug: string) => catalog.find((a) => a.slug === slug)?.name ?? slug;
+	const cards = PACKS.map((p) => {
+		const appsOn = p.apps.filter((a) => installed.has(a)).length;
+		const colsOn = p.collections.filter((cn) => colNames.has(cn.name)).length;
+		const fully = appsOn === p.apps.length && colsOn === p.collections.length;
+		const status = fully
+			? '<span class="tag" style="background: var(--green); color: #fff; border-color: var(--green);">installed</span>'
+			: appsOn || colsOn
+				? '<span class="tag">partly installed</span>'
+				: '<span class="tag">not installed</span>';
+		const appList = p.apps.map((a) => `<li>${escapeHtml(appName(a))}</li>`).join('');
+		const colList = p.collections.map((cn) => `<li><code>${escapeHtml(cn.name)}</code> — ${escapeHtml(cn.description)}</li>`).join('');
+		return `
+    <div class="card" style="max-width: 560px; margin-bottom: 1rem;">
+      <div style="display: flex; align-items: center; gap: 0.5rem;"><h2 style="margin: 0;">${escapeHtml(p.name)}</h2>${status}</div>
+      <p class="muted" style="margin: 0.4rem 0 0.8rem;">${escapeHtml(p.blurb)}</p>
+      <div style="display: flex; gap: 2rem; flex-wrap: wrap; font-size: 0.9em;">
+        <div><strong>Apps</strong><ul style="margin: 0.3rem 0 0; padding-left: 1.1rem;">${appList}</ul></div>
+        <div><strong>Collections</strong><ul style="margin: 0.3rem 0 0; padding-left: 1.1rem;">${colList}</ul></div>
+      </div>
+      <form method="POST" action="/dashboard/packs/install" style="margin: 0.9rem 0 0;">
+        <input type="hidden" name="slug" value="${escapeHtml(p.slug)}">
+        <button type="submit" style="padding: 0.45rem 0.9rem; border-radius: 6px; background: ${fully ? 'transparent; color: var(--muted); border: 1px solid var(--border)' : 'var(--accent); color: #fff; border: 0'}; font-weight: 500; cursor: pointer;">${fully ? 'Re-apply' : 'Install pack'}</button>
+      </form>
+    </div>`;
+	}).join('');
+	const content = `
+<h1 style="margin-top: 0;">Packs</h1>
+<p class="muted" style="max-width: 720px;">A pack sets your town up for a trade in one click — it registers the collections that line of work needs and installs the matching apps. Your agent can also do this when you tell it what you do (<em>"I'm a sparkie"</em> → it installs Trades).</p>
+${cards}
+<p class="muted" style="font-size: 0.85em; max-width: 720px; margin-top: 1.5rem;">Installing is additive and safe to re-apply — existing collections are left as-is, apps are added to your installed-set and appear on the Apps page within ~1 min.</p>`;
+	return c.html(LAYOUT('Packs - Office Town', content));
+});
+
+dashboardRoutes.post('/dashboard/packs/install', async (c) => {
+	const body = await c.req.parseBody();
+	const slug = String(body.slug ?? '');
+	if (PACKS.some((p) => p.slug === slug)) {
+		try {
+			await installPack(c.env, slug);
+		} catch (err) {
+			console.error(JSON.stringify({ event: 'pack_install_error', slug, error: String(err) }));
+		}
+	}
+	return c.redirect('/dashboard/packs', 302);
 });
 
 // Download a single app as a GooseApp HTML file (for Goose's Import App).

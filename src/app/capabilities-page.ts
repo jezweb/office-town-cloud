@@ -24,6 +24,7 @@ export function renderCapabilitiesPage(token: string, origin: string): string {
     <button data-tab="controls" class="tab px-4 py-2 text-sm font-medium border-b-2 border-brand">Controls</button>
     <button data-tab="data" class="tab px-4 py-2 text-sm font-medium border-b-2 border-transparent opacity-60">Data &amp; chart</button>
     <button data-tab="media" class="tab px-4 py-2 text-sm font-medium border-b-2 border-transparent opacity-60">Attachments</button>
+    <button data-tab="ai" class="tab px-4 py-2 text-sm font-medium border-b-2 border-transparent opacity-60">AI &amp; voice</button>
     <button data-tab="theme" class="tab px-4 py-2 text-sm font-medium border-b-2 border-transparent opacity-60">Theme</button>
   </nav>
 
@@ -53,9 +54,30 @@ export function renderCapabilitiesPage(token: string, origin: string): string {
   </section>
 
   <section data-panel="media" hidden>
-    <p class="text-sm opacity-60 mb-3">Attach an image (client-side preview here; a scoped upload endpoint persists it to your cortex — coming next).</p>
-    <input id="file" type="file" accept="image/*" class="text-sm" onchange="preview(event)">
+    <p class="text-sm opacity-60 mb-3">Attach an image — it uploads to your cortex (R2) and displays from there.</p>
+    <input id="file" type="file" accept="image/*" class="text-sm" onchange="upload(event)">
+    <div id="up-status" class="text-sm mt-2 opacity-70"></div>
     <div id="thumb" class="mt-4"></div>
+  </section>
+
+  <section data-panel="ai" hidden>
+    <div class="mb-6">
+      <span class="text-xs uppercase tracking-wide opacity-60">Generate an image (FLUX)</span>
+      <div class="flex gap-2 mt-1">
+        <input id="ai-prompt" class="flex-1 rounded-lg border border-black/15 dark:border-white/15 bg-white/70 dark:bg-white/5 px-3 py-2" placeholder="a terracotta pot with a seedling, warm light">
+        <button onclick="genImage()" class="rounded-lg bg-brand hover:bg-brand-deep text-white px-4 py-2 text-sm font-semibold whitespace-nowrap">Generate</button>
+      </div>
+      <div id="ai-status" class="text-sm mt-2 opacity-70"></div>
+      <div id="ai-img" class="mt-3"></div>
+    </div>
+    <div>
+      <span class="text-xs uppercase tracking-wide opacity-60">Speak to dictate (Whisper)</span>
+      <div class="flex items-center gap-2 mt-1">
+        <button id="rec" onclick="toggleRec()" class="rounded-lg bg-brand hover:bg-brand-deep text-white px-4 py-2 text-sm font-semibold">● Record</button>
+        <span id="rec-status" class="text-sm opacity-70"></span>
+      </div>
+      <textarea id="dictated" rows="3" class="mt-2 w-full rounded-lg border border-black/15 dark:border-white/15 bg-white/70 dark:bg-white/5 px-3 py-2" placeholder="Transcript appears here…"></textarea>
+    </div>
   </section>
 
   <section data-panel="theme" hidden>
@@ -69,7 +91,7 @@ export function renderCapabilitiesPage(token: string, origin: string): string {
 </div>
 
 <script>
-  var TOKEN=${JSON.stringify(token)}, API=${JSON.stringify(origin)}+'/api/appdata/office-town-showcase';
+  var TOKEN=${JSON.stringify(token)}, ORIGIN=${JSON.stringify(origin)}, API=ORIGIN+'/api/appdata/office-town-showcase', MEDIA=ORIGIN+'/api/media';
   var H={'Authorization':'Bearer '+TOKEN,'Content-Type':'application/json'};
 
   // tabs
@@ -87,8 +109,38 @@ export function renderCapabilitiesPage(token: string, origin: string): string {
   new Chart(document.getElementById('chart'),{type:'bar',data:{labels:data.labels,datasets:[{label:'Enquiries',data:data.enq,backgroundColor:'#c25e4f'},{label:'Won',data:data.won,backgroundColor:'#4a7a3d'}]},options:{plugins:{legend:{labels:{color:getComputedStyle(document.body).color}}},scales:{x:{ticks:{color:getComputedStyle(document.body).color}},y:{ticks:{color:getComputedStyle(document.body).color}}}}});
   document.getElementById('rows').innerHTML = data.labels.map(function(m,i){ return '<tr><td class="py-1.5 border-b border-black/5 dark:border-white/5">'+m+'</td><td class="border-b border-black/5 dark:border-white/5">'+data.enq[i]+'</td><td class="border-b border-black/5 dark:border-white/5">'+data.won[i]+'</td></tr>'; }).join('');
 
-  // image attach (client-side preview)
-  function preview(e){ var f=e.target.files[0]; if(!f)return; var r=new FileReader(); r.onload=function(){ document.getElementById('thumb').innerHTML='<img src="'+r.result+'" class="max-h-48 rounded-lg border border-black/10 dark:border-white/10">'; }; r.readAsDataURL(f); }
+  // image attach → upload to cortex (R2), display from there
+  function upload(e){ var f=e.target.files[0]; if(!f)return; var st=document.getElementById('up-status'); st.textContent='Uploading…';
+    var r=new FileReader(); r.onload=async function(){ var b64=r.result.split(',')[1];
+      var res=await fetch(MEDIA+'/upload',{method:'POST',headers:H,body:JSON.stringify({filename:f.name,content_base64:b64,content_type:f.type})});
+      var d=await res.json(); if(d.key){ st.textContent='Saved to '+d.key;
+        document.getElementById('thumb').innerHTML='<img src="'+MEDIA+'/file?key='+encodeURIComponent(d.key)+'&t='+encodeURIComponent(TOKEN)+'" class="max-h-48 rounded-lg border border-black/10 dark:border-white/10">'; }
+      else st.textContent='Upload failed'; };
+    r.readAsDataURL(f); }
+
+  // generate an image via FLUX
+  async function genImage(){ var p=document.getElementById('ai-prompt').value.trim(); if(!p)return;
+    var st=document.getElementById('ai-status'); st.textContent='Generating… (a few seconds)';
+    var res=await fetch(MEDIA+'/generate',{method:'POST',headers:H,body:JSON.stringify({prompt:p})});
+    var d=await res.json(); if(d.image_base64){ st.textContent='';
+      document.getElementById('ai-img').innerHTML='<img src="data:image/png;base64,'+d.image_base64+'" class="max-h-72 rounded-lg border border-black/10 dark:border-white/10">'; }
+    else st.textContent='Generation failed'; }
+
+  // speak-to-dictate via Whisper (MediaRecorder → /transcribe)
+  var rec, chunks=[];
+  async function toggleRec(){ var btn=document.getElementById('rec'), st=document.getElementById('rec-status');
+    if(rec && rec.state==='recording'){ rec.stop(); return; }
+    try{ var stream=await navigator.mediaDevices.getUserMedia({audio:true}); }
+    catch(e){ st.textContent='Mic blocked: '+e.message; return; }
+    rec=new MediaRecorder(stream); chunks=[];
+    rec.ondataavailable=function(ev){ chunks.push(ev.data); };
+    rec.onstop=async function(){ stream.getTracks().forEach(function(t){t.stop();});
+      btn.textContent='● Record'; st.textContent='Transcribing…';
+      var blob=new Blob(chunks,{type:'audio/webm'}); var buf=await blob.arrayBuffer();
+      var b64=btoa(String.fromCharCode.apply(null, new Uint8Array(buf)));
+      var res=await fetch(MEDIA+'/transcribe',{method:'POST',headers:H,body:JSON.stringify({audio_base64:b64})});
+      var d=await res.json(); st.textContent=''; document.getElementById('dictated').value=(d.text||'(no speech detected)'); };
+    rec.start(); btn.textContent='■ Stop'; st.textContent='Recording…'; }
 
   // persistence
   async function persist(){

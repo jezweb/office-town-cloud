@@ -13,6 +13,16 @@ import { renderTasksPage } from './tasks-page';
 import { renderEntityEditPage } from './entity-page';
 import { renderCapturePage } from './capture-page';
 import { renderCapabilitiesPage } from './capabilities-page';
+import { renderQuoteToCashPage } from './quote-to-cash-page';
+import { renderMiniCrmPage } from './mini-crm-page';
+import { renderRunSheetPage } from './run-sheet-page';
+import { renderOnsiteQuotePage } from './onsite-quote-page';
+import { renderCompliancePage } from './compliance-page';
+import { renderBookingCalendarPage } from './booking-calendar-page';
+import { renderDeliverablesPage } from './deliverables-page';
+import { renderAssetRegisterPage } from './asset-register-page';
+import { renderSupportTicketsPage } from './support-tickets-page';
+import { renderDecisionLogPage } from './decision-log-page';
 import { getCustomAppHtml } from '../apps-api/routes';
 import { WikiService } from '../wiki/service';
 
@@ -77,6 +87,48 @@ app.get('/showcase', async (c) => {
 	}
 	return c.html(renderCapabilitiesPage(t, new URL(c.req.url).origin));
 });
+
+app.get('/quote-to-cash', async (c) => {
+	const t = c.req.query('t') ?? '';
+	const bearer = await getEffectiveBearer(c.env);
+	const ok = t && (t === bearer || (await verifyUiToken(t, 'app:office-town-quote-to-cash', bearer, Date.now())));
+	if (!ok) {
+		return c.html('<!DOCTYPE html><meta charset="utf-8"><body style="font:14px system-ui;padding:24px"><h2>Link expired</h2><p>Reopen this from Goose.</p></body>', 401);
+	}
+	return c.html(renderQuoteToCashPage(t, new URL(c.req.url).origin));
+});
+
+app.get('/mini-crm', async (c) => {
+	const t = c.req.query('t') ?? '';
+	const bearer = await getEffectiveBearer(c.env);
+	const ok = t && (t === bearer || (await verifyUiToken(t, 'app:office-town-mini-crm', bearer, Date.now())));
+	if (!ok) {
+		return c.html('<!DOCTYPE html><meta charset="utf-8"><body style="font:14px system-ui;padding:24px"><h2>Link expired</h2><p>Reopen this from Goose.</p></body>', 401);
+	}
+	return c.html(renderMiniCrmPage(t, new URL(c.req.url).origin));
+});
+
+const sampler: Array<[string, string, (t: string, o: string) => string]> = [
+	['/run-sheet', 'app:office-town-run-sheet', renderRunSheetPage],
+	['/onsite-quote', 'app:office-town-onsite-quote', renderOnsiteQuotePage],
+	['/compliance', 'app:office-town-compliance', renderCompliancePage],
+	['/bookings', 'app:office-town-bookings', renderBookingCalendarPage],
+	['/deliverables', 'app:office-town-deliverables', renderDeliverablesPage],
+	['/asset-register', 'app:office-town-asset-register', renderAssetRegisterPage],
+	['/support-tickets', 'app:office-town-support-tickets', renderSupportTicketsPage],
+	['/decision-log', 'app:office-town-decision-log', renderDecisionLogPage],
+];
+for (const [path, scope, render] of sampler) {
+	app.get(path, async (c) => {
+		const t = c.req.query('t') ?? '';
+		const bearer = await getEffectiveBearer(c.env);
+		const ok = t && (t === bearer || (await verifyUiToken(t, scope, bearer, Date.now())));
+		if (!ok) {
+			return c.html('<!DOCTYPE html><meta charset="utf-8"><body style="font:14px system-ui;padding:24px"><h2>Link expired</h2><p>Reopen this from Goose.</p></body>', 401);
+		}
+		return c.html(render(t, new URL(c.req.url).origin));
+	});
+}
 
 // Agent-built apps: serve the stored HTML with a window.ot persistence bridge
 // injected (scoped to this app's data store). The agent's HTML calls

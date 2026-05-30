@@ -33,8 +33,10 @@ import { workflowsRoutes, jobsRoutes, triggerRoutes } from './workflows/routes';
 import { tasksApiRoutes } from './tasks/routes';
 import { cortexApiRoutes } from './cortex-api/routes';
 import { appsApiRoutes } from './apps-api/routes';
+import { packsRoutes } from './packs/routes';
 import { appDataRoutes } from './appdata/routes';
 import { shareAppRoutes } from './share-app/routes';
+import { mediaRoutes } from './media/routes';
 import { appRoutes } from './app/routes';
 import type { ForwardableEmailMessage } from '@cloudflare/workers-types';
 
@@ -127,8 +129,12 @@ app.route('/api/tasks', tasksApiRoutes);
 app.route('/api/cortex', cortexApiRoutes);
 // App catalog + Goose install bundle (bearer-gated) — connect.sh + daemon consume it.
 app.route('/api/apps', appsApiRoutes);
+// Vertical packs — register a trade's collections + install its apps in one call.
+app.route('/api/packs', packsRoutes);
 // Per-app key-value store for agent-built apps — self-authed (app-scoped token).
 app.route('/api/appdata', appDataRoutes);
+// Shared media capabilities for apps — upload, transcribe (Whisper), generate (FLUX).
+app.route('/api/media', mediaRoutes);
 // externalUrl panel pages (token-gated) — /app/tasks, /app/entity.
 app.route('/app', appRoutes);
 // PUBLIC customer-facing shared apps (magic link) — agent-built, write-only to
