@@ -1186,7 +1186,7 @@ function hasValidSession(cookieHeader: string | null, expected: string): boolean
 
 // Public one-liner installer. Curl-pipes a bash script that bootstraps the
 // goose CLI if missing, disables Goose's built-in Memory, then runs
-// `goose mcp add` × 6 with values from WORKER_URL + MCP_BEARER env vars.
+// `goose mcp add` × 7 with values from WORKER_URL + MCP_BEARER env vars.
 //
 // The script holds no secrets — the bearer comes from the user's shell
 // invocation, never via the URL. Bearer-in-URL would land in worker
@@ -1202,7 +1202,7 @@ dashboardRoutes.get('/connect.sh', async () => {
 # What this does:
 #   1. Bootstraps the goose CLI (brew on macOS, curl-installer otherwise) if missing
 #   2. Disables Goose's built-in Memory extension (wiki MCP replaces it)
-#   3. Wires 6 office-town-* MCPs into ~/.config/goose/config.yaml
+#   3. Wires 7 office-town-* MCPs into ~/.config/goose/config.yaml
 #   4. Installs the office-town-plugin (4 roles + skills + recipes + hooks)
 #   5. Installs the officetowd sync daemon + creates ~/OfficeTown/ + first sync,
 #      so your cortex is a real folder on disk you can open and edit
@@ -1317,7 +1317,7 @@ if [ ! -s "$HOME/.officetowd/device_id" ]; then
 fi
 DEVICE_ID=$(cat "$HOME/.officetowd/device_id" 2>/dev/null || echo "")
 
-echo "→ Editing ~/.config/goose/config.yaml — wiring 6 MCPs, disabling built-in Memory..."
+echo "→ Editing ~/.config/goose/config.yaml — wiring 7 MCPs, disabling built-in Memory..."
 WORKER_URL="$WORKER_URL" MCP_BEARER="$MCP_BEARER" DEVICE_ID="$DEVICE_ID" $PY <<'PYEOF'
 import os
 import pathlib
@@ -1349,7 +1349,7 @@ if is_dict_shape:
             del existing[k]
     if 'memory' in existing and isinstance(existing['memory'], dict):
         existing['memory']['enabled'] = False
-    for name in ['wiki', 'files', 'email', 'cron', 'voice', 'sandbox']:
+    for name in ['wiki', 'files', 'email', 'cron', 'voice', 'sandbox', 'workflows']:
         existing[f'office-town-{name}'] = {
             'name': f'office-town-{name}',
             'type': 'streamable_http',
@@ -1372,7 +1372,7 @@ else:
     for e in extensions:
         if isinstance(e, dict) and e.get('name') == 'memory':
             e['enabled'] = False
-    for name in ['wiki', 'files', 'email', 'cron', 'voice', 'sandbox']:
+    for name in ['wiki', 'files', 'email', 'cron', 'voice', 'sandbox', 'workflows']:
         extensions.append({
             'name': f'office-town-{name}',
             'type': 'streamable_http',
@@ -1394,7 +1394,7 @@ try:
     config_path.chmod(0o600)
 except OSError:
     pass
-print(f'  ✓ Wrote 6 office-town-* extensions to {config_path}')
+print(f'  ✓ Wrote 7 office-town-* extensions to {config_path}')
 PYEOF
 echo ""
 echo "✓ Goose config updated."
@@ -1822,12 +1822,21 @@ dashboardRoutes.get('/dashboard/connect', async (c) => {
 
   <p class="muted" style="font-size: 0.85em; margin-top: 0.75rem;">Restart Goose Desktop afterward (if it was open) so it picks up the new extensions. Then in a fresh chat, try <code>list contacts in the wiki</code> to confirm.</p>
 
+  <div style="margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid var(--border);">
+    <strong style="font-size: 0.95em;">No terminal? Add the visual panels in one click</strong>
+    <p class="muted" style="font-size: 0.85em; margin: 0.3rem 0 0.6rem;">
+      Opens Goose Desktop and adds the Office Town <strong>panels</strong> server (the Workflows dashboard + Cortex browser). Goose will ask you to confirm. This adds the visual tools only — run the one-liner above for the full setup (all MCPs + the sync daemon).
+    </p>
+    <a id="goose-deeplink" href="#" style="display: inline-block; padding: 0.5rem 1rem; border-radius: 6px; background: var(--accent); color: white; font-size: 0.95em; font-weight: 500; text-decoration: none;">Add to Goose Desktop</a>
+    <p class="muted" style="font-size: 0.78em; margin-top: 0.5rem;">The link carries your bearer token — it's safe to click here on your own dashboard, but don't share or post it.</p>
+  </div>
+
   <details style="margin-top: 1rem; font-size: 0.9em;">
     <summary style="cursor: pointer; color: var(--accent);">What does the script do?</summary>
     <ol style="margin-top: 0.6rem; padding-left: 1.25rem;">
       <li>Checks for the <code>goose</code> CLI; installs it via Homebrew (macOS) or the official curl-installer (Linux) if missing.</li>
       <li>Disables Goose's built-in Memory extension — the Office Town wiki MCP replaces it with persistent R2-backed storage.</li>
-      <li>Runs <code>goose mcp add</code> six times — once per MCP (wiki, files, email, cron, voice, sandbox), all pointed at this worker with the bearer above.</li>
+      <li>Runs <code>goose mcp add</code> seven times — once per MCP (wiki, files, email, cron, voice, sandbox, workflows), all pointed at this worker with the bearer above.</li>
       <li><em>If sync is enabled above:</em> downloads the <code>officetowd</code> binary for your OS + arch and prints the two-command finish (<code>officetowd configure</code> → <code>officetowd start</code>).</li>
     </ol>
     <p style="margin-top: 0.6rem;">Inspect the full script source at <a href="/connect.sh" target="_blank"><code>/connect.sh</code></a>. The bearer never appears in the URL — it stays in your shell's env vars / history only.</p>
@@ -1842,7 +1851,7 @@ dashboardRoutes.get('/dashboard/connect', async (c) => {
 
 <div class="card" style="max-width: 800px; margin-top: 1.5rem;">
   <h2>What gets installed</h2>
-  <p class="muted" style="font-size: 0.9em; margin: 0.25rem 0 0.75rem;">The six MCP servers wired into your Goose. Each points at this worker; all share the bearer above.</p>
+  <p class="muted" style="font-size: 0.9em; margin: 0.25rem 0 0.75rem;">The seven MCP servers wired into your Goose. Each points at this worker; all share the bearer above.</p>
   <table style="margin-top: 0.5rem;">
     <thead><tr><th>MCP</th><th>Endpoint</th><th>What it does</th></tr></thead>
     <tbody>
@@ -1852,6 +1861,7 @@ dashboardRoutes.get('/dashboard/connect', async (c) => {
       <tr><td><code>office-town-cron</code></td><td><code>/mcp/cron</code></td><td>Recurring agent work + one-off scheduled jobs (7 actions)</td></tr>
       <tr><td><code>office-town-voice</code></td><td><code>/mcp/voice</code></td><td>STT/TTS today, voice rooms in v1.2 (6 actions, 3 stubbed)</td></tr>
       <tr><td><code>office-town-sandbox</code></td><td><code>/mcp/sandbox</code></td><td>Sandboxed code execution — Python/Node/TS/Bash (6 actions)</td></tr>
+      <tr><td><code>office-town-workflows</code></td><td><code>/mcp/workflows</code></td><td>Visual workflows dashboard (MCP-UI panel in Goose Desktop) — <code>show_workflows</code></td></tr>
     </tbody>
   </table>
 </div>
@@ -1877,11 +1887,23 @@ function generateOneliner() {
     ' bash';
 }
 
+function gooseDeepLink() {
+  const url = document.getElementById('worker-url').value.replace(/\\/+$/, '') || 'https://YOUR-WORKER-URL.workers.dev';
+  const bearer = document.getElementById('bearer').value.trim() || 'YOUR_MCP_BEARER_TOKEN';
+  // One remote extension = the /mcp/workflows server, which serves both UI
+  // tools (show_workflows + browse_cortex). Goose parses name/url/header.
+  return 'goose://extension?name=' + encodeURIComponent('Office Town') +
+    '&url=' + encodeURIComponent(url + '/mcp/workflows') +
+    '&header=' + encodeURIComponent('Authorization=Bearer ' + bearer);
+}
+
 function refreshOneliner() {
   document.getElementById('oneliner').textContent = generateOneliner();
   const url = document.getElementById('worker-url').value.replace(/\\/+$/, '') || 'https://YOUR-WORKER-URL.workers.dev';
   document.getElementById('oneliner-uninstall').textContent =
     'curl -fsSL ' + shSingleQuote(url + '/disconnect.sh') + ' | bash';
+  const dl = document.getElementById('goose-deeplink');
+  if (dl) dl.href = gooseDeepLink();
 }
 
 function copyOneliner() {

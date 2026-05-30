@@ -2,7 +2,7 @@
 //   • HTTP API   at /api/{wiki,files,publish,cron}
 //   • Dashboard  at /, /dashboard/*
 //   • Publish    at /p/<slug>, /s/<token>
-//   • 6 MCP servers at /mcp/{wiki,files,email,cron,voice,sandbox}
+//   • 7 MCP servers at /mcp/{wiki,files,email,cron,voice,sandbox,workflows}
 // All capabilities share one binding surface (see wrangler.jsonc + types.ts).
 
 import { Hono } from 'hono';
@@ -26,9 +26,12 @@ import { emailMcpRoutes } from './mcp-server/email';
 import { cronMcpRoutes } from './mcp-server/cron';
 import { voiceMcpRoutes } from './mcp-server/voice';
 import { sandboxMcpRoutes } from './mcp-server/sandbox';
+import { workflowsMcpRoutes } from './mcp-server/workflows';
 import { handleInboundEmail } from './email/inbound';
 import { syncRoutes } from './sync/routes';
 import { workflowsRoutes, jobsRoutes, triggerRoutes } from './workflows/routes';
+import { tasksApiRoutes } from './tasks/routes';
+import { appRoutes } from './app/routes';
 import type { ForwardableEmailMessage } from '@cloudflare/workers-types';
 
 // Required export for the Cloudflare Containers binding declared in
@@ -112,6 +115,11 @@ app.route('/api/sync', syncRoutes);
 app.route('/api/workflows', workflowsRoutes);
 app.route('/api/jobs', jobsRoutes);
 app.route('/api/triggers', triggerRoutes);
+// Tasks API — self-authed (UI token from the board panel, or the bearer). NOT
+// in MCP_PATH_PREFIXES so the global gate passes it through to its own check.
+app.route('/api/tasks', tasksApiRoutes);
+// externalUrl panel pages (token-gated) — /app/tasks etc.
+app.route('/app', appRoutes);
 app.route('/', setupRoutes);
 
 // MCP servers (JSON-RPC over streamable-HTTP). Each enforces its own bearer
@@ -123,6 +131,7 @@ app.route('/mcp/email', emailMcpRoutes);
 app.route('/mcp/cron', cronMcpRoutes);
 app.route('/mcp/voice', voiceMcpRoutes);
 app.route('/mcp/sandbox', sandboxMcpRoutes);
+app.route('/mcp/workflows', workflowsMcpRoutes);
 
 // Public reader for /p/<slug> — must come BEFORE dashboard's '/' route since
 // Hono picks the first matching route.
