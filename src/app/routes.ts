@@ -176,6 +176,9 @@ app.get('/custom/:appId', async (c) => {
 	const bridge = `<script>window.ot=(function(){var A=${JSON.stringify(dataUrl)},H={'Authorization':'Bearer '+${JSON.stringify(t)},'Content-Type':'application/json'};return{load:function(){return fetch(A,{headers:H}).then(function(r){return r.ok?r.json():{};}).catch(function(){return{};});},save:function(d){return fetch(A,{method:'PUT',headers:H,body:JSON.stringify(d)});}};})();</script>`;
 	let html = appDef.html;
 	html = html.includes('</head>') ? html.replace('</head>', `${bridge}</head>`) : bridge + html;
+	// Self-contained app → strict CSP so injected JS can't load external code or
+	// POST the scoped token off-origin. (Flagship /app pages that use CDNs are exempt.)
+	c.header('Content-Security-Policy', "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data: blob:; font-src data:; connect-src 'self'; base-uri 'none'");
 	return c.html(html);
 });
 

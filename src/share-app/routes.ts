@@ -8,12 +8,19 @@
 import { Hono } from 'hono';
 import type { AppContext } from '../types';
 import { getEffectiveBearer } from '../auth/bearer';
-import { signUiToken, verifyUiToken } from '../auth/ui-token';
+import { signUiToken } from '../auth/ui-token';
+import { selfAuth } from '../auth/self-auth';
 import { getSharedApp } from './store';
 
 const app = new Hono<AppContext>();
 
 const SAFE_ID = /^[a-z0-9]{1,40}$/i;
+
+// Agent-authored apps are self-contained (no external resources). A strict CSP
+// means even if a prompt-injected script slips into the HTML, it can't load
+// external code or POST a stolen token off-origin (connect-src 'self').
+const APP_CSP =
+	"default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data: blob:; font-src data:; connect-src 'self'; form-action 'self'; base-uri 'none'";
 
 app.get('/:shareId', async (c) => {
 	const shareId = c.req.param('shareId');
@@ -28,15 +35,14 @@ app.get('/:shareId', async (c) => {
 	const bridge = `<script>window.ot=(function(){var U=${JSON.stringify(submitUrl)},H={'Authorization':'Bearer '+${JSON.stringify(token)},'Content-Type':'application/json'};return{submit:function(d){return fetch(U,{method:'POST',headers:H,body:JSON.stringify(d)});}};})();</script>`;
 	let html = a.html;
 	html = html.includes('</head>') ? html.replace('</head>', `${bridge}</head>`) : bridge + html;
+	c.header('Content-Security-Policy', APP_CSP);
 	return c.html(html);
 });
 
 app.post('/:shareId/submit', async (c) => {
 	const shareId = c.req.param('shareId');
 	if (!SAFE_ID.test(shareId)) return c.json({ error: 'not found' }, 404);
-	const token = /^Bearer\s+(.+)$/i.exec(c.req.header('authorization') ?? '')?.[1]?.trim() ?? '';
-	const bearer = await getEffectiveBearer(c.env);
-	if (!token || !(token === bearer || (await verifyUiToken(token, `submit:${shareId}`, bearer, Date.now())))) {
+	if (!(await selfAuth(c.env, c.req.header('authorization'), `submit:${shareId}`))) {
 		return c.json({ error: 'Unauthorised' }, 401);
 	}
 	const a = await getSharedApp(c.env, shareId);

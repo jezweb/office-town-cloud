@@ -52,7 +52,7 @@ export async function installPack(env: Env, slug: string): Promise<PackInstallRe
 	return { pack: slug, collectionsRegistered: registered, collectionsAlreadyPresent: present, appsAdded: added };
 }
 
-async function packStatus(env: Env, pack: PackDef, installed: Set<string>, collectionNames: Set<string>) {
+function packStatus(pack: PackDef, installed: Set<string>, collectionNames: Set<string>) {
 	const appsInstalled = pack.apps.filter((a) => installed.has(a)).length;
 	const colsPresent = pack.collections.filter((c) => collectionNames.has(c.name)).length;
 	const fully = appsInstalled === pack.apps.length && colsPresent === pack.collections.length;
@@ -71,7 +71,7 @@ app.get('/catalog', async (c) => {
 	const installed = await getInstalledSet(c.env);
 	const svc = new WikiService(c.env);
 	const cols = new Set((await svc.listCollections()).map((x) => x.name));
-	const packs = await Promise.all(PACKS.map((p) => packStatus(c.env, p, installed, cols)));
+	const packs = PACKS.map((p) => packStatus(p, installed, cols));
 	return c.json({ packs });
 });
 

@@ -8,8 +8,7 @@
 
 import { Hono } from 'hono';
 import type { AppContext, Env } from '../types';
-import { getEffectiveBearer } from '../auth/bearer';
-import { verifyUiToken } from '../auth/ui-token';
+import { selfAuth } from '../auth/self-auth';
 
 const app = new Hono<AppContext>();
 
@@ -20,11 +19,8 @@ function key(appId: string): string {
 	return `app-state/custom/${appId}.json`;
 }
 
-async function authed(env: Env, authHeader: string | undefined, appId: string): Promise<boolean> {
-	const token = /^Bearer\s+(.+)$/i.exec(authHeader ?? '')?.[1]?.trim() ?? '';
-	if (!token) return false;
-	const bearer = await getEffectiveBearer(env);
-	return token === bearer || (await verifyUiToken(token, `app:${appId}`, bearer, Date.now()));
+function authed(env: Env, authHeader: string | undefined, appId: string): Promise<boolean> {
+	return selfAuth(env, authHeader, `app:${appId}`);
 }
 
 app.get('/:appId', async (c) => {

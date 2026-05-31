@@ -9,19 +9,15 @@
 
 import { Hono } from 'hono';
 import type { AppContext, Env } from '../types';
-import { getEffectiveBearer } from '../auth/bearer';
-import { verifyUiToken } from '../auth/ui-token';
+import { selfAuth } from '../auth/self-auth';
 import { WikiService } from '../wiki/service';
 import { WikiError } from '../lib/shared';
 
 const app = new Hono<AppContext>();
-const SAFE = /^[a-z][a-z0-9-]{0,40}$/;
+const SAFE = /^[a-z][a-z0-9-]{0,39}$/;
 
-async function authed(env: Env, authHeader: string | undefined, collection: string): Promise<boolean> {
-	const token = /^Bearer\s+(.+)$/i.exec(authHeader ?? '')?.[1]?.trim() ?? '';
-	if (!token) return false;
-	const bearer = await getEffectiveBearer(env);
-	return token === bearer || (await verifyUiToken(token, `cortex:${collection}`, bearer, Date.now()));
+function authed(env: Env, authHeader: string | undefined, collection: string): Promise<boolean> {
+	return selfAuth(env, authHeader, `cortex:${collection}`);
 }
 
 // List entries (slug + frontmatter, no body — fast load).

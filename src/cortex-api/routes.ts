@@ -7,17 +7,13 @@
 
 import { Hono } from 'hono';
 import type { AppContext } from '../types';
-import { getEffectiveBearer } from '../auth/bearer';
-import { verifyUiToken } from '../auth/ui-token';
+import { selfAuth } from '../auth/self-auth';
 import { WikiService } from '../wiki/service';
 
 const app = new Hono<AppContext>();
 
 app.use('*', async (c, next) => {
-	const token = /^Bearer\s+(.+)$/i.exec(c.req.header('authorization') ?? '')?.[1]?.trim() ?? '';
-	if (!token) return c.json({ error: 'Unauthorised' }, 401);
-	const bearer = await getEffectiveBearer(c.env);
-	if (token === bearer || (await verifyUiToken(token, 'cortex', bearer, Date.now()))) return next();
+	if (await selfAuth(c.env, c.req.header('authorization'), 'cortex')) return next();
 	return c.json({ error: 'Unauthorised' }, 401);
 });
 

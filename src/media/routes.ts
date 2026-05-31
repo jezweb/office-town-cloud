@@ -5,16 +5,16 @@
 
 import { Hono } from 'hono';
 import type { AppContext, Env } from '../types';
-import { getEffectiveBearer } from '../auth/bearer';
-import { verifyAnyUiToken } from '../auth/ui-token';
+import { selfAuthAny, tokenAllowsAny } from '../auth/self-auth';
 
 const app = new Hono<AppContext>();
 
-async function authed(env: Env, authHeader: string | undefined): Promise<boolean> {
-	const token = /^Bearer\s+(.+)$/i.exec(authHeader ?? '')?.[1]?.trim() ?? '';
-	if (!token) return false;
-	const bearer = await getEffectiveBearer(env);
-	return token === bearer || (await verifyAnyUiToken(token, bearer, Date.now()));
+// Any owner token EXCEPT write-only `submit:` tokens (those are visible in a
+// public share page's source — don't let them spend FLUX/Whisper credits).
+const DENY = ['submit:'];
+
+function authed(env: Env, authHeader: string | undefined): Promise<boolean> {
+	return selfAuthAny(env, authHeader, DENY);
 }
 
 function b64ToBytes(b64: string): Uint8Array {
@@ -38,8 +38,7 @@ app.post('/upload', async (c) => {
 app.get('/file', async (c) => {
 	const key = c.req.query('key') ?? '';
 	const t = c.req.query('t') ?? '';
-	const bearer = await getEffectiveBearer(c.env);
-	if (!(t === bearer || (await verifyAnyUiToken(t, bearer, Date.now())))) return c.text('Unauthorised', 401);
+	if (!(await tokenAllowsAny(c.env, t, DENY))) return c.text('Unauthorised', 401);
 	if (!key.startsWith('uploads/')) return c.text('bad key', 400);
 	const obj = await c.env.FILES.get(key);
 	if (!obj) return c.text('not found', 404);
