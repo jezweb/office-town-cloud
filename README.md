@@ -42,35 +42,44 @@ A **pack** sets your town up for a trade in one move: it registers the collectio
 
 ## Deploy
 
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/jezweb/office-town-cloud)
+> The Cloudflare **Deploy to Cloudflare** button can't reliably provision this repo (the Containers binding + multi-resource setup trip its repo-fetch step — you get "failed to get repository contents"). The supported path is **Goose running the installer**, which also wires the local side the button never touches. Full walkthrough in [`INSTALL.md`](INSTALL.md).
 
-Cloudflare provisions everything from `wrangler.jsonc`:
+**The whole install in one command** — Goose provisions the cloud, wires this Mac, installs OfficeCLI, and seeds the cortex, following the [`setup-office-town`](skills/setup-office-town/SKILL.md) skill:
+
+```bash
+git clone https://github.com/jezweb/office-town-cloud && cd office-town-cloud
+export CLOUDFLARE_API_TOKEN='<workers-deploy token for your account>'
+goose run --recipe recipes/install-office-town.yaml --params account_id=<your-account-id> pack=ask
+```
+
+Prefer to drive it yourself? Run the cloud half directly — [`scripts/provision.sh`](scripts/provision.sh) is idempotent and re-runnable:
+
+```bash
+npm install && bash scripts/provision.sh
+```
+
+Either way, Cloudflare provisions everything from `wrangler.jsonc`:
 
 - **D1** — wiki index, FTS5 search, audit log, cron jobs, app installed-set
 - **R2** — markdown entries + binary attachments + published pages + signed shares + app data (entity-as-folder layout)
-- **Vectorize** — 768-dim semantic search (bge-base-en-v1.5)
+- **Vectorize** — 768-dim semantic search (bge-base-en-v1.5), created with the right dims/metric automatically
 - **Queue** — embedding pipeline
 - **Workers AI** — bge embeddings, `toMarkdown` (PDF/DOCX/audio/images), Whisper, FLUX
 - **Images** — resize / format-convert / strip-EXIF
 - **Containers** — the `sandbox` MCP runner (`@cloudflare/sandbox`)
 - **Email Routing** — outbound `send_email` binding + inbound `email()` handler
 
-**Two fields the deploy form asks for:**
-
-| Field | Value |
-|---|---|
-| Vectorize **Dimensions** | `768` |
-| Vectorize **Metric** | `cosine` |
-
-Everything else can stay blank — `MCP_BEARER_TOKEN` auto-generates on first request. `BETTER_AUTH_SECRET` + `GOOGLE_CLIENT_ID/SECRET` are post-deploy opt-ins for dashboard sign-in. ~2 min, returns `https://office-town-<you>.<account>.workers.dev`.
+Requirements: a Cloudflare account on **Workers Paid** (Containers + Browser Rendering aren't free-tier), Docker running for the first deploy (it builds the Sandbox container), and a Workers-deploy API token. `MCP_BEARER_TOKEN` auto-generates on first request (or set your own); `BETTER_AUTH_SECRET` + `GOOGLE_CLIENT_ID/SECRET` are post-deploy opt-ins for dashboard sign-in.
 
 ## Wire it into Goose
 
-You need Goose installed: https://block.github.io/goose/.
+You need Goose installed: https://block.github.io/goose/. (The recipe above does this and the rest for you; this is the manual local-side step if you provisioned with `provision.sh` directly.)
 
-👉 **The one-line installer** (`<your-worker-url>/connect.sh`) bootstraps the Goose CLI if needed, wires the 7 MCP servers into `~/.config/goose/config.yaml`, installs the plugin (roles + skills + the workflows runner), sets up [officetowd](https://github.com/jezweb/officetowd) with a stable device id + persistent background sync, auto-installs the apps to your Apps page, verifies the tools respond, and creates your cortex folder at `~/OfficeTown/`. ~5 min after the button. The dashboard's **Connect** page hands you the pre-filled command.
+👉 **The one-line installer** (`<your-worker-url>/connect.sh`) bootstraps the Goose CLI if needed, wires the 7 MCP servers into `~/.config/goose/config.yaml`, installs the plugin (roles + skills + the workflows runner), sets up [officetowd](https://github.com/jezweb/officetowd) with a stable device id + persistent background sync, auto-installs the apps to your Apps page, verifies the tools respond, and creates your cortex folder at `~/OfficeTown/`. The dashboard's **Connect** page hands you the pre-filled command.
 
 [officetowd](https://github.com/jezweb/officetowd) is a small Go daemon that bisyncs your local `~/OfficeTown/` folder against the worker (editable in Obsidian/VSCode/Finder) and reconciles the installed apps onto your Goose Apps page each sync. Same MCP bearer; no R2 token needed.
+
+**Office documents** — for Word/Excel/PowerPoint, install OfficeCLI via the [`goose-skills`](https://github.com/jezweb/goose-skills) repo (`install-officecli`). The `setup-office-town` skill does this for you.
 
 ## The MCP gateway servers
 
@@ -140,11 +149,12 @@ Typical SMB volume: **~$2-5/month**. Workers + D1 + R2 sit inside the free tier 
 - [officetowd](https://github.com/jezweb/officetowd) — Go daemon for local⇄R2 bisync + app reconcile
 - [office-town-pack-knowledge](https://github.com/jezweb/office-town-pack-knowledge) — concepts pack to seed the wiki
 - [office-town-pack-*](https://github.com/jezweb?tab=repositories&q=office-town-pack) — agent role packs (startup, design, hosting, wordpress, business, cloudflare, comms)
+- [goose-skills](https://github.com/jezweb/goose-skills) — portable Goose skills (`install-officecli`, `install-gws`) the installer pulls from
 - [officetown.au](https://github.com/jezweb/officetown.au) — the landing site
 
 ## Documentation
 
-In-repo: `ARCHITECTURE.md`, `WIKI-SCHEMA.md`, `EXTENSIONS-CATALOGUE.md`, `INSTALL.md`, and `docs/` (HOOKS, MCP-UI, ONBOARDING, MEMORY-COMPARISON).
+In-repo: `INSTALL.md` (the install walkthrough), `ARCHITECTURE.md`, `WIKI-SCHEMA.md`, `EXTENSIONS-CATALOGUE.md`, `skills/setup-office-town/SKILL.md` + `recipes/install-office-town.yaml` (the installer), and `docs/` (HOOKS, MCP-UI, ONBOARDING, MEMORY-COMPARISON).
 
 ## Licence
 
