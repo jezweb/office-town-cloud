@@ -1,0 +1,78 @@
+version: "1.0.0"
+title: Install Office Town
+description: >
+  Stand up a complete Office Town box — provision the Cloudflare worker and all
+  its bindings, wire Goose + the sync daemon + the apps onto this Mac, install
+  OfficeCLI, and seed the cortex. The supported installer (the Cloudflare deploy
+  button does not work for this repo). Run from the office-town-cloud repo root.
+
+author:
+  contact: jezweb
+
+parameters:
+  - key: account_id
+    input_type: string
+    requirement: required
+    description: >
+      Target Cloudflare account id. For a client box this is usually a fresh
+      account the client owns. Must be on Workers Paid (Containers + Browser
+      Rendering). CLOUDFLARE_API_TOKEN must be exported in the environment.
+
+  - key: pack
+    input_type: string
+    requirement: optional
+    default: "ask"
+    description: >
+      Industry pack to seed: trades | professional-services | creative |
+      web-agency | bookings-services. "ask" = decide with the human from the
+      business type.
+
+  - key: with_sync
+    input_type: string
+    requirement: optional
+    default: "true"
+    description: >
+      "true" installs the officetowd daemon + a local ~/OfficeTown/ folder.
+      "false" = AI-access-only box (no local cortex folder).
+
+  - key: business_name
+    input_type: string
+    requirement: optional
+    default: ""
+    description: The business this box is for — used to seed the org entity + voice.
+
+extensions:
+  - type: builtin
+    name: developer
+
+prompt: |
+  Install Office Town on this Mac by following the `setup-office-town` skill
+  (skills/setup-office-town/SKILL.md in this repo) end to end. Do not improvise a
+  different install path — that skill is the supported one.
+
+  Inputs for this run:
+  - Cloudflare account id: {{ account_id }}
+  - Industry pack to seed: {{ pack }}
+  - Install local sync daemon + folder: {{ with_sync }}
+  - Business name: {{ business_name }}
+
+  Work the skill's procedure in order:
+  1. Preflight — node, docker running, you are in the office-town-cloud root,
+     CLOUDFLARE_API_TOKEN is exported and CLOUDFLARE_ACCOUNT_ID={{ account_id }}.
+     Stop and tell the human if Docker isn't running or the account isn't on
+     Workers Paid.
+  2. Run scripts/provision.sh and capture the worker URL.
+  3. Mint a MCP_BEARER_TOKEN secret you control (openssl rand -hex 32).
+  4. Run the worker's connect.sh with that URL + bearer. If {{ with_sync }} is
+     "false", pass WITHOUT_SYNC=1.
+  5. Install OfficeCLI via the install-officecli skill.
+  6. Seed the cortex — owner voice, the {{ business_name }} org entity, and the
+     {{ pack }} pack. If pack is "ask", choose with the human from the business
+     type. Seed the minimum that makes session one useful; don't over-seed.
+  7. Verify by actually exercising the tools (a goose run smoke prompt that uses
+     the MCPs, the apps page rendering, OfficeCLI responding) — not by trusting
+     that provision succeeded. Report the worker URL, the bearer location, and
+     what you seeded.
+
+  Treat every irreversible or account-level step (which account, connector
+  consent, anything that spends money) as a checkpoint with the human.
