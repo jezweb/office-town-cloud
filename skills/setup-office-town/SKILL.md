@@ -34,22 +34,15 @@ Don't run on a box that's already connected (check `~/.config/goose/config.yaml`
 
 ### 0. Preflight
 
-Confirm on the box:
+**You (the agent) do this — the human only supplied a prompt + the account/token.** Get the installer onto the box: clone `https://github.com/jezweb/office-town-cloud` if you're not already in it, and work from its root.
 
-```bash
-node -v && npx --version          # node present
-docker info >/dev/null 2>&1 && echo "docker ok" || echo "START DOCKER"  # container build needs it
-ls wrangler.jsonc                 # you are in the office-town-cloud repo root
-```
+Then make sure the basics are in place for *this* box, and tell the human (don't work around it) if something's missing:
 
-- **Docker must be running** — `wrangler deploy` builds the Sandbox container.
-- The target Cloudflare account must be on **Workers Paid** (Containers + Browser Rendering are not free-tier).
-- Decide the account with the human. For a client box, this is usually a brand-new account the client owns and has invited Jez into. Get a **Workers-deploy API token** for that account (the dashboard → My Profile → API Tokens, or an account-scoped token they share). Export it:
+- **Node** and a working **Cloudflare token** for the right account (`CLOUDFLARE_API_TOKEN` in the env; set `CLOUDFLARE_ACCOUNT_ID` too if the token sees more than one account). `provision.sh` fails clearly if the token's wrong — read the error.
+- **Docker running** — normally needed because the deploy builds the Sandbox container. If it's not running and the deploy needs it, you'll see a clear error; start Docker and re-run (idempotent).
+- The account must be on **Workers Paid** (Containers + Browser Rendering aren't free-tier). Can't be pre-checked cheaply — surfaces as a deploy error if not.
 
-```bash
-export CLOUDFLARE_API_TOKEN='<workers-deploy token for the target account>'
-export CLOUDFLARE_ACCOUNT_ID='<the target account id>'   # needed if the token sees >1 account
-```
+For a client box the account is usually a fresh one the client owns and has invited Jez into. Confirm which account before you provision — that's a checkpoint, not a default.
 
 ### 1. Provision the cloud (provision.sh)
 

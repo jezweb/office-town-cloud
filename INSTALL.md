@@ -14,18 +14,45 @@ It installs in two halves — a **cloud** worker (all the Cloudflare bindings) a
 - **Docker running** — the first deploy builds the Sandbox container locally.
 - **Node + git**.
 
-## The shortest path — let Goose install it
+## The shortest path — hand it to a Goose agent
+
+This is the whole job for you: on the box, set the token, open Goose, and paste a prompt. The **agent** clones the repo, reads the skill, and does everything else.
+
+```bash
+# in a terminal on the box, before you open Goose:
+export CLOUDFLARE_API_TOKEN='<your workers-deploy token>'
+export CLOUDFLARE_ACCOUNT_ID='<your account id>'   # if the token sees more than one account
+```
+
+Then, in Goose, paste:
+
+```
+Install Office Town on this Mac. The installer lives at
+github.com/jezweb/office-town-cloud — clone it and follow
+skills/setup-office-town/SKILL.md end to end: provision the Cloudflare
+worker, wire this Mac, install OfficeCLI, seed the cortex, and verify.
+
+Cloudflare account id: <your-account-id>
+My Workers-deploy token is in the CLOUDFLARE_API_TOKEN env var.
+Industry pack: ask   (or: trades / professional-services / creative / web-agency / bookings-services)
+
+Check with me before anything irreversible or account-level.
+```
+
+That's it — the agent takes it from there.
+
+### Or run the recipe yourself (headless / CLI)
+
+If you'd rather drive it from the command line than chat to an agent, clone first and run the recipe:
 
 ```bash
 git clone https://github.com/jezweb/office-town-cloud && cd office-town-cloud
 export CLOUDFLARE_API_TOKEN='<your workers-deploy token>'
-export CLOUDFLARE_ACCOUNT_ID='<your account id>'   # if the token sees more than one account
-
 goose run --recipe recipes/install-office-town.yaml \
   --params account_id=<your-account-id> pack=ask
 ```
 
-Goose follows the [`setup-office-town`](skills/setup-office-town/SKILL.md) skill end to end:
+Either way, Goose follows the [`setup-office-town`](skills/setup-office-town/SKILL.md) skill end to end:
 
 1. **Provision** — runs [`scripts/provision.sh`](scripts/provision.sh): creates R2 / Vectorize (768-dim, cosine) / Queue / D1, writes the new D1 id into `wrangler.jsonc`, then `wrangler deploy` (which builds the Sandbox container and binds AI / Images / Browser / Email / the Durable Object). Idempotent — safe to re-run.
 2. **Mint the bearer** — sets a `MCP_BEARER_TOKEN` secret it controls.

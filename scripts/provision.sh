@@ -28,8 +28,10 @@ die()  { printf '\033[31m✗ %s\033[0m\n' "$*" >&2; exit 1; }
 [ -f wrangler.jsonc ] || die "run from the office-town-cloud repo root (no wrangler.jsonc here)"
 [ -n "${CLOUDFLARE_API_TOKEN:-}" ] || die "set CLOUDFLARE_API_TOKEN (a Workers-deploy token for the target account)"
 command -v node >/dev/null || die "node is required"
-command -v docker >/dev/null || warn "docker not found — the Sandbox container build will fail. Install Docker Desktop and start it."
 [ -d node_modules ] || { log "installing deps…"; npm install >/dev/null || die "npm install failed"; }
+# Docker is normally needed for the deploy (it builds the Sandbox container); flag
+# it but don't gate — if it's actually needed and missing, the deploy says so.
+docker info >/dev/null 2>&1 || warn "Docker not running — the deploy builds the Sandbox container and needs it; start Docker if the deploy fails (re-run is safe, this is idempotent)."
 log "Provisioning Office Town${CLOUDFLARE_ACCOUNT_ID:+ on account $CLOUDFLARE_ACCOUNT_ID}"
 
 # create a resource, tolerating "already exists"

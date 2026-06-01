@@ -44,7 +44,9 @@ A **pack** sets your town up for a trade in one move: it registers the collectio
 
 > The Cloudflare **Deploy to Cloudflare** button can't reliably provision this repo (the Containers binding + multi-resource setup trip its repo-fetch step — you get "failed to get repository contents"). The supported path is **Goose running the installer**, which also wires the local side the button never touches. Full walkthrough in [`INSTALL.md`](INSTALL.md).
 
-**The whole install in one command** — Goose provisions the cloud, wires this Mac, installs OfficeCLI, and seeds the cortex, following the [`setup-office-town`](skills/setup-office-town/SKILL.md) skill:
+**The simplest path is to hand it to a Goose agent on the box.** You set a token and paste a prompt; the agent clones this repo, follows the [`setup-office-town`](skills/setup-office-town/SKILL.md) skill, and does the rest — provision the cloud, wire the Mac, install OfficeCLI, seed the cortex, verify. The exact prompt is in [`INSTALL.md`](INSTALL.md).
+
+Prefer the command line? Clone + run the recipe (Goose follows the same skill):
 
 ```bash
 git clone https://github.com/jezweb/office-town-cloud && cd office-town-cloud
@@ -52,7 +54,7 @@ export CLOUDFLARE_API_TOKEN='<workers-deploy token for your account>'
 goose run --recipe recipes/install-office-town.yaml --params account_id=<your-account-id> pack=ask
 ```
 
-Prefer to drive it yourself? Run the cloud half directly — [`scripts/provision.sh`](scripts/provision.sh) is idempotent and re-runnable:
+Or run the cloud half directly — [`scripts/provision.sh`](scripts/provision.sh) is idempotent and re-runnable:
 
 ```bash
 npm install && bash scripts/provision.sh
