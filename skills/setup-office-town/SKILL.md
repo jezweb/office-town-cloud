@@ -113,17 +113,6 @@ officecli --help >/dev/null && echo "office ok"
 
 Open the dashboard (`$WORKER_URL/dashboard`) and the Apps page in a browser; confirm the apps render and the cortex has the seeded entries. **Inspect, don't assume** — a green provision step is not a working box.
 
-## Verification checklist
-
-- [ ] `provision.sh` completed and printed a worker URL
-- [ ] `MCP_BEARER_TOKEN` secret set; you know the value
-- [ ] `~/.config/goose/config.yaml` has the 7 `office-town-*` MCPs
-- [ ] `officetowd` is running and `~/OfficeTown/` exists with synced content
-- [ ] OfficeCLI responds (`officecli --help`)
-- [ ] Apps appear on the Apps page; dashboard loads
-- [ ] Cortex has owner voice + the business entity + the chosen pack
-- [ ] A `goose run` smoke prompt actually used the MCP tools (not just described them)
-
 ## Failure modes
 
 | Symptom | Cause / fix |
