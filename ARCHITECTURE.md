@@ -11,7 +11,7 @@ This document describes the system architecture, the primitive decisions, and th
 ## Goals
 
 1. **Single-tenant per deployment.** Each install is one town belonging to one user / team. No multi-tenant complexity in v1.
-2. **One-click "Deploy to Cloudflare"**. User clicks a button, follows the wizard, has a deployed town.
+2. **Goose-driven install.** The user runs the install recipe (or `scripts/provision.sh`); Goose provisions the Cloudflare worker + bindings and wires the local box. (The Cloudflare "Deploy to Cloudflare" button can't provision this repo — the Containers binding trips its repo-fetch — and only ever did the cloud half.)
 3. **Markdown files as source of truth.** Indexes are derived; if the index dies, the files are unchanged.
 4. **Composable extensions.** Each MCP is a focused tool surface; Office Town deployments enable what they need.
 5. **Cloudflare-native.** All primitives are Cloudflare's; no external dependencies (except LLM providers).
@@ -30,7 +30,7 @@ This document describes the system architecture, the primitive decisions, and th
                               ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                       User's Cloudflare account                          │
-│  (deployed via "Deploy to Cloudflare" button — single-tenant)            │
+│  (provisioned via the install recipe / provision.sh — single-tenant)     │
 │                                                                          │
 │  ┌─────────────────────────────────────────────────────────────────┐   │
 │  │  Substrate Worker                                                  │   │
@@ -237,15 +237,10 @@ Namespaces: per-tenant (string)
 ## Deployment story
 
 ```bash
-# User clicks "Deploy to Cloudflare" button →
-# Cloudflare clones repo into user's account, prompts:
-#  - workers.dev subdomain or custom domain?
-#  - LLM provider API key?
-#  - Comms channel (iMessage / Slack / email) for the post-office?
-
-# Deployment runs:
-pnpm install
-pnpm deploy   # deploys all workers + MCP adapters
+# User runs the install recipe (or scripts/provision.sh) →
+# Goose provisions R2 / Vectorize / Queue / D1 in the user's account, then:
+npm install
+bash scripts/provision.sh   # creates bindings + wrangler deploy (builds the Sandbox container)
 
 # User goes to:
 https://office-town.<their-subdomain>.workers.dev
@@ -475,7 +470,7 @@ Why this matters:
 - Our cost model only works because we don't run the agent loop
 - The user's LLM bill is paid by the user, not us (positioning: "$2/month, bring your own LLM")
 - Single-user, single-tenant fits "Office Town per Cloudflare account"
-- The install flow is a "Deploy to Cloudflare" button + paste-prompt — the agent host (Goose) stays vanilla, capabilities arrive via the plugin and the deployed Workers
+- The install flow is Goose running the install recipe (provision.sh + connect.sh) — the agent host (Goose) stays vanilla, capabilities arrive via the plugin and the deployed Workers
 
 What this is NOT:
 - We are not building a server-side autonomous agent SaaS
