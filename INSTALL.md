@@ -2,15 +2,25 @@
 
 Office Town adds **team-shaped capabilities** to your [Goose](https://block.github.io/goose/) installation: addressable role agents, a Cloudflare-backed wiki that replaces Goose's built-in Memory, MCP gateway servers (wiki, files, email, cron, voice, workflows — plus an opt-in code sandbox), interactive apps that run inside Goose Desktop, and a local cortex folder you can open in Finder.
 
-It installs in two halves — a **cloud** worker (all the Cloudflare bindings) and the **local** wiring on your Mac (Goose config + the sync daemon + the apps + OfficeCLI). Goose does both for you.
+It installs in two halves — a **cloud** worker (all the Cloudflare bindings) and the **local** wiring on your Mac (Goose config + the sync daemon + the apps + OfficeCLI). Two ways to do the cloud half (button or agent); the local half is always one pasted line.
 
-> **Why not the "Deploy to Cloudflare" button?** It can't reliably provision this repo — the multi-resource setup trips its repo-fetch step ("failed to get repository contents"), and even when it works it only does the cloud half, leaving the local wiring to you. Goose running the installer does the whole thing.
+## The easiest path — the Deploy button
 
-## Prerequisites
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/jezweb/office-town-cloud)
+
+One click — **no API token, no Docker.** Cloudflare signs you in (OAuth), clones this repo into your GitHub account, provisions the resources, and builds + deploys on its own infra.
+
+1. **Click the button.** You'll need a **GitHub account** (it makes you a copy of the backend) and a **Cloudflare account** (free-tier is fine — the default config is container-free).
+2. In the deploy form, set Vectorize **Dimensions `768`** and **Metric `cosine`** (Cloudflare's config schema can't carry those, so they're entered by hand). Leave everything else blank — the worker mints its own `MCP_BEARER_TOKEN` on first request.
+3. ~2-3 minutes later you have a worker URL. Open `<your-worker-url>/dashboard/connect`, click **Claim this install**, and paste the one-liner it gives you to wire Goose (see [Wire this Mac](#2-wire-this-mac)).
+
+> If the button errors with **"failed to get repository contents"**, use the agent or CLI path below instead — neither depends on Cloudflare's repo-fetch.
+
+## Prerequisites (agent / CLI paths)
 
 - **Goose** — https://block.github.io/goose/ (Desktop or CLI).
 - **A Cloudflare account** — the default install is **free-tier** (D1, R2, Vectorize, Queues, Workers AI, Browser Rendering and Images all have free tiers). For a client box this is usually a fresh account the client owns.
-- **A Workers-deploy API token** for that account (dashboard → My Profile → API Tokens).
+- **A Cloudflare credential** — `wrangler login` (one browser click, no token) **or** a **Workers-deploy API token** (dashboard → My Profile → API Tokens; best for headless / client boxes).
 - **Node + git**.
 
 **Only if you opt into the code sandbox** (`--with-sandbox` — cloud code execution, off by default):
@@ -20,12 +30,14 @@ It installs in two halves — a **cloud** worker (all the Cloudflare bindings) a
 
 You rarely need it: a local Goose agent already runs Python/Node/Bash via its own shell — faster, and it can see your `~/OfficeTown/` files directly. Leave it off unless you specifically want *isolated cloud* execution.
 
-## The shortest path — hand it to a Goose agent
+## The agent path — hand it to a Goose agent
 
-This is the whole job for you: on the box, set the token, open Goose, and paste a prompt. The **agent** clones the repo, reads the skill, and does everything else.
+Skip the GitHub fork and let the agent do the local half too. On the box, set a credential, open Goose, and paste a prompt. The **agent** clones the repo, reads the skill, and does everything else.
 
 ```bash
-# in a terminal on the box, before you open Goose:
+# in a terminal on the box, before you open Goose — pick ONE:
+wrangler login                                     # browser click, no token (simplest)
+# …or, for headless / client boxes:
 export CLOUDFLARE_API_TOKEN='<your workers-deploy token>'
 export CLOUDFLARE_ACCOUNT_ID='<your account id>'   # if the token sees more than one account
 ```
@@ -39,7 +51,7 @@ skills/setup-office-town/SKILL.md end to end: provision the Cloudflare
 worker, wire this Mac, install OfficeCLI, seed the cortex, and verify.
 
 Cloudflare account id: <your-account-id>
-My Workers-deploy token is in the CLOUDFLARE_API_TOKEN env var.
+I'm authed to Cloudflare (wrangler login, or CLOUDFLARE_API_TOKEN in the env).
 Industry pack: ask   (or: trades / professional-services / creative / web-agency / bookings-services)
 Code sandbox: off (free-tier default — only add it if I ask)
 
