@@ -42,29 +42,36 @@ A **pack** sets your town up for a trade in one move: it registers the collectio
 
 ## Deploy
 
-> The Cloudflare **Deploy to Cloudflare** button can't reliably provision this repo (the multi-resource setup trips its repo-fetch step — you get "failed to get repository contents"). The supported path is **Goose running the installer**, which also wires the local side the button never touches. Full walkthrough in [`INSTALL.md`](INSTALL.md).
+Two halves: a **cloud** Worker (all the Cloudflare bindings) and the **local** wiring on your Mac (Goose config + apps + sync daemon). Pick a path for the cloud half; the local half is always one pasted line from `/dashboard/connect`.
 
-**The simplest path is to hand it to a Goose agent on the box.** You set a token and paste a prompt; the agent clones this repo, follows the [`setup-office-town`](skills/setup-office-town/SKILL.md) skill, and does the rest — provision the cloud, wire the Mac, install OfficeCLI, seed the cortex, verify. The exact prompt is in [`INSTALL.md`](INSTALL.md).
+### Easiest — the Deploy to Cloudflare button
 
-Prefer the command line? Clone + run the recipe (Goose follows the same skill):
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/jezweb/office-town-cloud)
+
+One click, **no API token and no Docker** — Cloudflare signs you in (OAuth), clones this repo to your GitHub, provisions the resources, and builds + deploys on its own infra. Needs a **GitHub account** (it makes you a copy) and a **Cloudflare account** (free-tier is fine — the default config is container-free). In the deploy form, set Vectorize **Dimensions `768`** and **Metric `cosine`** (Cloudflare's schema can't read those from config); leave the rest blank — the worker mints its own `MCP_BEARER_TOKEN` on first request.
+
+Then open `<your-worker-url>/dashboard/connect`, claim the install, and paste the one-liner it gives you to wire Goose (see [Wire it into Goose](#wire-it-into-goose)).
+
+### Agent-driven — hand it to Goose
+
+No GitHub fork, agent does the local half too. Set a credential (`wrangler login`, or export a `CLOUDFLARE_API_TOKEN`) and paste a prompt; the agent clones this repo, follows the [`setup-office-town`](skills/setup-office-town/SKILL.md) skill, provisions, wires the Mac, installs OfficeCLI, seeds the cortex, and verifies. The exact prompt is in [`INSTALL.md`](INSTALL.md). Best for headless / client-account installs.
+
+### CLI — the recipe or provision.sh directly
 
 ```bash
 git clone https://github.com/jezweb/office-town-cloud && cd office-town-cloud
-export CLOUDFLARE_API_TOKEN='<workers-deploy token for your account>'
+wrangler login   # or: export CLOUDFLARE_API_TOKEN='<workers-deploy token>'
 goose run --recipe recipes/install-office-town.yaml --params account_id=<your-account-id> pack=ask
+# or run the cloud half alone (idempotent): npm install && bash scripts/provision.sh
 ```
 
-Or run the cloud half directly — [`scripts/provision.sh`](scripts/provision.sh) is idempotent and re-runnable:
+> If the button ever errors with **"failed to get repository contents"**, fall back to the agent or CLI path above — they don't depend on Cloudflare's repo-fetch.
 
-```bash
-npm install && bash scripts/provision.sh
-```
-
-Either way, Cloudflare provisions everything from `wrangler.jsonc`:
+Whichever path, Cloudflare provisions everything from `wrangler.jsonc`:
 
 - **D1** — wiki index, FTS5 search, audit log, cron jobs, app installed-set
 - **R2** — markdown entries + binary attachments + published pages + signed shares + app data (entity-as-folder layout)
-- **Vectorize** — 768-dim semantic search (bge-base-en-v1.5), created with the right dims/metric automatically
+- **Vectorize** — 768-dim semantic search (bge-base-en-v1.5). The recipe/`provision.sh` set dims+metric automatically; the button asks you to enter `768` / `cosine` in its form
 - **Queue** — embedding pipeline (free tier: 10k ops/day)
 - **Workers AI** — bge embeddings, `toMarkdown` (PDF/DOCX/audio/images), Whisper, FLUX
 - **Browser Rendering** — `fetch_with_js` / `screenshot` (free tier: 10 min/day)
