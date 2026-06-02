@@ -70,28 +70,14 @@
 		{ "name": "SEND_EMAIL" }
 	],
 
-	// Sandbox MCP — Cloudflare Containers + @cloudflare/sandbox SDK.
-	// Each call to getSandbox(env.SANDBOX, id) gets or creates a container
-	// instance backed by a Durable Object. Same id across calls = persistent
-	// session (auto-sleeps after sleepAfter idle). max_instances caps total
-	// concurrent containers.
-	"containers": [
-		{
-			"class_name": "Sandbox",
-			"image": "./Dockerfile",
-			"max_instances": 10
-		}
-	],
-
-	"durable_objects": {
-		"bindings": [
-			{ "class_name": "Sandbox", "name": "SANDBOX" }
-		]
-	},
-
-	"migrations": [
-		{ "tag": "v1", "new_sqlite_classes": ["Sandbox"] }
-	],
+	// Sandbox MCP (code execution) is OPT-IN and OFF by default — it's the only
+	// piece that needs Workers Paid (Cloudflare Containers) + Docker at deploy.
+	// A local Goose agent already runs Python/Node/Bash via its own shell, so the
+	// default install skips it and stays free-tier. To enable it, deploy with
+	// `bash scripts/provision.sh --with-sandbox`, which injects the containers +
+	// Sandbox Durable Object + migration blocks at the marker below before deploy.
+	// Do not delete the marker line — the builder replaces it verbatim.
+	// __OFFICE_TOWN_SANDBOX_BINDINGS__
 
 	"queues": {
 		"producers": [

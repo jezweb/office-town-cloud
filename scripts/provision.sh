@@ -2,21 +2,34 @@
 # provision.sh — stand up Office Town on a Cloudflare account.
 #
 # Creates the resources office-town-cloud needs (R2 / Vectorize / Queue / D1),
-# writes the new D1 id into wrangler.jsonc, and deploys (which also builds the
-# Sandbox container and binds AI / Images / Browser / Email / the Durable Object).
+# writes the new D1 id into wrangler.jsonc, and deploys.
 # Idempotent: re-running skips anything that already exists.
 #
 # Run from the repo root after `npm install`.
 #
+# DEFAULT is free-tier — no Containers, no Docker. The sandbox MCP (cloud code
+# execution) is OFF; a local Goose agent already runs code via its own shell.
+# Pass --with-sandbox (or WITH_SANDBOX=1) to add it — that path needs Workers
+# Paid + Docker, and injects the container bindings into wrangler.deploy.jsonc.
+#
 # Requires:
 #   - CLOUDFLARE_API_TOKEN  (a Workers-deploy-capable token for the target account)
 #   - CLOUDFLARE_ACCOUNT_ID (only if the token can see more than one account)
-#   - The account on **Workers Paid** (Containers + Browser Rendering are not free-tier)
+#   With --with-sandbox only:
+#   - The account on **Workers Paid** (Cloudflare Containers are not free-tier)
 #   - Docker running locally (the Sandbox container is built on deploy)
 #
 # This is the script the setup skill/recipe runs; the agent handles the judgement
 # bits around it (which account, connector consent, verification).
 set -uo pipefail
+
+WITH_SANDBOX="${WITH_SANDBOX:-0}"
+for arg in "$@"; do
+  case "$arg" in
+    --with-sandbox) WITH_SANDBOX=1 ;;
+    --no-sandbox)   WITH_SANDBOX=0 ;;
+  esac
+done
 
 WR="npx wrangler"
 log()  { printf '\033[36m▸ %s\033[0m\n' "$*"; }
@@ -29,10 +42,11 @@ die()  { printf '\033[31m✗ %s\033[0m\n' "$*" >&2; exit 1; }
 [ -n "${CLOUDFLARE_API_TOKEN:-}" ] || die "set CLOUDFLARE_API_TOKEN (a Workers-deploy token for the target account)"
 command -v node >/dev/null || die "node is required"
 [ -d node_modules ] || { log "installing deps…"; npm install >/dev/null || die "npm install failed"; }
-# Docker is normally needed for the deploy (it builds the Sandbox container); flag
-# it but don't gate — if it's actually needed and missing, the deploy says so.
-docker info >/dev/null 2>&1 || warn "Docker not running — the deploy builds the Sandbox container and needs it; start Docker if the deploy fails (re-run is safe, this is idempotent)."
-log "Provisioning Office Town${CLOUDFLARE_ACCOUNT_ID:+ on account $CLOUDFLARE_ACCOUNT_ID}"
+if [ "$WITH_SANDBOX" = "1" ]; then
+  # Sandbox build needs Docker; flag it but don't gate — the deploy says so if missing.
+  docker info >/dev/null 2>&1 || warn "Docker not running — --with-sandbox builds the Sandbox container and needs it; start Docker if the deploy fails (re-run is safe, this is idempotent)."
+fi
+log "Provisioning Office Town${CLOUDFLARE_ACCOUNT_ID:+ on account $CLOUDFLARE_ACCOUNT_ID} (sandbox: $([ "$WITH_SANDBOX" = "1" ] && echo on || echo off))"
 
 # create a resource, tolerating "already exists"
 cf_create() { # <description> <wrangler args...>
@@ -76,9 +90,17 @@ node -e '
 ' "$dbid"
 ok "wrote D1 id into wrangler.jsonc"
 
-# --- Deploy (builds the Sandbox container, binds everything) -----------------
-log "Deploying (first run builds the container — this is slow)…"
-depout="$($WR deploy 2>&1)" || { printf '%s\n' "$depout" >&2; die "deploy failed — common causes: account not on Workers Paid (Containers/Browser Rendering), Docker not running, or CLOUDFLARE_ACCOUNT_ID needed for a multi-account token"; }
+# --- Deploy ------------------------------------------------------------------
+# Default: deploy wrangler.jsonc as-is (free-tier, no container).
+# --with-sandbox: inject the container bindings into wrangler.deploy.jsonc first.
+if [ "$WITH_SANDBOX" = "1" ]; then
+  node scripts/build-deploy-config.mjs || die "could not build the sandbox deploy config"
+  log "Deploying with the code sandbox (first run builds the container — this is slow)…"
+  depout="$($WR deploy -c wrangler.deploy.jsonc 2>&1)" || { printf '%s\n' "$depout" >&2; die "deploy failed — with --with-sandbox the common causes are: account not on Workers Paid (Cloudflare Containers), Docker not running, or CLOUDFLARE_ACCOUNT_ID needed for a multi-account token"; }
+else
+  log "Deploying (free-tier, no code sandbox)…"
+  depout="$($WR deploy 2>&1)" || { printf '%s\n' "$depout" >&2; die "deploy failed — common causes: CLOUDFLARE_ACCOUNT_ID needed for a multi-account token, or an invalid CLOUDFLARE_API_TOKEN"; }
+fi
 printf '%s\n' "$depout"
 url="$(printf '%s' "$depout" | grep -oE 'https://[a-z0-9.-]+\.workers\.dev' | head -1)"
 ok "Deployed${url:+: $url}"

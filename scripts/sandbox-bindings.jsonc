@@ -1,0 +1,22 @@
+	// Sandbox MCP — Cloudflare Containers + @cloudflare/sandbox SDK. INJECTED into
+	// wrangler.deploy.jsonc by scripts/build-deploy-config.mjs only when deploying
+	// with `provision.sh --with-sandbox`. Each getSandbox(env.SANDBOX, id) call gets
+	// or creates a container instance backed by a Durable Object; same id = persistent
+	// session (auto-sleeps after idle). Needs Workers Paid + Docker at deploy time.
+	"containers": [
+		{
+			"class_name": "Sandbox",
+			"image": "./Dockerfile",
+			"max_instances": 10
+		}
+	],
+
+	"durable_objects": {
+		"bindings": [
+			{ "class_name": "Sandbox", "name": "SANDBOX" }
+		]
+	},
+
+	"migrations": [
+		{ "tag": "v1", "new_sqlite_classes": ["Sandbox"] }
+	],

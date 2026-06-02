@@ -1284,7 +1284,7 @@ dashboardRoutes.get('/dashboard/kanban', async (c) => {
 	return c.html(LAYOUT('Kanban', content));
 });
 
-// /dashboard/connect — one-paste install for the 6 MCPs.
+// /dashboard/connect — one-paste install for the office-town MCPs.
 //
 // Renders a form: worker URL (prefilled from request host) + bearer token
 // (user pastes). JS regenerates a shell script on input change. One copy
@@ -1314,7 +1314,21 @@ function hasValidSession(cookieHeader: string | null, expected: string): boolean
 // invocation, never via the URL. Bearer-in-URL would land in worker
 // access logs + browser history; env-var-on-the-command-line stays in
 // the user's shell history only.
-dashboardRoutes.get('/connect.sh', async () => {
+dashboardRoutes.get('/connect.sh', async (c) => {
+	// Only wire the sandbox MCP if this deployment actually has the container
+	// bound (provision.sh --with-sandbox). Default deploys are free-tier with no
+	// SANDBOX binding, so we omit it rather than wire a dead extension.
+	const sandboxOn = !!c.env.SANDBOX;
+	const wireNames = sandboxOn
+		? ['wiki', 'files', 'email', 'cron', 'voice', 'sandbox', 'workflows']
+		: ['wiki', 'files', 'email', 'cron', 'voice', 'workflows'];
+	const mcpPy = wireNames.map((n) => `'${n}'`).join(', ');
+	// Verify loop checks the request/response MCPs (workflows is UI-only, skipped).
+	const verifyNames = sandboxOn
+		? ['wiki', 'files', 'email', 'cron', 'voice', 'sandbox']
+		: ['wiki', 'files', 'email', 'cron', 'voice'];
+	const mcpVerify = verifyNames.join(' ');
+
 	const script = `#!/usr/bin/env bash
 # Office Town — one-line installer.
 #
@@ -1324,7 +1338,7 @@ dashboardRoutes.get('/connect.sh', async () => {
 # What this does:
 #   1. Bootstraps the goose CLI (brew on macOS, curl-installer otherwise) if missing
 #   2. Disables Goose's built-in Memory extension (wiki MCP replaces it)
-#   3. Wires 7 office-town-* MCPs into ~/.config/goose/config.yaml
+#   3. Wires the office-town-* MCPs into ~/.config/goose/config.yaml
 #   4. Installs the office-town-plugin (4 roles + skills + recipes + hooks)
 #   5. Installs the officetowd sync daemon + creates ~/OfficeTown/ + first sync,
 #      so your cortex is a real folder on disk you can open and edit
@@ -1471,7 +1485,7 @@ if is_dict_shape:
             del existing[k]
     if 'memory' in existing and isinstance(existing['memory'], dict):
         existing['memory']['enabled'] = False
-    for name in ['wiki', 'files', 'email', 'cron', 'voice', 'sandbox', 'workflows']:
+    for name in [${mcpPy}]:
         existing[f'office-town-{name}'] = {
             'name': f'office-town-{name}',
             'type': 'streamable_http',
@@ -1494,7 +1508,7 @@ else:
     for e in extensions:
         if isinstance(e, dict) and e.get('name') == 'memory':
             e['enabled'] = False
-    for name in ['wiki', 'files', 'email', 'cron', 'voice', 'sandbox', 'workflows']:
+    for name in [${mcpPy}]:
         extensions.append({
             'name': f'office-town-{name}',
             'type': 'streamable_http',
@@ -1722,7 +1736,7 @@ echo ""
 # first say "hi".
 echo "→ Verifying your tools respond..."
 VERIFY_OK=0; VERIFY_TOTAL=0
-for mcp in wiki files email cron voice sandbox; do
+for mcp in ${mcpVerify}; do
   VERIFY_TOTAL=$((VERIFY_TOTAL + 1))
   CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$WORKER_URL/mcp/$mcp" \\
     -H "Authorization: Bearer $MCP_BEARER" -H 'Content-Type: application/json' \\
@@ -1932,7 +1946,7 @@ dashboardRoutes.get('/dashboard/connect', async (c) => {
 
 	const content = `${claimBanner}
 <h1 style="margin-top: 0;">Connect your Goose</h1>
-<p class="muted">Two ways to connect — pick one. <strong>Fastest:</strong> the one-click button below (Goose Desktop, no terminal). <strong>Full setup:</strong> the terminal one-liner further down also installs the sync daemon + all 7 MCPs.</p>
+<p class="muted">Two ways to connect — pick one. <strong>Fastest:</strong> the one-click button below (Goose Desktop, no terminal). <strong>Full setup:</strong> the terminal one-liner further down also installs the sync daemon + all the office-town MCPs.</p>
 
 <div class="card" style="max-width: 800px; margin-top: 1.25rem; background: linear-gradient(180deg, #fbf3e9 0%, var(--card-bg) 100%); border-color: var(--accent);">
   <h2 style="margin-top: 0;">① Fastest — one click (Goose Desktop)</h2>
@@ -1960,7 +1974,7 @@ dashboardRoutes.get('/dashboard/connect', async (c) => {
 
 <div class="card" style="max-width: 800px; margin-top: 1.5rem;">
   <h2 style="margin-top: 0;">② Full setup — one line in your terminal</h2>
-  <p style="margin: 0.5rem 0;" class="muted">The complete install: Goose CLI + the plugin if needed, all 7 MCPs, and your synced cortex folder (so your wiki lives as real files on disk). Open Terminal (macOS / Linux) or WSL (Windows) and paste this single line.</p>
+  <p style="margin: 0.5rem 0;" class="muted">The complete install: Goose CLI + the plugin if needed, the office-town MCPs, and your synced cortex folder (so your wiki lives as real files on disk). Open Terminal (macOS / Linux) or WSL (Windows) and paste this single line.</p>
 
   <label style="display: flex; gap: 0.5rem; align-items: flex-start; margin: 0.75rem 0; padding: 0.6rem 0.8rem; background: var(--code); border: 1px solid var(--border); border-radius: 6px; cursor: pointer;">
     <input id="with-sync" type="checkbox" checked style="margin-top: 0.2rem;">
@@ -1986,7 +2000,7 @@ dashboardRoutes.get('/dashboard/connect', async (c) => {
     <ol style="margin-top: 0.6rem; padding-left: 1.25rem;">
       <li>Checks for the <code>goose</code> CLI; installs it via Homebrew (macOS) or the official curl-installer (Linux) if missing.</li>
       <li>Disables Goose's built-in Memory extension — the Office Town wiki MCP replaces it with persistent R2-backed storage.</li>
-      <li>Runs <code>goose mcp add</code> seven times — once per MCP (wiki, files, email, cron, voice, sandbox, workflows), all pointed at this worker with the bearer above.</li>
+      <li>Runs <code>goose mcp add</code> once per MCP (wiki, files, email, cron, voice, workflows — plus sandbox if this deployment enabled it), all pointed at this worker with the bearer above.</li>
       <li><em>If sync is enabled above:</em> downloads the <code>officetowd</code> binary for your OS + arch and prints the two-command finish (<code>officetowd configure</code> → <code>officetowd start</code>).</li>
     </ol>
     <p style="margin-top: 0.6rem;">Inspect the full script source at <a href="/connect.sh" target="_blank"><code>/connect.sh</code></a>. The bearer never appears in the URL — it stays in your shell's env vars / history only.</p>

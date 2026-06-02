@@ -15,8 +15,9 @@ parameters:
     requirement: required
     description: >
       Target Cloudflare account id. For a client box this is usually a fresh
-      account the client owns. Must be on Workers Paid (Containers + Browser
-      Rendering). CLOUDFLARE_API_TOKEN must be exported in the environment.
+      account the client owns. The default (free-tier) install runs on a free
+      Cloudflare account; only with_sandbox=true needs Workers Paid.
+      CLOUDFLARE_API_TOKEN must be exported in the environment.
 
   - key: pack
     input_type: string
@@ -41,6 +42,16 @@ parameters:
     default: ""
     description: The business this box is for — used to seed the org entity + voice.
 
+  - key: with_sandbox
+    input_type: string
+    requirement: optional
+    default: "false"
+    description: >
+      "false" (default) = free-tier install, no cloud code sandbox; a local Goose
+      agent runs code via its own shell. "true" adds the sandbox MCP (Cloudflare
+      Containers) — needs the account on Workers Paid AND Docker running locally
+      for the first deploy. Pass it through as provision.sh --with-sandbox.
+
 extensions:
   - type: builtin
     name: developer
@@ -54,6 +65,7 @@ prompt: |
   - Cloudflare account id: {{ account_id }}  (CLOUDFLARE_API_TOKEN is in the env)
   - Industry pack to seed: {{ pack }}  (if "ask", choose with the human)
   - Local sync daemon + folder: {{ with_sync }}  (if "false", pass WITHOUT_SYNC=1 to connect.sh)
+  - Code sandbox: {{ with_sandbox }}  (if "true", run provision.sh --with-sandbox; needs Workers Paid + Docker. Default "false" = free-tier, no container.)
   - Business name: {{ business_name }}
 
   Use your judgement for the box you're on — adapt to what's actually installed
