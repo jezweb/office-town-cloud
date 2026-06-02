@@ -14,3 +14,6 @@ dist/
 # Test/download artifacts
 .playwright-cli/
 /connect.sh
+
+# Generated at deploy time by scripts/build-deploy-config.mjs (--with-sandbox)
+/wrangler.deploy.jsonc

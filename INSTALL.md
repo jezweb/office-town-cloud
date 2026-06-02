@@ -1,18 +1,24 @@
 # Install Office Town
 
-Office Town adds **team-shaped capabilities** to your [Goose](https://block.github.io/goose/) installation: addressable role agents, a Cloudflare-backed wiki that replaces Goose's built-in Memory, 7 MCP gateway servers (wiki, files, email, cron, voice, sandbox, workflows), interactive apps that run inside Goose Desktop, and a local cortex folder you can open in Finder.
+Office Town adds **team-shaped capabilities** to your [Goose](https://block.github.io/goose/) installation: addressable role agents, a Cloudflare-backed wiki that replaces Goose's built-in Memory, MCP gateway servers (wiki, files, email, cron, voice, workflows — plus an opt-in code sandbox), interactive apps that run inside Goose Desktop, and a local cortex folder you can open in Finder.
 
 It installs in two halves — a **cloud** worker (all the Cloudflare bindings) and the **local** wiring on your Mac (Goose config + the sync daemon + the apps + OfficeCLI). Goose does both for you.
 
-> **Why not the "Deploy to Cloudflare" button?** It can't reliably provision this repo — the Containers binding and multi-resource setup trip its repo-fetch step ("failed to get repository contents"), and even when it works it only does the cloud half, leaving the local wiring to you. Goose running the installer does the whole thing.
+> **Why not the "Deploy to Cloudflare" button?** It can't reliably provision this repo — the multi-resource setup trips its repo-fetch step ("failed to get repository contents"), and even when it works it only does the cloud half, leaving the local wiring to you. Goose running the installer does the whole thing.
 
 ## Prerequisites
 
 - **Goose** — https://block.github.io/goose/ (Desktop or CLI).
-- **A Cloudflare account on Workers Paid** — Containers + Browser Rendering aren't free-tier. For a client box this is usually a fresh account the client owns.
+- **A Cloudflare account** — the default install is **free-tier** (D1, R2, Vectorize, Queues, Workers AI, Browser Rendering and Images all have free tiers). For a client box this is usually a fresh account the client owns.
 - **A Workers-deploy API token** for that account (dashboard → My Profile → API Tokens).
-- **Docker running** — the first deploy builds the Sandbox container locally.
 - **Node + git**.
+
+**Only if you opt into the code sandbox** (`--with-sandbox` — cloud code execution, off by default):
+
+- The account on **Workers Paid** — Cloudflare Containers aren't free-tier.
+- **Docker running** — the first deploy builds the Sandbox container locally.
+
+You rarely need it: a local Goose agent already runs Python/Node/Bash via its own shell — faster, and it can see your `~/OfficeTown/` files directly. Leave it off unless you specifically want *isolated cloud* execution.
 
 ## The shortest path — hand it to a Goose agent
 
@@ -35,6 +41,7 @@ worker, wire this Mac, install OfficeCLI, seed the cortex, and verify.
 Cloudflare account id: <your-account-id>
 My Workers-deploy token is in the CLOUDFLARE_API_TOKEN env var.
 Industry pack: ask   (or: trades / professional-services / creative / web-agency / bookings-services)
+Code sandbox: off (free-tier default — only add it if I ask)
 
 Check with me before anything irreversible or account-level.
 ```
@@ -54,14 +61,14 @@ goose run --recipe recipes/install-office-town.yaml \
 
 Either way, Goose follows the [`setup-office-town`](skills/setup-office-town/SKILL.md) skill end to end:
 
-1. **Provision** — runs [`scripts/provision.sh`](scripts/provision.sh): creates R2 / Vectorize (768-dim, cosine) / Queue / D1, writes the new D1 id into `wrangler.jsonc`, then `wrangler deploy` (which builds the Sandbox container and binds AI / Images / Browser / Email / the Durable Object). Idempotent — safe to re-run.
+1. **Provision** — runs [`scripts/provision.sh`](scripts/provision.sh): creates R2 / Vectorize (768-dim, cosine) / Queue / D1, writes the new D1 id into `wrangler.jsonc`, then `wrangler deploy` (binding AI / Images / Browser / Email). Idempotent — safe to re-run. With `--with-sandbox` it also injects the container bindings and builds the Sandbox container.
 2. **Mint the bearer** — sets a `MCP_BEARER_TOKEN` secret it controls.
-3. **Wire this Mac** — runs the worker's own `connect.sh`: bootstraps the Goose CLI if missing, disables Goose's built-in Memory (the `wiki` MCP replaces it), wires the 7 `office-town-*` MCPs into `~/.config/goose/config.yaml`, installs the [plugin](https://github.com/jezweb/office-town-plugin) (roles + skills + recipes + hooks) and the [officetowd](https://github.com/jezweb/officetowd) sync daemon, creates `~/OfficeTown/`, runs a first bisync, and auto-installs the apps onto your Apps page.
+3. **Wire this Mac** — runs the worker's own `connect.sh`: bootstraps the Goose CLI if missing, disables Goose's built-in Memory (the `wiki` MCP replaces it), wires the `office-town-*` MCPs into `~/.config/goose/config.yaml` (six by default, plus `sandbox` when the deployment has it), installs the [plugin](https://github.com/jezweb/office-town-plugin) (roles + skills + recipes + hooks) and the [officetowd](https://github.com/jezweb/officetowd) sync daemon, creates `~/OfficeTown/`, runs a first bisync, and auto-installs the apps onto your Apps page.
 4. **Install OfficeCLI** — Word/Excel/PowerPoint support via the [`install-officecli`](https://github.com/jezweb/goose-skills/tree/main/skills/install-officecli) skill.
 5. **Seed the cortex** — owner voice, your business entity, and the industry pack matching your work (`pack=ask` lets the agent pick with you).
 6. **Verify** — exercises the tools, confirms the apps render, the daemon syncs.
 
-`pack=` can be set up front: `trades` · `professional-services` · `creative` · `web-agency` · `bookings-services`. Add `with_sync=false` for an AI-access-only box with no local folder.
+`pack=` can be set up front: `trades` · `professional-services` · `creative` · `web-agency` · `bookings-services`. Add `with_sync=false` for an AI-access-only box with no local folder, or `with_sandbox=true` to add the cloud code sandbox (Workers Paid + Docker).
 
 ## Doing it by hand
 
@@ -71,7 +78,8 @@ Prefer to drive each step? The same two halves, run yourself:
 
 ```bash
 npm install
-bash scripts/provision.sh
+bash scripts/provision.sh                  # free-tier default
+# or: bash scripts/provision.sh --with-sandbox   # adds the code sandbox (Workers Paid + Docker)
 ```
 
 Prints your worker URL (`https://office-town.<subdomain>.workers.dev`). Set a bearer you control:
@@ -106,7 +114,7 @@ Then say **"hi"** — an agent welcomes you and offers a few ways to start. The 
 
 ## What you get
 
-**7 MCP gateway tools** (one per server, each with multiple actions):
+**MCP gateway tools** (one per server, each with multiple actions — six by default, plus the opt-in `sandbox`):
 
 | Tool | Purpose |
 |---|---|
@@ -115,7 +123,7 @@ Then say **"hi"** — an agent welcomes you and offers a few ways to start. The 
 | `email` | `send` (Cloudflare Email Routing) + `draft`. Inbound auto-filed at `wiki/research/`. |
 | `cron` | Recurring + one-off scheduled agent work (7 actions). |
 | `voice` | transcribe (Nova-3) / synthesize (Aura-2, 40 voices) / list_voices / call_*. |
-| `sandbox` | Isolated code execution — Python/Node/TS/Bash (Containers-backed). |
+| `sandbox` | *(opt-in, `--with-sandbox`)* Isolated **cloud** code execution — Python/Node/TS/Bash (Cloudflare Containers, Workers Paid). Off by default; a local Goose agent runs code via its own shell. |
 | `workflows` | The visual + app surface — `cortex_ui`, `create_app`, `create_share_app`, `launch_app`, `install_pack`. |
 
 **Plus**: the dashboard (wiki browser, cron, files, published pages, apps, packs), inbound email handler, the apps on your Apps page, and the `officetowd` daemon mirroring `~/OfficeTown/` to/from R2.

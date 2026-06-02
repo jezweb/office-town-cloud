@@ -1,6 +1,6 @@
 ---
 name: setup-office-town
-description: Stand up a complete Office Town box from scratch — provision the Cloudflare worker (R2/Vectorize/Queue/D1/AI/Images/Browser/Email/Containers), mint the bearer, wire Goose + the officetowd sync daemon + the apps onto this Mac, install OfficeCLI for Word/Excel/PowerPoint, and seed the cortex. Run this when deploying a new client box or a fresh personal instance. The Cloudflare "Deploy to Cloudflare" button does NOT work for this repo (it can't read private/multi-binding contents) — this skill is the supported installer.
+description: Stand up a complete Office Town box from scratch — provision the Cloudflare worker (R2/Vectorize/Queue/D1/AI/Images/Browser/Email), mint the bearer, wire Goose + the officetowd sync daemon + the apps onto this Mac, install OfficeCLI for Word/Excel/PowerPoint, and seed the cortex. The default install is free-tier; the cloud code sandbox (Cloudflare Containers, needs Workers Paid + Docker) is opt-in via --with-sandbox. Run this when deploying a new client box or a fresh personal instance. The Cloudflare "Deploy to Cloudflare" button does NOT work for this repo (it can't read private/multi-binding contents) — this skill is the supported installer.
 ---
 
 # Setup Office Town
@@ -18,16 +18,16 @@ Don't run on a box that's already connected (check `~/.config/goose/config.yaml`
 ## What you're building
 
 ```
-  Cloudflare account                    This Mac
+  Cloudflare account (free-tier)        This Mac
   ┌────────────────────────┐            ┌─────────────────────────────┐
-  │ office-town worker      │            │ Goose CLI + 7 office-town    │
+  │ office-town worker      │            │ Goose CLI + office-town      │
   │  R2 ×4  Vectorize  D1   │◀──bearer──▶│  MCPs in config.yaml         │
   │  Queue  AI  Images      │            │ officetowd daemon  ←bisync→  │
-  │  Browser  Email  DO     │            │ ~/OfficeTown/ cortex folder  │
-  └────────────────────────┘            │ OfficeCLI (docx/xlsx/pptx)   │
-       provision.sh                      │ apps on the Apps page        │
-                                         └─────────────────────────────┘
-                                              connect.sh + this skill
+  │  Browser  Email         │            │ ~/OfficeTown/ cortex folder  │
+  │  (+ Sandbox container,  │            │ OfficeCLI (docx/xlsx/pptx)   │
+  │   only --with-sandbox)  │            │ apps on the Apps page        │
+  └────────────────────────┘            └─────────────────────────────┘
+       provision.sh                           connect.sh + this skill
 ```
 
 ## Procedure
@@ -39,19 +39,21 @@ Don't run on a box that's already connected (check `~/.config/goose/config.yaml`
 Then make sure the basics are in place for *this* box, and tell the human (don't work around it) if something's missing:
 
 - **Node** and a working **Cloudflare token** for the right account (`CLOUDFLARE_API_TOKEN` in the env; set `CLOUDFLARE_ACCOUNT_ID` too if the token sees more than one account). `provision.sh` fails clearly if the token's wrong — read the error.
-- **Docker running** — normally needed because the deploy builds the Sandbox container. If it's not running and the deploy needs it, you'll see a clear error; start Docker and re-run (idempotent).
-- The account must be on **Workers Paid** (Containers + Browser Rendering aren't free-tier). Can't be pre-checked cheaply — surfaces as a deploy error if not.
+- **Decide on the code sandbox.** The default install is **free-tier** — no Containers, no Docker. Only enable the sandbox MCP (`--with-sandbox`) if the box genuinely needs *isolated cloud* code execution; a local Goose agent already runs Python/Node/Bash via its own shell, which is faster and can see `~/OfficeTown/` directly. Most boxes don't need it. Default to off unless the human asks for it.
+- **Only if `--with-sandbox`:** the account must be on **Workers Paid** (Cloudflare Containers aren't free-tier) and **Docker must be running** (the first deploy builds the Sandbox container). Both surface as a clear deploy error if missing; start Docker and re-run (idempotent). The free-tier default needs neither.
 
 For a client box the account is usually a fresh one the client owns and has invited Jez into. Confirm which account before you provision — that's a checkpoint, not a default.
 
 ### 1. Provision the cloud (provision.sh)
 
 ```bash
-npm install            # once
-bash scripts/provision.sh
+npm install                          # once
+bash scripts/provision.sh            # free-tier default — no container, no Docker
+# or, only if the box needs cloud code execution:
+# bash scripts/provision.sh --with-sandbox   # adds the Sandbox container (Workers Paid + Docker)
 ```
 
-This creates the R2 buckets / Vectorize index / Queue / D1 (writing the new D1 id into `wrangler.jsonc`), then `wrangler deploy` — which builds the Sandbox container and binds AI / Images / Browser / Email / the Durable Object. It's **idempotent**: re-run it freely; existing resources are skipped. It prints the worker URL on success (`https://office-town.<subdomain>.workers.dev`). Capture it:
+This creates the R2 buckets / Vectorize index / Queue / D1 (writing the new D1 id into `wrangler.jsonc`), then `wrangler deploy` — binding AI / Images / Browser / Email. With `--with-sandbox` it also injects the container bindings into `wrangler.deploy.jsonc` and builds the Sandbox container. It's **idempotent**: re-run it freely; existing resources are skipped. It prints the worker URL on success (`https://office-town.<subdomain>.workers.dev`). Capture it:
 
 ```bash
 WORKER_URL="$(bash scripts/provision.sh | grep -oE 'https://[a-z0-9.-]+\.workers\.dev' | head -1)"
@@ -77,7 +79,7 @@ The worker serves its own installer. Run it with the URL + bearer from above:
 curl -fsSL "$WORKER_URL/connect.sh" | WORKER_URL="$WORKER_URL" MCP_BEARER="$MCP_BEARER" bash
 ```
 
-That bootstraps the Goose CLI if missing, disables Goose's built-in Memory (the `wiki` MCP replaces it), wires the 7 `office-town-*` MCPs into `~/.config/goose/config.yaml`, installs the office-town-plugin (roles + skills + recipes + hooks), installs the **officetowd** daemon, creates `~/OfficeTown/`, runs a first bisync, and auto-installs the apps onto the Apps page. (`WITHOUT_SYNC=1` for an AI-access-only box with no local folder.)
+That bootstraps the Goose CLI if missing, disables Goose's built-in Memory (the `wiki` MCP replaces it), wires the `office-town-*` MCPs into `~/.config/goose/config.yaml` (six by default, plus `sandbox` if you deployed `--with-sandbox` — connect.sh reads which from the worker), installs the office-town-plugin (roles + skills + recipes + hooks), installs the **officetowd** daemon, creates `~/OfficeTown/`, runs a first bisync, and auto-installs the apps onto the Apps page. (`WITHOUT_SYNC=1` for an AI-access-only box with no local folder.)
 
 ### 4. Install OfficeCLI
 
@@ -117,7 +119,8 @@ Open the dashboard (`$WORKER_URL/dashboard`) and the Apps page in a browser; con
 
 | Symptom | Cause / fix |
 |---|---|
-| `provision.sh` dies at deploy | Account not on Workers Paid, or Docker not running, or a multi-account token without `CLOUDFLARE_ACCOUNT_ID`. |
+| `provision.sh` dies at deploy (default) | Usually a multi-account token without `CLOUDFLARE_ACCOUNT_ID`, or an invalid token. The free-tier default needs no Workers Paid / Docker. |
+| `provision.sh --with-sandbox` dies at deploy | Account not on Workers Paid (Containers), or Docker not running. Start Docker / switch to a paid account and re-run, or drop `--with-sandbox` for the free-tier install. |
 | `could not determine the D1 database id` | wrangler's skills banner polluted stdout — the script greps the uuid to dodge it; re-run, it's idempotent. |
 | connect.sh: goose tools don't appear | Bearer mismatch — confirm the `MCP_BEARER` you passed equals the secret you set in step 2. |
 | Apps page empty | First daemon sync hasn't run / reconciled — `pgrep officetowd`, wait one sync cycle, re-check. |
@@ -134,3 +137,4 @@ Open the dashboard (`$WORKER_URL/dashboard`) and the Apps page in a browser; con
 ## Last updated
 
 2026-06-01 — initial author. provision.sh proven end-to-end on the main account; this skill orchestrates provision → bearer → connect → OfficeCLI → seed → verify.
+2026-06-02 — sandbox MCP (Cloudflare Containers) made opt-in via `--with-sandbox`; default install is now free-tier (no Containers, no Docker, no Workers Paid). connect.sh wires the sandbox MCP only when the deployment has it.

@@ -1,6 +1,6 @@
 # Office Town Cloud
 
-The Cloudflare Workers backend for [Office Town](https://github.com/jezweb/office-town) — capabilities you add to your [Goose](https://block.github.io/goose/) installation. A single Worker hosts the substrate (wiki + files + publish + dashboard + cron + inbound email) alongside **7 MCP gateway servers** (wiki, files, email, cron, voice, sandbox, workflows) that give agents every kind of file/input/output a knowledge worker needs — including a layer of **interactive apps** that run as windows inside Goose Desktop.
+The Cloudflare Workers backend for [Office Town](https://github.com/jezweb/office-town) — capabilities you add to your [Goose](https://block.github.io/goose/) installation. A single Worker hosts the substrate (wiki + files + publish + dashboard + cron + inbound email) alongside **MCP gateway servers** (wiki, files, email, cron, voice, workflows — plus an opt-in code sandbox) that give agents every kind of file/input/output a knowledge worker needs — including a layer of **interactive apps** that run as windows inside Goose Desktop. The default install is **free-tier**.
 
 Your data lives as plain markdown on your own Cloudflare account. You can open every file in Finder. The site is at [officetown.au](https://officetown.au).
 
@@ -42,7 +42,7 @@ A **pack** sets your town up for a trade in one move: it registers the collectio
 
 ## Deploy
 
-> The Cloudflare **Deploy to Cloudflare** button can't reliably provision this repo (the Containers binding + multi-resource setup trip its repo-fetch step — you get "failed to get repository contents"). The supported path is **Goose running the installer**, which also wires the local side the button never touches. Full walkthrough in [`INSTALL.md`](INSTALL.md).
+> The Cloudflare **Deploy to Cloudflare** button can't reliably provision this repo (the multi-resource setup trips its repo-fetch step — you get "failed to get repository contents"). The supported path is **Goose running the installer**, which also wires the local side the button never touches. Full walkthrough in [`INSTALL.md`](INSTALL.md).
 
 **The simplest path is to hand it to a Goose agent on the box.** You set a token and paste a prompt; the agent clones this repo, follows the [`setup-office-town`](skills/setup-office-town/SKILL.md) skill, and does the rest — provision the cloud, wire the Mac, install OfficeCLI, seed the cortex, verify. The exact prompt is in [`INSTALL.md`](INSTALL.md).
 
@@ -65,19 +65,20 @@ Either way, Cloudflare provisions everything from `wrangler.jsonc`:
 - **D1** — wiki index, FTS5 search, audit log, cron jobs, app installed-set
 - **R2** — markdown entries + binary attachments + published pages + signed shares + app data (entity-as-folder layout)
 - **Vectorize** — 768-dim semantic search (bge-base-en-v1.5), created with the right dims/metric automatically
-- **Queue** — embedding pipeline
+- **Queue** — embedding pipeline (free tier: 10k ops/day)
 - **Workers AI** — bge embeddings, `toMarkdown` (PDF/DOCX/audio/images), Whisper, FLUX
+- **Browser Rendering** — `fetch_with_js` / `screenshot` (free tier: 10 min/day)
 - **Images** — resize / format-convert / strip-EXIF
-- **Containers** — the `sandbox` MCP runner (`@cloudflare/sandbox`)
 - **Email Routing** — outbound `send_email` binding + inbound `email()` handler
+- **Containers** — *opt-in* (`provision.sh --with-sandbox`): the `sandbox` MCP runner (`@cloudflare/sandbox`). The only piece that needs **Workers Paid**.
 
-Requirements: a Cloudflare account on **Workers Paid** (Containers + Browser Rendering aren't free-tier), Docker running for the first deploy (it builds the Sandbox container), and a Workers-deploy API token. `MCP_BEARER_TOKEN` auto-generates on first request (or set your own); `BETTER_AUTH_SECRET` + `GOOGLE_CLIENT_ID/SECRET` are post-deploy opt-ins for dashboard sign-in.
+Requirements: a Cloudflare account and a Workers-deploy API token — the **default install is free-tier** (every binding above except Containers has a free tier). Add `--with-sandbox` only if you want cloud code execution; that path needs **Workers Paid** and Docker running for the first deploy (it builds the Sandbox container). A local Goose agent already runs code via its own shell, so most boxes skip it. `MCP_BEARER_TOKEN` auto-generates on first request (or set your own); `BETTER_AUTH_SECRET` + `GOOGLE_CLIENT_ID/SECRET` are post-deploy opt-ins for dashboard sign-in.
 
 ## Wire it into Goose
 
 You need Goose installed: https://block.github.io/goose/. (The recipe above does this and the rest for you; this is the manual local-side step if you provisioned with `provision.sh` directly.)
 
-👉 **The one-line installer** (`<your-worker-url>/connect.sh`) bootstraps the Goose CLI if needed, wires the 7 MCP servers into `~/.config/goose/config.yaml`, installs the plugin (roles + skills + the workflows runner), sets up [officetowd](https://github.com/jezweb/officetowd) with a stable device id + persistent background sync, auto-installs the apps to your Apps page, verifies the tools respond, and creates your cortex folder at `~/OfficeTown/`. The dashboard's **Connect** page hands you the pre-filled command.
+👉 **The one-line installer** (`<your-worker-url>/connect.sh`) bootstraps the Goose CLI if needed, wires the MCP servers into `~/.config/goose/config.yaml` (six by default, plus `sandbox` if you deployed `--with-sandbox`), installs the plugin (roles + skills + the workflows runner), sets up [officetowd](https://github.com/jezweb/officetowd) with a stable device id + persistent background sync, auto-installs the apps to your Apps page, verifies the tools respond, and creates your cortex folder at `~/OfficeTown/`. The dashboard's **Connect** page hands you the pre-filled command.
 
 [officetowd](https://github.com/jezweb/officetowd) is a small Go daemon that bisyncs your local `~/OfficeTown/` folder against the worker (editable in Obsidian/VSCode/Finder) and reconciles the installed apps onto your Goose Apps page each sync. Same MCP bearer; no R2 token needed.
 
@@ -103,7 +104,7 @@ Every mutation requires `why:` per the audit design contract.
 
 ### `cron` · `voice` · `sandbox`
 
-Scheduling (7 actions); transcribe / synthesize + 40 Aura-2 voices; a Containers-backed code runner.
+Scheduling (7 actions); transcribe / synthesize + 40 Aura-2 voices; a Containers-backed code runner (`sandbox` is **opt-in** via `--with-sandbox` — Workers Paid; off by default since a local Goose agent runs code via its own shell).
 
 ### `workflows` — the visual + app surface
 
