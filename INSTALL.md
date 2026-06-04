@@ -11,7 +11,7 @@ It installs in two halves — a **cloud** worker (all the Cloudflare bindings) a
 One click — **no API token, no Docker.** Cloudflare signs you in (OAuth), clones this repo into your GitHub account, provisions the resources, and builds + deploys on its own infra.
 
 1. **Click the button.** You'll need a **GitHub account** (it makes you a copy of the backend) and a **Cloudflare account** (free-tier is fine — the default config is container-free).
-2. In the deploy form, set Vectorize **Dimensions `768`** and **Metric `cosine`** (Cloudflare's config schema can't carry those, so they're entered by hand). Leave everything else blank — the worker mints its own `MCP_BEARER_TOKEN` on first request.
+2. In the deploy form, set Vectorize **Dimensions `768`** and **Metric `cosine`** (Cloudflare's config schema can't carry those, so they're entered by hand). Leave everything else blank — the worker mints its own `MCP_BEARER_TOKEN` on first request. No custom domain is needed; a `from` email address (`DEFAULT_FROM_EMAIL`) is only used if you wire outbound email later, so the placeholder default is fine for now.
 3. ~2-3 minutes later you have a worker URL. Open `<your-worker-url>/dashboard/connect`, click **Claim this install**, and paste the one-liner it gives you to wire Goose (see [Wire this Mac](#2-wire-this-mac)).
 
 > If the button errors with **"failed to get repository contents"**, use the agent or CLI path below instead — neither depends on Cloudflare's repo-fetch.

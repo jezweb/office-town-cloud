@@ -955,7 +955,7 @@ dashboardRoutes.get('/dashboard/wiki/tree', async (c) => {
 <h1 style="margin-top: 0;">Wiki tree</h1>
 <p class="muted">Full R2 path hierarchy. Click any canonical file (entity.md, contact.md, project.md, decision.md, concept.md) to open its detail view. Non-canonical files (notes/, sessions/, attachments/) are listed here but don't yet have detail pages.</p>
 <div class="card" style="max-height: 80vh; overflow-y: auto;">
-  ${treeHtml || '<p class="muted">No wiki content yet. Run <a href="/dashboard/setup">setup</a> or wire your Goose to start populating.</p>'}
+  ${treeHtml || '<p class="muted">No wiki content yet. <a href="/dashboard/connect">Connect your Goose</a>, then say hi — the agent helps you fill it.</p>'}
 </div>
 <p class="muted" style="margin-top: 1rem; font-size: 0.85em;">${allKeys.length} files total.</p>`;
 
@@ -1946,14 +1946,7 @@ dashboardRoutes.get('/dashboard/connect', async (c) => {
 
 	const content = `${claimBanner}
 <h1 style="margin-top: 0;">Connect your Goose</h1>
-<p class="muted">Two ways to connect — pick one. <strong>Fastest:</strong> the one-click button below (Goose Desktop, no terminal). <strong>Full setup:</strong> the terminal one-liner further down also installs the sync daemon + all the office-town MCPs.</p>
-
-<div class="card" style="max-width: 800px; margin-top: 1.25rem; background: linear-gradient(180deg, #fbf3e9 0%, var(--card-bg) 100%); border-color: var(--accent);">
-  <h2 style="margin-top: 0;">① Fastest — one click (Goose Desktop)</h2>
-  <p style="margin: 0.5rem 0;" class="muted">Adds Office Town's visual panels — Workflows, Cortex, Tasks, the editable entity cards — to Goose Desktop. Goose pops a confirm dialog; that's it. No terminal.</p>
-  <a id="goose-deeplink" href="#" style="display: inline-block; padding: 0.65rem 1.2rem; border-radius: 6px; background: var(--accent); color: white; font-size: 1.05em; font-weight: 600; text-decoration: none;">Add to Goose Desktop →</a>
-  <p class="muted" style="font-size: 0.8em; margin-top: 0.7rem;">Then in Goose: open the <strong>Apps</strong> tab (restart Goose if it was already open), or just ask in a chat — <em>"show my task board"</em>. The link carries your bearer token; safe to click here on your own dashboard, but don't share it.</p>
-</div>
+<p class="muted">One command sets up everything on this Mac — the Office Town extensions, the apps, and your synced <code>~/OfficeTown/</code> folder. Copy it, paste it into Terminal, done.</p>
 
 <div class="card" style="max-width: 800px; margin-top: 1.5rem;">
   <label style="display: block; margin-bottom: 1rem;">
@@ -1973,18 +1966,8 @@ dashboardRoutes.get('/dashboard/connect', async (c) => {
 </div>
 
 <div class="card" style="max-width: 800px; margin-top: 1.5rem;">
-  <h2 style="margin-top: 0;">② Full setup — one line in your terminal</h2>
-  <p style="margin: 0.5rem 0;" class="muted">The complete install: Goose CLI + the plugin if needed, the office-town MCPs, and your synced cortex folder (so your wiki lives as real files on disk). Open Terminal (macOS / Linux) or WSL (Windows) and paste this single line.</p>
-
-  <label style="display: flex; gap: 0.5rem; align-items: flex-start; margin: 0.75rem 0; padding: 0.6rem 0.8rem; background: var(--code); border: 1px solid var(--border); border-radius: 6px; cursor: pointer;">
-    <input id="with-sync" type="checkbox" checked style="margin-top: 0.2rem;">
-    <span>
-      <strong style="font-size: 0.95em;">Create a local cortex folder (recommended)</strong>
-      <span class="muted" style="display: block; font-size: 0.85em; margin-top: 0.15rem;">
-        Installs the sync daemon and creates <code>~/OfficeTown/</code> — your whole cortex as real files you can open and edit in Obsidian, VSCode, Finder, anything. Untick for AI access only (you'll still have the web dashboard).
-      </span>
-    </span>
-  </label>
+  <h2 style="margin-top: 0;">Run this one command</h2>
+  <p style="margin: 0.5rem 0;" class="muted">It does the whole local setup in one go: installs the Goose CLI if it's missing, wires the office-town extensions, installs the apps, and creates your synced <code>~/OfficeTown/</code> folder — your wiki as real files you can open in Obsidian, VSCode or Finder. Open <strong>Terminal</strong> (built into your Mac — ⌘-Space, type "Terminal") and paste this single line.</p>
 
   <div style="display: flex; gap: 0.75rem; align-items: center; margin: 0.75rem 0;">
     <button id="copy-btn" type="button" onclick="copyOneliner()" style="padding: 0.5rem 1rem; border: 0; border-radius: 6px; background: var(--accent); color: white; font-size: 0.95em; font-weight: 500; cursor: pointer;">Copy one-liner</button>
@@ -2001,7 +1984,7 @@ dashboardRoutes.get('/dashboard/connect', async (c) => {
       <li>Checks for the <code>goose</code> CLI; installs it via Homebrew (macOS) or the official curl-installer (Linux) if missing.</li>
       <li>Disables Goose's built-in Memory extension — the Office Town wiki MCP replaces it with persistent R2-backed storage.</li>
       <li>Runs <code>goose mcp add</code> once per MCP (wiki, files, email, cron, voice, workflows — plus sandbox if this deployment enabled it), all pointed at this worker with the bearer above.</li>
-      <li><em>If sync is enabled above:</em> downloads the <code>officetowd</code> binary for your OS + arch and prints the two-command finish (<code>officetowd configure</code> → <code>officetowd start</code>).</li>
+      <li>Downloads the <code>officetowd</code> sync daemon for your OS + arch, creates <code>~/OfficeTown/</code>, runs a first sync, and installs the apps to your Apps page.</li>
     </ol>
     <p style="margin-top: 0.6rem;">Inspect the full script source at <a href="/connect.sh" target="_blank"><code>/connect.sh</code></a>. The bearer never appears in the URL — it stays in your shell's env vars / history only.</p>
   </details>
@@ -2039,26 +2022,13 @@ function shSingleQuote(s) {
 function generateOneliner() {
   const url = document.getElementById('worker-url').value.replace(/\\/+$/, '');
   const bearer = document.getElementById('bearer').value.trim();
-  const withSync = document.getElementById('with-sync').checked;
-  // Sync is default-on; the script opts OUT with WITHOUT_SYNC=1 when unchecked.
   const urlSafe = url || 'https://YOUR-WORKER-URL.workers.dev';
   const bearerSafe = bearer || 'YOUR_MCP_BEARER_TOKEN';
 
   return 'curl -fsSL ' + shSingleQuote(urlSafe + '/connect.sh') +
     ' | WORKER_URL=' + shSingleQuote(urlSafe) +
     ' MCP_BEARER=' + shSingleQuote(bearerSafe) +
-    (withSync ? '' : ' WITHOUT_SYNC=1') +
     ' bash';
-}
-
-function gooseDeepLink() {
-  const url = document.getElementById('worker-url').value.replace(/\\/+$/, '') || 'https://YOUR-WORKER-URL.workers.dev';
-  const bearer = document.getElementById('bearer').value.trim() || 'YOUR_MCP_BEARER_TOKEN';
-  // One remote extension = the /mcp/workflows server, which serves both UI
-  // tools (show_workflows + browse_cortex). Goose parses name/url/header.
-  return 'goose://extension?name=' + encodeURIComponent('Office Town') +
-    '&url=' + encodeURIComponent(url + '/mcp/workflows') +
-    '&header=' + encodeURIComponent('Authorization=Bearer ' + bearer);
 }
 
 function refreshOneliner() {
@@ -2066,8 +2036,6 @@ function refreshOneliner() {
   const url = document.getElementById('worker-url').value.replace(/\\/+$/, '') || 'https://YOUR-WORKER-URL.workers.dev';
   document.getElementById('oneliner-uninstall').textContent =
     'curl -fsSL ' + shSingleQuote(url + '/disconnect.sh') + ' | bash';
-  const dl = document.getElementById('goose-deeplink');
-  if (dl) dl.href = gooseDeepLink();
 }
 
 function copyOneliner() {
@@ -2087,7 +2055,6 @@ function copyOneliner() {
 
 document.getElementById('worker-url').addEventListener('input', refreshOneliner);
 document.getElementById('bearer').addEventListener('input', refreshOneliner);
-document.getElementById('with-sync').addEventListener('change', refreshOneliner);
 refreshOneliner();
 </script>`;
 	return c.html(LAYOUT('Connect your Goose - Office Town', content));
