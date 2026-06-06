@@ -1467,6 +1467,18 @@ headers = {'Authorization': f'Bearer {bearer}'}
 if device:
     headers['X-Office-Town-Device'] = device
 
+# Friendly per-extension descriptions so Goose's Extensions list shows what each
+# one does instead of the generic "STREAMABLE HTTP extension" fallback.
+DESCRIPTIONS = {
+    'wiki': "Your cortex's structured memory — read, write, and search the team wiki (replaces Goose Memory)",
+    'files': "Convert any document to markdown, store files, publish pages, screenshot the web, generate images, text-to-speech",
+    'email': "Send email from your cortex via Cloudflare Email Routing",
+    'cron': "Schedule recurring and one-off agent jobs",
+    'voice': "Speech-to-text and text-to-speech (40 voices)",
+    'sandbox': "Isolated code execution — Python, Node, Bash",
+    'workflows': "Standing jobs your town runs on a trigger",
+}
+
 config_path.parent.mkdir(parents=True, exist_ok=True)
 if config_path.exists():
     config = yaml.safe_load(config_path.read_text()) or {}
@@ -1494,7 +1506,7 @@ if is_dict_shape:
             'timeout': 300,
             'enabled': True,
             'bundled': None,
-            'description': '',
+            'description': DESCRIPTIONS.get(name, 'Office Town extension'),
             'env_keys': [],
             'envs': {},
         }
@@ -1517,7 +1529,7 @@ else:
             'timeout': 300,
             'enabled': True,
             'bundled': None,
-            'description': '',
+            'description': DESCRIPTIONS.get(name, 'Office Town extension'),
             'env_keys': [],
             'envs': {},
         })
