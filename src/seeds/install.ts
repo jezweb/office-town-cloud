@@ -22,6 +22,16 @@ let seedsConfirmed = false;
 export async function installSeedsIfNeeded(env: Env): Promise<void> {
 	if (seedsConfirmed) return;
 
+	// Demo/example entries are opt-in. A fresh town ships EMPTY — a populated
+	// wiki should come from the owner, not fake data (the demo set polluting a
+	// real town is exactly the failure we're guarding against). Enable only with
+	// SEED_EXAMPLES=true. Town structure (buildings, agents, AGENTS.md, workflows)
+	// now comes from cloning office-town-starter via connect.sh, not the backend.
+	if (env.SEED_EXAMPLES !== 'true') {
+		seedsConfirmed = true;
+		return;
+	}
+
 	// Check the flag first. We use a versioned flag name so a schema or content
 	// bump in this file forces a fresh re-seed (overwriting prior entries via
 	// INSERT OR REPLACE below).

@@ -1339,9 +1339,9 @@ dashboardRoutes.get('/connect.sh', async (c) => {
 #   1. Bootstraps the goose CLI (brew on macOS, curl-installer otherwise) if missing
 #   2. Disables Goose's built-in Memory extension (wiki MCP replaces it)
 #   3. Wires the office-town-* MCPs into ~/.config/goose/config.yaml
-#   4. Installs the office-town-plugin (4 roles + skills + recipes + hooks)
-#   5. Installs the officetowd sync daemon + creates ~/OfficeTown/ + first sync,
-#      so your cortex is a real folder on disk you can open and edit
+#   4. Installs the officetowd sync daemon, creates ~/OfficeTown/, and populates it
+#      from office-town-starter (roles, buildings, wiki, workflows) on a fresh town
+#   5. Runs a first sync so your cortex is a real folder on disk you can open + edit
 #   6. Opens the folder so you can see it
 #
 # Env vars:
@@ -1566,44 +1566,10 @@ except Exception as e:
 PYEOF
 echo ""
 
-# ---- Stage 2.5: Office Town plugin (roles + skills + recipes + hooks) ------
-# The plugin gives the 4 roles (boss/librarian/worker/scout), their skills,
-# the town standing orders, and the session-start hook. Without it the agent
-# has the MCPs but none of the team behaviour.
-echo "→ Installing the Office Town plugin (roles, skills, recipes, hooks)..."
-# 'goose plugin install' clones over git, so git must be present. On a fresh
-# Mac without Xcode CLT it isn't — try to install it, else skip with a clear
-# note (the 6 MCPs above already work; the plugin only adds team behaviour).
-if ! command -v git >/dev/null 2>&1; then
-  echo "  git not found — needed to fetch the plugin. Trying to install it..."
-  if command -v brew >/dev/null 2>&1; then
-    brew install git >/dev/null 2>&1 || true
-  elif command -v apt-get >/dev/null 2>&1; then
-    { sudo apt-get install -y git || apt-get install -y git; } >/dev/null 2>&1 || true
-  fi
-  hash -r 2>/dev/null || true
-fi
-if ! command -v git >/dev/null 2>&1; then
-  echo "  ! git isn't installed, so the plugin was skipped. Your 6 MCPs are wired"
-  echo "    and work now — the plugin just adds the team roles/skills/recipes."
-  echo "    Install git, then run the plugin step:"
-  echo "      macOS:  xcode-select --install"
-  echo "      Linux:  sudo apt install git   (or your distro's package)"
-  echo "      then:   goose plugin install https://github.com/jezweb/office-town-plugin"
-else
-  PLUGIN_OUT=$(goose plugin install https://github.com/jezweb/office-town-plugin 2>&1 || true)
-  if echo "$PLUGIN_OUT" | grep -qiE "installed|already"; then
-    echo "  ✓ Plugin ready."
-  else
-    # shellcheck disable=SC2001  # sed indent of multi-line output is clearest here
-    echo "$PLUGIN_OUT" | sed 's/^/    /'
-    echo "  ! Plugin install reported an issue — retry later with:"
-    echo "    goose plugin install https://github.com/jezweb/office-town-plugin"
-  fi
-fi
-echo ""
-
 # ---- Stage 3: local cortex folder + sync daemon (default on) --------------
+# The team (roles/skills/recipes/hooks) is NOT a separate plugin anymore — it
+# lives in the town itself (office-town-starter), cloned into the folder below
+# and synced to your cloud. No 'goose plugin install' step.
 # Your cortex becomes a real folder on disk (default ~/OfficeTown) that mirrors
 # R2 both ways. Skip with WITHOUT_SYNC=1 if you only want AI access (the
 # dashboard web view still works).
@@ -1696,6 +1662,23 @@ else
       # Write the daemon config directly (configure is interactive-only).
       # prefix empty = sync the whole town (wiki + files + AGENTS.md + inbox).
       mkdir -p "$SYNC_FOLDER" "$HOME/.officetowd"
+
+      # Populate a NEW town from office-town-starter — the single source of town
+      # content (roles in .agents/, buildings/, wiki/ skeleton, workflows/, AGENTS.md).
+      # Only on a fresh town; never clobber an existing one. Tarball = no git needed.
+      if [ ! -e "$SYNC_FOLDER/AGENTS.md" ] && [ ! -d "$SYNC_FOLDER/.agents" ]; then
+        echo "  Fetching the starter town (roles, buildings, wiki, workflows)..."
+        ST_TMP=$(mktemp -d)
+        if curl -fsSL "https://github.com/jezweb/office-town-starter/archive/refs/heads/main.tar.gz" | tar -xz -C "$ST_TMP" 2>/dev/null; then
+          ST_SRC="$ST_TMP/office-town-starter-main"
+          rm -f "$ST_SRC/README.md" "$ST_SRC/LICENSE" "$ST_SRC/.gitignore"
+          cp -R "$ST_SRC/." "$SYNC_FOLDER/"
+          echo "  ✓ Town scaffold in place (open Goose in $SYNC_FOLDER to meet @boss)."
+        else
+          echo "  ! Couldn't fetch the starter town — your wiki still works; add buildings later."
+        fi
+        rm -rf "$ST_TMP"
+      fi
       WORKER_URL="$WORKER_URL" MCP_BEARER="$MCP_BEARER" SYNC_FOLDER="$SYNC_FOLDER" $PY <<'PYEOF'
 import os, pathlib
 home = pathlib.Path.home()
@@ -1712,7 +1695,7 @@ cfg.write_text("\\n".join(lines))
 cfg.chmod(0o600)
 print(f"  ✓ Wrote {cfg} (mode 0600)")
 PYEOF
-      echo "  Pulling your cortex down to $SYNC_FOLDER ..."
+      echo "  Syncing your cortex (first run uploads the new town) ..."
       officetowd sync 2>&1 | sed 's/^/    /' || echo "  ! First sync had an issue — run 'officetowd sync' to retry."
       echo "  ✓ Cortex folder ready."
       echo ""

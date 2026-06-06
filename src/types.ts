@@ -55,6 +55,7 @@ export interface Env {
 	ALLOWED_AUTH_DOMAINS: string;
 	DEFAULT_FROM_EMAIL?: string;     // email MCP sender
 	DEFAULT_FROM_NAME?: string;      // email MCP sender display
+	SEED_EXAMPLES?: string;          // 'true' = seed demo example entries on fresh towns (default: off — clean town)
 
 	// Secrets (set via dashboard or .dev.vars)
 	BETTER_AUTH_SECRET?: string;

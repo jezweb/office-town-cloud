@@ -11,7 +11,6 @@ import { authMiddleware } from './auth/middleware';
 import { dashboardGate } from './auth/dashboard-gate';
 import { ensureSchema } from './bootstrap';
 import { installSeedsIfNeeded } from './seeds/install';
-import { installStructuralFilesIfNeeded } from './seeds/structural-files';
 import { cronRoutes } from './cron/routes';
 import { dashboardRoutes } from './dashboard/routes';
 import { filesRoutes } from './files/routes';
@@ -83,7 +82,6 @@ app.use('*', async (c, next) => {
 	// Don't block the request if seeding fails — log + continue.
 	try {
 		await installSeedsIfNeeded(c.env);
-		await installStructuralFilesIfNeeded(c.env, new URL(c.req.url).origin);
 	} catch (err) {
 		console.error(
 			JSON.stringify({
