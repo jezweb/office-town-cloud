@@ -8,7 +8,7 @@
 // the existing LAYOUT so this page can use the warm earth palette
 // without affecting sub-pages.
 
-import type { Env } from '../types';
+import type { Env } from "../types";
 
 interface BuildingDef {
 	collection: string; // matches wiki_collections.name
@@ -19,9 +19,9 @@ interface BuildingDef {
 
 const BUILDINGS: BuildingDef[] = [
 	{
-		collection: 'knowledge',
-		name: 'Library',
-		label: 'knowledge',
+		collection: "knowledge",
+		name: "Library",
+		label: "knowledge",
 		sprite: `
 			<rect x="12" y="14" width="40" height="9" rx="1"/>
 			<line x1="20" y1="17" x2="20" y2="20"/>
@@ -38,9 +38,9 @@ const BUILDINGS: BuildingDef[] = [
 			<line class="ground" x1="8" y1="49" x2="56" y2="49"/>`,
 	},
 	{
-		collection: 'decisions',
-		name: 'Records Hall',
-		label: 'decisions',
+		collection: "decisions",
+		name: "Records Hall",
+		label: "decisions",
 		sprite: `
 			<polygon points="14,22 32,12 50,22"/>
 			<line x1="14" y1="22" x2="50" y2="22"/>
@@ -52,9 +52,9 @@ const BUILDINGS: BuildingDef[] = [
 			<line class="ground" x1="10" y1="52" x2="54" y2="52"/>`,
 	},
 	{
-		collection: 'projects',
-		name: 'Workshop',
-		label: 'projects',
+		collection: "projects",
+		name: "Workshop",
+		label: "projects",
 		sprite: `
 			<path d="M10,30 L32,14 L54,30 L54,48 L10,48 Z"/>
 			<rect x="40" y="18" width="6" height="8"/>
@@ -67,9 +67,9 @@ const BUILDINGS: BuildingDef[] = [
 			<line class="ground" x1="6" y1="51" x2="58" y2="51"/>`,
 	},
 	{
-		collection: 'orgs',
-		name: 'Town Square',
-		label: 'orgs',
+		collection: "orgs",
+		name: "Town Square",
+		label: "orgs",
 		sprite: `
 			<rect x="22" y="18" width="20" height="28"/>
 			<polygon points="20,18 32,8 44,18"/>
@@ -80,9 +80,9 @@ const BUILDINGS: BuildingDef[] = [
 			<line class="ground" x1="14" y1="49" x2="50" y2="49"/>`,
 	},
 	{
-		collection: 'contacts',
-		name: 'Coffee House',
-		label: 'contacts',
+		collection: "contacts",
+		name: "Coffee House",
+		label: "contacts",
 		sprite: `
 			<path d="M16 22 Q14 20 14 18 Q14 14 18 14 L18 22 M18 22 Q16 20 16 18" opacity="0.45"/>
 			<path d="M22 26 Q20 23 20 21 Q20 18 23 18" opacity="0.45"/>
@@ -94,9 +94,9 @@ const BUILDINGS: BuildingDef[] = [
 			<line class="ground" x1="14" y1="51" x2="50" y2="51"/>`,
 	},
 	{
-		collection: 'team',
-		name: 'Guildhall',
-		label: 'team',
+		collection: "team",
+		name: "Guildhall",
+		label: "team",
 		sprite: `
 			<path d="M16 16 L48 16 L48 30 Q48 44 32 50 Q16 44 16 30 Z"/>
 			<line x1="22" y1="22" x2="42" y2="22"/>
@@ -107,9 +107,9 @@ const BUILDINGS: BuildingDef[] = [
 			<line class="ground" x1="12" y1="53" x2="52" y2="53"/>`,
 	},
 	{
-		collection: 'feedback',
-		name: 'Post Office',
-		label: 'feedback',
+		collection: "feedback",
+		name: "Post Office",
+		label: "feedback",
 		sprite: `
 			<rect x="14" y="22" width="36" height="24"/>
 			<path d="M14 22 L32 36 L50 22"/>
@@ -118,9 +118,9 @@ const BUILDINGS: BuildingDef[] = [
 			<line class="ground" x1="10" y1="49" x2="54" y2="49"/>`,
 	},
 	{
-		collection: 'research',
-		name: 'Archive',
-		label: 'research',
+		collection: "research",
+		name: "Archive",
+		label: "research",
 		sprite: `
 			<rect x="12" y="14" width="40" height="32"/>
 			<line x1="12" y1="22" x2="52" y2="22"/>
@@ -134,9 +134,9 @@ const BUILDINGS: BuildingDef[] = [
 			<line class="ground" x1="8" y1="49" x2="56" y2="49"/>`,
 	},
 	{
-		collection: 'tasks',
-		name: 'Workshop Yard',
-		label: 'tasks',
+		collection: "tasks",
+		name: "Workshop Yard",
+		label: "tasks",
 		sprite: `
 			<rect x="12" y="32" width="18" height="14"/>
 			<line x1="21" y1="32" x2="21" y2="46"/>
@@ -150,9 +150,9 @@ const BUILDINGS: BuildingDef[] = [
 			<line class="ground" x1="8" y1="49" x2="54" y2="49"/>`,
 	},
 	{
-		collection: 'owner',
+		collection: "owner",
 		name: "Mayor's House",
-		label: 'owner',
+		label: "owner",
 		sprite: `
 			<path d="M12 32 L32 16 L52 32 L52 48 L12 48 Z"/>
 			<rect x="40" y="18" width="5" height="7"/>
@@ -164,9 +164,9 @@ const BUILDINGS: BuildingDef[] = [
 			<line class="ground" x1="8" y1="51" x2="56" y2="51"/>`,
 	},
 	{
-		collection: 'business',
-		name: 'Charter Hall',
-		label: 'business',
+		collection: "business",
+		name: "Charter Hall",
+		label: "business",
 		sprite: `
 			<rect x="14" y="20" width="36" height="28"/>
 			<polygon points="12,20 32,8 52,20"/>
@@ -213,14 +213,19 @@ export async function loadTownStats(env: Env): Promise<TownStats> {
 	const tenMinAgo = Date.now() - 10 * 60 * 1000;
 	const oneDayAgo = Math.floor((Date.now() - 24 * 60 * 60 * 1000) / 1000);
 
-	const [countsRes, activeRes, newRes, activityRes, cronRunsRes, cortexStateRow] = await Promise.all([
+	const [
+		countsRes,
+		activeRes,
+		newRes,
+		activityRes,
+		cronRunsRes,
+		cortexStateRow,
+	] = await Promise.all([
 		env.DB.prepare(
 			`SELECT collection, COUNT(*) AS n FROM wiki_entries
        WHERE status != 'deleted' GROUP BY collection`,
 		).all<{ collection: string; n: number }>(),
-		env.DB.prepare(
-			`SELECT DISTINCT collection FROM wiki_audit WHERE ts > ?`,
-		)
+		env.DB.prepare(`SELECT DISTINCT collection FROM wiki_audit WHERE ts > ?`)
 			.bind(tenMinAgo)
 			.all<{ collection: string }>(),
 		env.DB.prepare(
@@ -240,7 +245,7 @@ export async function loadTownStats(env: Env): Promise<TownStats> {
        ORDER BY r.started_at DESC LIMIT 5`,
 		).all<CronRunRow>(),
 		env.DB.prepare(`SELECT value FROM worker_config WHERE key = ?`)
-			.bind('cortex_state')
+			.bind("cortex_state")
 			.first<{ value: string }>(),
 	]);
 
@@ -271,16 +276,16 @@ export async function loadTownStats(env: Env): Promise<TownStats> {
 		activities: activityRes.results ?? [],
 		cron_runs: cronRunsRes.results ?? [],
 		bearer_set: true, // refined at call-site if needed
-		cortex_state: cortexStateRow?.value ?? 'fresh',
+		cortex_state: cortexStateRow?.value ?? "fresh",
 	};
 }
 
 function escapeHtml(s: string): string {
 	return s
-		.replace(/&/g, '&amp;')
-		.replace(/</g, '&lt;')
-		.replace(/>/g, '&gt;')
-		.replace(/"/g, '&quot;');
+		.replace(/&/g, "&amp;")
+		.replace(/</g, "&lt;")
+		.replace(/>/g, "&gt;")
+		.replace(/"/g, "&quot;");
 }
 
 function relativeTime(ts: number): string {
@@ -293,37 +298,120 @@ function relativeTime(ts: number): string {
 }
 
 function dotClass(stats: BuildingStats): string {
-	if (stats.active_recent || stats.new_count > 0) return 'dot--amber';
-	if (stats.count > 0) return 'dot--green';
-	return 'dot--faint';
+	if (stats.active_recent || stats.new_count > 0) return "dot--amber";
+	if (stats.count > 0) return "dot--green";
+	return "dot--faint";
 }
 
 function buildingTile(b: BuildingDef, stats: BuildingStats): string {
-	const activeClass = stats.active_recent ? 'building active' : 'building';
+	const activeClass = stats.active_recent ? "building active" : "building";
 	const badge =
 		stats.new_count > 0
 			? `<span class="count-badge">${stats.new_count}</span>`
-			: '';
+			: "";
 	const statusText =
 		stats.count > 0
 			? stats.new_count > 0
 				? `${stats.count} entries · ${stats.new_count} new`
 				: `${stats.count} entries`
-			: 'empty';
+			: "empty";
 
 	return `<a class="${activeClass}" href="/dashboard/wiki?c=${escapeHtml(b.collection)}">
 		${badge}
 		<svg class="sprite" viewBox="0 0 64 64">${b.sprite}</svg>
-		<div class="name">${escapeHtml(b.name)}</div>
-		<div class="label">${escapeHtml(b.label)}</div>
+		<div class="name">${escapeHtml(b.label.charAt(0).toUpperCase() + b.label.slice(1))}</div>
+		<div class="label">${escapeHtml(b.name)}</div>
 		<div class="status"><span class="dot ${dotClass(stats)}"></span> ${statusText}</div>
 	</a>`;
 }
 
 function townMapHtml(stats: TownStats): string {
 	return BUILDINGS.map((b) =>
-		buildingTile(b, stats.per_building.get(b.collection) ?? { count: 0, active_recent: false, new_count: 0 }),
-	).join('');
+		buildingTile(
+			b,
+			stats.per_building.get(b.collection) ?? {
+				count: 0,
+				active_recent: false,
+				new_count: 0,
+			},
+		),
+	).join("");
+}
+
+// The 4 staffed buildings — the teammates you talk to, distinct from the records
+// district (the wiki collections). Activity is derived from wiki_audit's
+// agent_slug, so this needs no extra queries.
+interface StaffDef {
+	key: string;
+	name: string;
+	handle: string;
+	agent: string;
+	role: string;
+	sprite: string;
+}
+
+const STAFFED: StaffDef[] = [
+	{
+		key: "office",
+		name: "The Office",
+		handle: "@boss",
+		agent: "boss",
+		role: "Routes work, holds the thread",
+		sprite: `<rect x="16" y="22" width="32" height="30"/><rect x="28" y="38" width="8" height="14"/><line x1="16" y1="22" x2="32" y2="12"/><line x1="32" y1="12" x2="48" y2="22"/><line x1="12" y1="52" x2="52" y2="52" class="ground"/>`,
+	},
+	{
+		key: "library",
+		name: "The Library",
+		handle: "@librarian",
+		agent: "librarian",
+		role: "Extracts + curates the wiki",
+		sprite: `<rect x="18" y="16" width="7" height="36"/><rect x="27" y="22" width="7" height="30"/><rect x="36" y="14" width="7" height="38"/><line x1="14" y1="52" x2="48" y2="52" class="ground"/>`,
+	},
+	{
+		key: "workshop",
+		name: "The Workshop",
+		handle: "@worker",
+		agent: "worker",
+		role: "Deep work — builds, ships",
+		sprite: `<circle cx="25" cy="25" r="6"/><line x1="29" y1="29" x2="44" y2="44"/><rect x="39" y="39" width="9" height="9" rx="1"/><line x1="14" y1="52" x2="50" y2="52" class="ground"/>`,
+	},
+	{
+		key: "lookout",
+		name: "The Lookout",
+		handle: "@scout",
+		agent: "scout",
+		role: "Scans outward — tools, industry, world",
+		sprite: `<path d="M26 50 L30 22 L36 22 L40 50"/><circle cx="33" cy="17" r="5"/><line x1="40" y1="20" x2="48" y2="14"/><line x1="14" y1="52" x2="50" y2="52" class="ground"/>`,
+	},
+];
+
+function lastActiveByAgent(stats: TownStats): Map<string, number> {
+	const m = new Map<string, number>();
+	for (const a of stats.activities) {
+		const who = (a.agent_slug ?? "").toLowerCase();
+		if (who && a.ts > (m.get(who) ?? 0)) m.set(who, a.ts);
+	}
+	return m;
+}
+
+function staffTile(s: StaffDef, lastActive: number | undefined): string {
+	const active = lastActive !== undefined;
+	const status = active
+		? `active ${relativeTime(lastActive as number)}`
+		: "idle";
+	const dot = active ? "dot--green" : "dot--faint";
+	return `<div class="building staff">
+		<svg class="sprite" viewBox="0 0 64 64">${s.sprite}</svg>
+		<div class="name">${escapeHtml(s.name)}</div>
+		<div class="handle">${escapeHtml(s.handle)}</div>
+		<div class="role">${escapeHtml(s.role)}</div>
+		<div class="status"><span class="dot ${dot}"></span> ${status}</div>
+	</div>`;
+}
+
+function staffMapHtml(stats: TownStats): string {
+	const la = lastActiveByAgent(stats);
+	return STAFFED.map((s) => staffTile(s, la.get(s.agent))).join("");
 }
 
 function townClockHtml(stats: TownStats): string {
@@ -334,7 +422,7 @@ function townClockHtml(stats: TownStats): string {
 		const slug = `${a.collection}/${a.slug}`;
 		events.push({
 			ts: a.ts,
-			who: a.agent_slug ?? 'unknown',
+			who: a.agent_slug ?? "unknown",
 			what: `${escapeHtml(a.action)} <code>${escapeHtml(slug)}</code> — ${escapeHtml(a.why)}`,
 		});
 	}
@@ -342,10 +430,10 @@ function townClockHtml(stats: TownStats): string {
 	for (const r of stats.cron_runs) {
 		const ts = new Date(r.started_at).getTime();
 		const statusTag =
-			r.status === 'success'
-				? '✓ ok'
-				: r.status === 'error'
-					? '✗ failed'
+			r.status === "success"
+				? "✓ ok"
+				: r.status === "error"
+					? "✗ failed"
 					: r.status;
 		events.push({
 			ts,
@@ -366,7 +454,7 @@ function townClockHtml(stats: TownStats): string {
 			(e) =>
 				`<li><span class="time">${relativeTime(e.ts)}</span><span class="who">${escapeHtml(e.who)}</span><span class="what">${e.what}</span></li>`,
 		)
-		.join('');
+		.join("");
 }
 
 // The town-specific palette + CSS — additive layer on top of the existing
@@ -687,24 +775,75 @@ nav a:hover { color: var(--accent) !important; }
   text-decoration: none;
   font-weight: 500;
 }
+
+/* Staffed buildings — the 4 teammates. Distinct from the records district. */
+.staff-map {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1rem 1.5rem;
+  margin-bottom: 2.5rem;
+}
+@media (max-width: 760px) { .staff-map { grid-template-columns: repeat(2, 1fr); } }
+
+.building.staff .handle {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--accent-deep);
+  margin-bottom: 0.35rem;
+}
+.building.staff .role {
+  font-size: 0.78rem;
+  color: var(--ink-faint);
+  margin-bottom: 0.6rem;
+  min-height: 2.2em;
+}
+
+/* Records district — the wiki collections as smaller archive tiles. */
+.district-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  margin: 0 0 1rem;
+  padding-bottom: 0.4rem;
+  border-bottom: 1px solid var(--rule);
+}
+.district-head h2 {
+  margin: 0;
+  font-family: 'Trajan Pro', 'Optima', 'Palatino', Georgia, serif;
+  font-weight: 600;
+  font-size: 1.1rem;
+  letter-spacing: 0.03em;
+  color: var(--ink);
+}
+.district-head span { font-size: 0.82rem; color: var(--ink-faint); }
+
+.town-map.records { gap: 0.85rem 1rem; margin-bottom: 3rem; }
+.town-map.records .building { padding: 0.9rem 0.6rem 0.8rem; background: var(--bg-warmer); }
+.town-map.records .building svg.sprite { width: 40px; height: 40px; margin-bottom: 0.45rem; }
+.town-map.records .building .name { font-size: 0.9rem; }
+/* archive tiles sit flat — the staggered lift is for the staffed row */
+.town-map.records .building:nth-child(odd),
+.town-map.records .building:nth-child(even) { transform: none; }
+.town-map.records .building:hover { transform: translateY(-2px); }
 `;
 
 // Render the town view. Returns the complete HTML document (own layout).
 // Falls back through the nav from the standard dashboard header so users
 // can still get to other pages.
 export function renderTownView(stats: TownStats, workerHost: string): string {
-	const dateStr = new Intl.DateTimeFormat('en-AU', {
-		weekday: 'long',
-		hour: '2-digit',
-		minute: '2-digit',
-		timeZone: 'Australia/Sydney',
+	const dateStr = new Intl.DateTimeFormat("en-AU", {
+		weekday: "long",
+		hour: "2-digit",
+		minute: "2-digit",
+		timeZone: "Australia/Sydney",
 		hour12: false,
 	}).format(new Date());
 
 	const noEntriesYet = stats.total_entries === 0;
-	const isFresh = stats.cortex_state === 'fresh';
+	const isFresh = stats.cortex_state === "fresh";
 
-	let callout = '';
+	let callout = "";
 	if (noEntriesYet) {
 		callout = `<div class="callout-warm">
 			<h2>First time here? Wire your Goose.</h2>
@@ -759,7 +898,15 @@ ${TOWN_CSS}
     <div class="town-clock-mini">${escapeHtml(dateStr)} AEST</div>
   </div>
 
-  <section class="town-map" aria-label="Buildings">
+  <section class="staff-map" aria-label="The team">
+    ${staffMapHtml(stats)}
+  </section>
+
+  <div class="district-head">
+    <h2>The Records</h2>
+    <span>the shared archive — every teammate files here</span>
+  </div>
+  <section class="town-map records" aria-label="Records district">
     ${townMapHtml(stats)}
   </section>
 
