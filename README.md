@@ -38,7 +38,7 @@ A **pack** sets your town up for a trade in one move: it registers the collectio
 | **Web agency** | asset-register, support-tickets, deliverables, decision-log · `properties`, `tickets` |
 | **Bookings & services** | bookings, mini-crm, onsite-quote · `bookings` |
 
-(These are **app/industry packs** — distinct from the **agent role packs** in [office-town-plugin](https://github.com/jezweb/office-town-plugin), which add specialist agent personas.)
+(These are **app/industry packs**. The 4 core roles now live in the town itself — [office-town-starter](https://github.com/jezweb/office-town-starter) — while **agent role packs** in `office-town-pack-*` add specialist personas.)
 
 ## Deploy
 
@@ -154,8 +154,7 @@ Typical SMB volume: **~$2-5/month**. Workers + D1 + R2 sit inside the free tier 
 
 ## Repos in this family
 
-- [office-town](https://github.com/jezweb/office-town) — methodology + template
-- [office-town-plugin](https://github.com/jezweb/office-town-plugin) — Goose plugin (4 role agents + skills + recipes + hooks)
+- [office-town-starter](https://github.com/jezweb/office-town-starter) — the self-contained town: roles + skills + recipes + hooks (in `.agents/`) + buildings + wiki + workflows. Replaces the old `office-town` template and `office-town-plugin` (both archived).
 - [officetowd](https://github.com/jezweb/officetowd) — Go daemon for local⇄R2 bisync + app reconcile
 - [office-town-pack-knowledge](https://github.com/jezweb/office-town-pack-knowledge) — concepts pack to seed the wiki
 - [office-town-pack-*](https://github.com/jezweb?tab=repositories&q=office-town-pack) — agent role packs (startup, design, hosting, wordpress, business, cloudflare, comms)
